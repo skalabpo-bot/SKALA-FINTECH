@@ -7,16 +7,13 @@ const MAX_RPM = 15;
 const STORAGE_KEY = 'gemini_usage_logs';
 
 // ---------------------------------------------------------------------------
-// 🔑 ZONA DE CONFIGURACIÓN DE API KEYS
+// 🔑 API KEYS — leídas desde variables de entorno (nunca hardcodeadas)
 // ---------------------------------------------------------------------------
-// Agrega hasta 5 claves de Google AI Studio (https://aistudio.google.com/)
-// El sistema rota automáticamente cuando una clave se agota (error 429).
-// Puedes usar claves de diferentes cuentas Google para mayor capacidad.
 const API_KEYS: string[] = [
-  "AIzaSyCymTBc2irBP-qgZ02ItS19KtjYIR8AVxY", // Key 1 (billing activo)
-  // "PEGA_SEGUNDA_KEY_AQUI",                 // Key 2
-  // "PEGA_TERCERA_KEY_AQUI",                 // Key 3
-];
+  import.meta.env.VITE_GEMINI_API_KEY,
+  import.meta.env.VITE_GEMINI_API_KEY_2,
+  import.meta.env.VITE_GEMINI_API_KEY_3,
+].filter(Boolean);
 // ---------------------------------------------------------------------------
 
 const KEY_EXHAUSTED_STORAGE = 'gemini_exhausted_keys';
