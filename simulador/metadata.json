@@ -1,0 +1,8 @@
+{
+  "name": "LibranzaExacta Pro",
+  "description": "Calculadora profesional de crédito por libranza con análisis de desprendibles por IA y simulación exacta basada en FPM.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

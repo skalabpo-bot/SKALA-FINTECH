@@ -1,0 +1,313 @@
+
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  GESTOR = 'GESTOR',
+  ASISTENTE_OPERATIVO = 'ASISTENTE_OPERATIVO',
+  ANALISTA = 'ANALISTA',
+  TESORERIA = 'TESORERIA',
+  COORDINADOR_ZONA = 'COORDINADOR_ZONA'
+}
+
+export type Permission = 
+  | 'VIEW_DASHBOARD'
+  | 'CREATE_CREDIT'
+  | 'VIEW_OWN_CREDITS'
+  | 'VIEW_ALL_CREDITS'
+  | 'VIEW_ASSIGNED_CREDITS' 
+  | 'EDIT_CREDIT_INFO'
+  | 'CHANGE_CREDIT_STATUS'
+  | 'ADD_COMMENT'
+  | 'MANAGE_USERS'
+  | 'MANAGE_NEWS'
+  | 'CONFIGURE_SYSTEM'
+  | 'VIEW_REPORTS'
+  | 'EXPORT_DATA'
+  | 'MANAGE_AUTOMATIONS'
+  | 'ASSIGN_ANALYST_MANUAL'
+  | 'VIEW_ZONE_CREDITS';
+
+export const ALL_PERMISSIONS: Permission[] = [
+  'VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 
+  'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT',
+  'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA',
+  'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'VIEW_ZONE_CREDITS'
+];
+
+export interface Zone {
+  id: string;
+  name: string;
+  cities: string[];
+}
+
+export interface RateConfig {
+    rate: number;
+    commission: number;
+}
+
+export interface AlliedEntity {
+  id: string;
+  name: string;
+  rates: RateConfig[];
+}
+
+export interface UserDocument {
+  name: string;
+  url: string;
+  type: 'CEDULA' | 'RUT' | 'CERTIFICACION_BANCARIA';
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  roleDisplayName?: string;
+  avatar: string;
+  phone?: string;
+  cedula?: string;
+  status: 'ACTIVE' | 'PENDING' | 'REJECTED';
+  documents?: UserDocument[];
+  permissions?: Permission[];
+  zoneId?: string;
+  zonaId?: string;
+  city?: string;
+  banco?: string;
+  tipoCuenta?: 'AHORROS' | 'CORRIENTE';
+  numeroCuenta?: string;
+}
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  createdAt: Date;
+}
+
+export interface CreditState {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  roleResponsible: UserRole;
+  isFinal?: boolean;
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  text: string;
+  timestamp: Date;
+  attachmentName?: string;
+  attachmentUrl?: string;
+  isSystem?: boolean;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  isRead: boolean;
+  createdAt: Date;
+  creditId?: string;
+}
+
+export interface CreditDocument {
+  id: string;
+  type: string;
+  name: string;
+  url: string;
+  uploadedAt: Date;
+}
+
+export interface CreditHistoryItem {
+  id: string;
+  date: Date;
+  action: string;
+  description: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+}
+
+export interface Credit {
+  id: string;
+  solicitudNumber?: number;
+  createdAt: Date;
+  updatedAt: Date;
+  assignedGestorId: string;
+  gestorName?: string;
+  assignedAnalystId?: string;
+  analystName?: string;
+  statusId: string;
+
+  // --- CAMPOS OBLIGATORIOS SOLICITADOS ---
+  nombres: string;
+  apellidos: string;
+  nombreCompleto: string;
+  tipoDocumento: string;
+  numeroDocumento: string;
+  fechaNacimiento: string;
+  ciudadNacimiento: string;
+  sexo: string;
+  ciudadExpedicion: string;
+  fechaExpedicion: string;
+  correo: string;
+  telefonoCelular: string;
+  telefonoFijo: string;
+  direccionCompleta: string;
+  barrio: string;
+  ciudadResidencia: string;
+  estadoCivil: string;
+  
+  pagaduria: string;
+  clavePagaduria: string;
+  resolucionPension?: string;
+  fechaPension?: string;
+  antiguedadPension?: string;
+  
+  gastosMensuales: number;
+  activos: number;
+  pasivos: number;
+  patrimonio: number;
+  
+  // Referencias (Dual)
+  ref1Nombre: string;
+  ref1Cedula?: string;
+  ref1FechaExpedicion?: string;
+  ref1FechaNacimiento?: string;
+  ref1Telefono: string;
+  ref1Direccion: string;
+  ref1Ciudad: string;
+  ref1Barrio: string;
+  ref1Parentesco: string;
+
+  ref2Nombre: string;
+  ref2Cedula?: string;
+  ref2FechaExpedicion?: string;
+  ref2FechaNacimiento?: string;
+  ref2Telefono: string;
+  ref2Direccion: string;
+  ref2Ciudad: string;
+  ref2Barrio: string;
+  ref2Parentesco: string;
+
+  tipoDesembolso: string;
+  banco?: string;
+  tipoCuenta?: string;
+  numeroCuenta?: string;
+  
+  lineaCredito?: string;
+  monto: number;
+  montoDesembolso?: number;
+  plazo: number;
+  tasa?: number;
+  entidadAliada?: string;
+  commissionPercentage?: number;
+  estimatedCommission?: number;
+
+  // Beneficiario (Si aplica)
+  beneficiarioNombre?: string;
+  beneficiarioCedula?: string;
+  beneficiarioFechaExpedicion?: string;
+  beneficiarioFechaNacimiento?: string;
+  beneficiarioTelefono?: string;
+  beneficiarioDireccion?: string;
+  beneficiarioCiudad?: string;
+  beneficiarioBarrio?: string;
+  beneficiarioParentesco?: string;
+
+  subsanacionHabilitada?: boolean;
+
+  comments: Comment[];
+  documents: CreditDocument[];
+  history: CreditHistoryItem[];
+}
+
+export interface DashboardStats {
+  totalCredits: number;
+  disbursedCredits: number;
+  pendingCredits: number;
+  returnedCredits: number;
+  totalAmountSolicited: number;
+  totalAmountDisbursed: number;
+  totalCommissionEarned: number;
+  byStatus: Record<string, number>;
+}
+
+export interface ReportFilters {
+  startDate: string;
+  endDate: string;
+  statusId: string;
+  entity: string;
+}
+
+export type AutomationEvent =
+    | 'credit_status_change'
+    | 'credit_created'
+    | 'credit_edited'
+    | 'credit_deleted'
+    | 'comment_added'
+    | 'document_uploaded'
+    | 'user_registered'
+    | 'user_approved'
+    | 'user_rejected'
+    | 'user_deleted'
+    | 'user_updated'
+    | 'all';
+
+export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; description: string; category: string }[] = [
+    // Créditos
+    { value: 'credit_status_change', label: 'Cambio de estado de crédito', description: 'Datos del crédito, cliente, gestor, nuevo estado, motivo', category: 'Créditos' },
+    { value: 'credit_created', label: 'Crédito radicado', description: 'Datos del nuevo crédito, cliente, gestor, monto, entidad, tasa', category: 'Créditos' },
+    { value: 'credit_edited', label: 'Crédito editado', description: 'Datos actualizados del crédito y cliente', category: 'Créditos' },
+    { value: 'credit_deleted', label: 'Crédito eliminado', description: 'ID del crédito eliminado y quién lo eliminó', category: 'Créditos' },
+    // Comunicación
+    { value: 'comment_added', label: 'Nuevo comentario en crédito', description: 'Texto del comentario, autor, crédito asociado', category: 'Comunicación' },
+    { value: 'document_uploaded', label: 'Documento cargado', description: 'Nombre y URL del documento, crédito asociado', category: 'Documentos' },
+    // Usuarios
+    { value: 'user_registered', label: 'Nuevo usuario registrado', description: 'Datos del usuario (nombre, email, teléfono, cédula, ciudad)', category: 'Usuarios' },
+    { value: 'user_approved', label: 'Usuario aprobado', description: 'Datos del usuario aprobado', category: 'Usuarios' },
+    { value: 'user_rejected', label: 'Usuario rechazado', description: 'Datos del usuario rechazado', category: 'Usuarios' },
+    { value: 'user_deleted', label: 'Usuario eliminado', description: 'ID y datos del usuario eliminado', category: 'Usuarios' },
+    { value: 'user_updated', label: 'Perfil de usuario actualizado', description: 'Datos actualizados del perfil', category: 'Usuarios' },
+];
+
+export type AutomationType = 'webhook' | 'whatsapp' | 'email' | 'notificacion';
+export type AutomationRecipient = 'GESTOR' | 'ANALISTA' | 'CLIENTE' | 'ADMIN' | 'COORDINADOR_ZONA';
+
+export const AUTOMATION_TYPES: { value: AutomationType; label: string; icon: string }[] = [
+    { value: 'whatsapp', label: 'WhatsApp', icon: '💬' },
+    { value: 'email', label: 'Email', icon: '📧' },
+    { value: 'notificacion', label: 'Notificación in-app', icon: '🔔' },
+    { value: 'webhook', label: 'Webhook genérico', icon: '🔗' },
+];
+
+export const AUTOMATION_RECIPIENTS: { value: AutomationRecipient; label: string }[] = [
+    { value: 'GESTOR', label: 'Gestor' },
+    { value: 'ANALISTA', label: 'Analista' },
+    { value: 'CLIENTE', label: 'Cliente' },
+    { value: 'ADMIN', label: 'Administrador' },
+    { value: 'COORDINADOR_ZONA', label: 'Coordinador de Zona' },
+];
+
+export interface AutomationRule {
+    id: string;
+    name: string;
+    description: string;
+    webhookUrl: string;
+    active: boolean;
+    eventTypes: AutomationEvent[];
+    automationType: AutomationType;
+    recipients: string[];
+    statusFilter?: string[];
+}
+
+export interface N8nConfig {
+    apiKey: string;
+    automations: AutomationRule[];
+}

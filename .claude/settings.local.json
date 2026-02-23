@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(npx vite --host)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 5; Get-Content ''C:\\\\Users\\\\camil\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--skala-fintech--2-\\\\tasks\\\\b3088eb.output''\")",
+      "Bash(powershell -Command:*)"
+    ]
+  }
+}

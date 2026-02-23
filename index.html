@@ -1,0 +1,308 @@
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skala - Un paso adelante</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@700;800&display=swap" rel="stylesheet"> 
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Montserrat', 'sans-serif'],
+              display: ['Barlow', 'sans-serif'],
+            },
+            colors: {
+              primary: {
+                DEFAULT: '#EA580C',
+                50:  '#fff7ed',
+                100: '#ffedd5',
+                200: '#fed7aa',
+                300: '#fdba74',
+                400: '#fb923c',
+                500: '#f97316',
+                600: '#ea580c',
+                700: '#c2410c',
+                800: '#9a3412',
+                900: '#7c2d12',
+                950: '#431407',
+              },
+              primaryLight: '#FFF7ED',
+              secondary: '#1E293B',
+              accent: '#F97316',
+              success: '#10B981',
+              warning: '#F59E0B',
+              danger: '#EF4444',
+            },
+            boxShadow: {
+              '3d': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 4px 4px 0px 0px rgba(234, 88, 12, 0.15)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: #f1f1f1; }
+      ::-webkit-scrollbar-thumb { background: #fdba74; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #fb923c; }
+    </style>
+
+    <!-- n8n Chat Widget Styles -->
+    <link href="https://cdn.jsdelivr.net/npm/@n8n/chat/dist/style.css" rel="stylesheet" />
+    <style>
+      /* ── Tema Tech Skala para el widget n8n ── */
+      :root {
+        /* Colores del sistema */
+        --chat--color--primary:            #EA580C;
+        --chat--color--primary-shade-50:   #c2410c;
+        --chat--color--primary--shade-100: #9a3412;
+        --chat--color--secondary:          #EA580C;
+        --chat--color-secondary-shade-50:  #c2410c;
+
+        /* Ventana */
+        --chat--window--width:        390px;
+        --chat--window--height:       580px;
+        --chat--window--border-radius: 1.25rem;
+        --chat--window--border:       1px solid rgba(234,88,12,0.25);
+        --chat--border-radius:        0.75rem;
+
+        /* Header */
+        --chat--header--background:    #0f172a;
+        --chat--header--color:         #f1f5f9;
+        --chat--header--border-bottom: 2px solid rgba(234,88,12,0.5);
+        --chat--heading--font-size:    1.15em;
+        --chat--subtitle--font-size:   0.78em;
+
+        /* Fondo del área de mensajes y footer */
+        --chat--body--background:   #0f172a;
+        --chat--footer--background: #1e293b;
+        --chat--footer--color:      #64748b;
+
+        /* Mensajes bot */
+        --chat--message--bot--background: #1e293b;
+        --chat--message--bot--color:      #cbd5e1;
+        --chat--message--bot--border:     1px solid rgba(255,255,255,0.07);
+
+        /* Mensajes usuario */
+        --chat--message--user--background: #EA580C;
+        --chat--message--user--color:      #ffffff;
+        --chat--message--border-radius:    0.75rem;
+
+        /* Input */
+        --chat--input--background:    #0f172a;
+        --chat--input--text-color:    #e2e8f0;
+        --chat--input--border:        none;
+        --chat--input--border-active: none;
+        --chat--input--placeholder--font-size: 0.85rem;
+
+        /* Botón de enviar */
+        --chat--input--send--button--background:       #EA580C;
+        --chat--input--send--button--color:            #ffffff;
+        --chat--input--send--button--background-hover: #c2410c;
+        --chat--input--send--button--color-hover:      #ffffff;
+
+        /* Toggle flotante */
+        --chat--toggle--size:               70px;
+        --chat--toggle--background:         transparent;
+        --chat--toggle--hover--background:  transparent;
+        --chat--toggle--active--background: transparent;
+      }
+
+      /* Posición del widget */
+      #n8n-chat { position: fixed; bottom: 0; right: 0; z-index: 998; }
+
+      /* ── Botón flotante: imagen del bot con glow pulsante ── */
+      @keyframes skalaGlow {
+        0%, 100% {
+          box-shadow: 0 0 0 3px #EA580C,
+                      0 0 18px rgba(234,88,12,0.55),
+                      0 8px 24px rgba(0,0,0,0.4);
+        }
+        50% {
+          box-shadow: 0 0 0 5px #f97316,
+                      0 0 32px rgba(249,115,22,0.75),
+                      0 8px 24px rgba(0,0,0,0.4);
+        }
+      }
+
+      .chat-window-toggle {
+        background-image:    url('/bot-skala.png') !important;
+        background-size:     cover !important;
+        background-position: center !important;
+        background-color:    #0f172a !important;
+        border-radius:       50% !important;
+        border:              none !important;
+        animation:           skalaGlow 2.4s ease-in-out infinite !important;
+        transition:          transform 0.2s ease !important;
+      }
+      .chat-window-toggle:hover {
+        transform: scale(1.12) !important;
+        animation: none !important;
+        box-shadow: 0 0 0 4px #EA580C,
+                    0 0 40px rgba(234,88,12,0.8),
+                    0 10px 30px rgba(0,0,0,0.5) !important;
+      }
+      .chat-window-toggle svg { display: none !important; }
+
+      /* ── Ventana del chat ── */
+      .chat-window {
+        background: #0f172a !important;
+        border-radius: 1.25rem !important;
+        border: 1px solid rgba(234,88,12,0.25) !important;
+        box-shadow:
+          0 30px 60px rgba(0,0,0,0.6),
+          0 0 0 1px rgba(234,88,12,0.1),
+          inset 0 1px 0 rgba(255,255,255,0.04) !important;
+        overflow: hidden !important;
+      }
+
+      /* ── Header con gradiente oscuro ── */
+      .chat-header {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+        border-bottom: 2px solid rgba(234,88,12,0.5) !important;
+        padding: 18px 20px !important;
+      }
+
+      /* Título y subtítulo */
+      .chat-heading  { color: #f8fafc !important; font-weight: 800 !important; letter-spacing: -0.02em !important; }
+      .chat-subtitle { color: #64748b !important; }
+
+      /* ── Área de mensajes ── */
+      .chat-messages-list { background: #0f172a !important; }
+
+      /* Mensaje del bot */
+      .chat-message-from-bot {
+        background: #1e293b !important;
+        color: #cbd5e1 !important;
+        border: 1px solid rgba(255,255,255,0.07) !important;
+        border-radius: 0.75rem 0.75rem 0.75rem 4px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
+      }
+
+      /* Mensaje del usuario */
+      .chat-message-from-user {
+        background: linear-gradient(135deg, #EA580C 0%, #f97316 100%) !important;
+        color: #ffffff !important;
+        border-radius: 0.75rem 0.75rem 4px 0.75rem !important;
+        box-shadow: 0 4px 14px rgba(234,88,12,0.4) !important;
+      }
+
+      /* ── Área de input ── */
+      .chat-inputs {
+        background: #1e293b !important;
+        border-top: 1px solid rgba(255,255,255,0.06) !important;
+        padding: 10px 12px !important;
+        gap: 8px !important;
+      }
+      .chat-inputs textarea {
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border: 1px solid rgba(234,88,12,0.2) !important;
+        border-radius: 0.65rem !important;
+        font-size: 0.875rem !important;
+        padding: 10px 14px !important;
+        resize: none !important;
+      }
+      .chat-inputs textarea:focus {
+        border-color: rgba(234,88,12,0.6) !important;
+        box-shadow: 0 0 0 3px rgba(234,88,12,0.12) !important;
+        outline: none !important;
+      }
+      .chat-inputs textarea::placeholder { color: #475569 !important; }
+
+      /* Botón de enviar */
+      .chat-input-send-button {
+        background: linear-gradient(135deg, #EA580C, #f97316) !important;
+        color: #ffffff !important;
+        border-radius: 0.65rem !important;
+        box-shadow: 0 4px 12px rgba(234,88,12,0.35) !important;
+        transition: all 0.2s ease !important;
+      }
+      .chat-input-send-button:hover {
+        background: linear-gradient(135deg, #c2410c, #EA580C) !important;
+        transform: scale(1.06) !important;
+        box-shadow: 0 6px 18px rgba(234,88,12,0.5) !important;
+      }
+
+      /* Botón cerrar chat */
+      .chat-close-button { color: #64748b !important; }
+      .chat-close-button:hover { color: #EA580C !important; }
+
+      /* Footer */
+      .chat-footer { background: #1e293b !important; color: #334155 !important; font-size: 0.7rem !important; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.93.2",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "date-fns": "https://esm.sh/date-fns@^4.1.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-50 text-slate-800 font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+
+    <!-- n8n Chat Widget -->
+    <div id="n8n-chat"></div>
+    <script type="module">
+      import { createChat } from 'https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js';
+      createChat({
+        webhookUrl: 'https://agencia-chispa-n8n.jukekq.easypanel.host/webhook/f406671e-c954-4691-b39a-66c90aa2f103/chat',
+        webhookConfig: { method: 'POST', headers: {} },
+        target: '#n8n-chat',
+        mode: 'window',
+        chatInputKey: 'chatInput',
+        chatSessionKey: 'sessionId',
+        metadata: {},
+        showWelcomeScreen: false,
+        defaultLanguage: 'es',
+        initialMessages: [
+          '¡Hola! Soy el asistente virtual de Skala. Tengo toda la información de las políticas de nuestros aliados vigentes. ¿En qué te puedo ayudar hoy con tu crédito de libranza?'
+        ],
+        i18n: {
+          en: {
+            title: 'Hola!',
+            subtitle: 'Respondo rápido.',
+            footer: '',
+            getStarted: 'Nueva Conversación',
+            inputPlaceholder: 'Escribe ahora...',
+          },
+          es: {
+            title: 'Asesor Virtual Skala',
+            subtitle: 'Resuelve tus dudas al instante',
+            footer: 'Impulsado por IA',
+            getStarted: 'Nueva Conversación',
+            inputPlaceholder: 'Escribe tu duda aquí...',
+          }
+        },
+        initialLanguage: 'es'
+      });
+    </script>
+  </body>
+</html>

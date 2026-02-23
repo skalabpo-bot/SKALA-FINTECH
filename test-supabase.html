@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Conexión Supabase</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #1e293b; margin-top: 0; }
+        h2 { color: #475569; font-size: 18px; }
+        .status {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 12px 0;
+            font-weight: 600;
+        }
+        .success { background: #dcfce7; color: #166534; }
+        .error { background: #fee2e2; color: #991b1b; }
+        .info { background: #dbeafe; color: #1e40af; }
+        button {
+            background: #ea580c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+        button:hover { background: #c2410c; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        pre {
+            background: #f1f5f9;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            color: #475569;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🧪 Test de Conexión Supabase - SKALA</h1>
+        <div id="status">Iniciando...</div>
+    </div>
+
+    <div class="card">
+        <h2>1. Probar Consulta a Base de Datos</h2>
+        <button onclick="testConnection()">Test Conexión</button>
+        <div id="dbResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. Probar Registro de Usuario</h2>
+        <label>Email:</label>
+        <input type="email" id="testEmail" value="test@skala.co" placeholder="Email de prueba">
+        <label>Contraseña:</label>
+        <input type="password" id="testPassword" value="Test123!" placeholder="Mínimo 6 caracteres">
+        <br>
+        <button onclick="testRegister()">Probar Registro</button>
+        <button onclick="testLogin()">Probar Login</button>
+        <div id="authResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. Probar Subida de Archivos</h2>
+        <input type="file" id="testFile" accept="image/*">
+        <br>
+        <button onclick="testUpload()">Probar Subida</button>
+        <div id="uploadResult"></div>
+    </div>
+
+    <script>
+        // Configuración de Supabase
+        const SUPABASE_URL = 'https://yfosumpmtmcomfpbspaz.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlmb3N1bXBtdG1jb21mcGJzcGF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU0NTMsImV4cCI6MjA4NTI5MTQ1M30.J5eEMRX_A6OnjAD08YIOT_Vk7TJqsQ_0YDGGRGebBrY';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Verificar configuración inicial
+        document.getElementById('status').innerHTML = `
+            <div class="status info">
+                <strong>URL:</strong> ${SUPABASE_URL}<br>
+                <strong>Key (primeros 30 chars):</strong> ${SUPABASE_KEY.substring(0, 30)}...
+            </div>
+        `;
+
+        async function testConnection() {
+            const result = document.getElementById('dbResult');
+            result.innerHTML = '<div class="status info">Probando conexión...</div>';
+
+            try {
+                // Probar consulta a profiles
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('count')
+                    .limit(1);
+
+                if (error) throw error;
+
+                result.innerHTML = `
+                    <div class="status success">
+                        ✅ Conexión exitosa a la base de datos<br>
+                        La tabla 'profiles' es accesible
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="status error">
+                        ❌ Error de conexión: ${error.message}
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        async function testRegister() {
+            const result = document.getElementById('authResult');
+            const email = document.getElementById('testEmail').value;
+            const password = document.getElementById('testPassword').value;
+
+            result.innerHTML = '<div class="status info">Intentando registro...</div>';
+
+            try {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: 'Usuario de Prueba',
+                            role: 'GESTOR',
+                            status: 'PENDING',
+                            phone: '3001234567',
+                            cedula: '123456789',
+                            city: 'BOGOTA D.C.',
+                            bank_details: { banco: 'BANCOLOMBIA', tipoCuenta: 'AHORROS', numeroCuenta: '123' },
+                            registration_docs: []
+                        }
+                    }
+                });
+
+                if (error) throw error;
+
+                result.innerHTML = `
+                    <div class="status success">
+                        ✅ Registro exitoso<br>
+                        <strong>User ID:</strong> ${data.user?.id}<br>
+                        <strong>Email:</strong> ${data.user?.email}<br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="status error">
+                        ❌ Error en registro: ${error.message}
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        async function testLogin() {
+            const result = document.getElementById('authResult');
+            const email = document.getElementById('testEmail').value;
+            const password = document.getElementById('testPassword').value;
+
+            result.innerHTML = '<div class="status info">Intentando login...</div>';
+
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password
+                });
+
+                if (error) throw error;
+
+                // Intentar obtener perfil
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', data.user.id)
+                    .single();
+
+                if (profileError) throw profileError;
+
+                result.innerHTML = `
+                    <div class="status success">
+                        ✅ Login exitoso<br>
+                        <strong>Nombre:</strong> ${profile.full_name}<br>
+                        <strong>Rol:</strong> ${profile.role}<br>
+                        <strong>Estado:</strong> ${profile.status}<br>
+                        <pre>${JSON.stringify(profile, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="status error">
+                        ❌ Error en login: ${error.message}
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        async function testUpload() {
+            const result = document.getElementById('uploadResult');
+            const fileInput = document.getElementById('testFile');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                result.innerHTML = '<div class="status error">❌ Selecciona un archivo primero</div>';
+                return;
+            }
+
+            result.innerHTML = '<div class="status info">Subiendo archivo...</div>';
+
+            try {
+                const fileName = `test_${Date.now()}_${file.name}`;
+                const { data, error } = await supabase.storage
+                    .from('skala-bucket')
+                    .upload(fileName, file);
+
+                if (error) throw error;
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('skala-bucket')
+                    .getPublicUrl(fileName);
+
+                result.innerHTML = `
+                    <div class="status success">
+                        ✅ Archivo subido exitosamente<br>
+                        <strong>URL:</strong> <a href="${publicUrl}" target="_blank">${publicUrl}</a><br>
+                        <img src="${publicUrl}" style="max-width: 200px; margin-top: 10px;">
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="status error">
+                        ❌ Error en subida: ${error.message}
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-test al cargar
+        window.onload = () => {
+            testConnection();
+        };
+    </script>
+</body>
+</html>
