@@ -238,41 +238,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
     <div className="space-y-8 animate-fade-in pb-10 w-full overflow-hidden">
       <WelcomeHeader user={currentUser} />
 
-      {/* --- SECCION NOVEDADES (AL INICIO PARA GESTOR) --- */}
-      {!MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS') && (
-          <div className="w-full">
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-1 min-w-0">
-                  <NewsCarousel />
-              </div>
+      {/* --- GESTOR: Banner + KPIs lado a lado en PC --- */}
+      {!MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS') ? (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
+          {/* Banner (3/5) */}
+          <div className="lg:col-span-3 bg-white rounded-3xl shadow-sm border border-slate-100 p-1">
+            <NewsCarousel />
           </div>
+          {/* KPIs (2/5) — 2x2 en PC */}
+          <div className="lg:col-span-2 grid grid-cols-2 gap-4">
+            <StatCard title="Ganancia Estimada" value={stats.totalCommissionEarned} icon={Wallet} color="text-yellow-600" bg="bg-yellow-100" trend={8}/>
+            <StatCard title="Desembolsados" value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
+            <StatCard title="En Proceso" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
+            <StatCard title="Devueltos" value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" trend={-5}/>
+          </div>
+        </div>
+      ) : (
+        /* --- ADMIN/ANALISTA: KPIs en fila --- */
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {!MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && MockService.hasPermission(currentUser, 'EXPORT_DATA') ? (
+            <>
+              <StatCard title="Pendiente Pago" value={stats.pendingCredits} icon={Banknote} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title="Desembolsado (Mes)" value={stats.totalAmountDisbursed} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-100" trend={8}/>
+              <StatCard title="Total Procesados" value={stats.disbursedCredits} icon={FileText} color="text-purple-600" bg="bg-purple-100" />
+              <StatCard title="Rechazados" value={0} icon={AlertCircle} color="text-slate-600" bg="bg-slate-200" />
+            </>
+          ) : (
+            <>
+              <StatCard title="Total Créditos" value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" trend={15} />
+              <StatCard title="Monto Colocado" value={stats.totalAmountDisbursed} icon={DollarSign} color="text-emerald-600" bg="bg-emerald-100" trend={23} />
+              <StatCard title="En Estudio" value={stats.pendingCredits} icon={Clock} color="text-orange-600" bg="bg-orange-100" />
+              <StatCard title="Tasa Aprobación" value="84%" icon={CheckCircle} color="text-purple-600" bg="bg-purple-100" trend={2} />
+            </>
+          )}
+        </div>
       )}
-
-      {/* --- KPI ROW --- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        {!MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS') ? (
-            <>
-                <StatCard title="Ganancia Estimada" value={stats.totalCommissionEarned} icon={Wallet} color="text-yellow-600" bg="bg-yellow-100" trend={8}/>
-                <StatCard title="Desembolsados" value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
-                <StatCard title="En Proceso" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
-                <StatCard title="Devueltos" value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" trend={-5}/>
-            </>
-        ) : !MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && MockService.hasPermission(currentUser, 'EXPORT_DATA') ? (
-            <>
-                <StatCard title="Pendiente Pago" value={stats.pendingCredits} icon={Banknote} color="text-blue-600" bg="bg-blue-100" />
-                <StatCard title="Desembolsado (Mes)" value={stats.totalAmountDisbursed} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-100" trend={8}/>
-                <StatCard title="Total Procesados" value={stats.disbursedCredits} icon={FileText} color="text-purple-600" bg="bg-purple-100" />
-                <StatCard title="Rechazados" value={0} icon={AlertCircle} color="text-slate-600" bg="bg-slate-200" />
-            </>
-        ) : (
-            <>
-                {/* Admin / Analyst / Asistente Stats */}
-                <StatCard title="Total Créditos" value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" trend={15} />
-                <StatCard title="Monto Colocado" value={stats.totalAmountDisbursed} icon={DollarSign} color="text-emerald-600" bg="bg-emerald-100" trend={23} />
-                <StatCard title="En Estudio" value={stats.pendingCredits} icon={Clock} color="text-orange-600" bg="bg-orange-100" />
-                <StatCard title="Tasa Aprobación" value="84%" icon={CheckCircle} color="text-purple-600" bg="bg-purple-100" trend={2} />
-            </>
-        )}
-      </div>
 
       {/* --- MAIN CONTENT ROW --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
