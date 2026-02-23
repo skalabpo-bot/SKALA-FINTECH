@@ -108,7 +108,7 @@ const NewsCarousel = () => {
     if (!news.length) return null;
 
     return (
-        <div className="relative w-full h-64 rounded-3xl overflow-hidden shadow-md group min-w-0">
+        <div className="relative w-full h-52 md:h-64 lg:h-72 rounded-3xl overflow-hidden shadow-md group min-w-0">
             <img src={news[curr].imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"/>
             <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent p-6 flex flex-col justify-end">
                 <span className="inline-block bg-primary text-white text-[10px] font-bold px-2 py-1 rounded mb-2 w-fit shadow-sm">NOVEDAD</span>
@@ -247,8 +247,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
           </div>
       )}
 
-      {/* --- KPI ROW: Changed lg:grid-cols-4 to xl:grid-cols-4 for better fit on laptops --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+      {/* --- KPI ROW --- */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         {!MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS') ? (
             <>
                 <StatCard title="Ganancia Estimada" value={stats.totalCommissionEarned} icon={Wallet} color="text-yellow-600" bg="bg-yellow-100" trend={8}/>
@@ -275,11 +275,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
       </div>
 
       {/* --- MAIN CONTENT ROW --- */}
-      {/* Changed layout to prevent squeeze on smaller screens */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           
           {/* LEFT: Charts (2 cols) */}
-          <div className="xl:col-span-2 space-y-8 min-w-0">
+          <div className="lg:col-span-2 space-y-6 lg:space-y-8 min-w-0">
               {/* Main Bar Chart */}
               <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 min-w-0">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
