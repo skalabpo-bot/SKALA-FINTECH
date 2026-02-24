@@ -237,8 +237,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     const fromPayroll: Record<string, any> = {
       tipoDesembolso: mapPaymentMethod(paymentMethod),
       ...(employerName ? { pagaduria: employerName } : {}),
-      ...(analysisResult ? { cuotaDisponible: analysisResult.availableQuota } : {}),
+      ...(analysisResult ? { cuotaDisponible: analysisResult.availableQuota + (loanConfig?.buyoutQuota || 0) } : {}),
       ...(tipoPension ? { tipoPension } : {}),
+      ...(loanConfig?.carteraItems && loanConfig.carteraItems.length > 0 ? { carteraItems: loanConfig.carteraItems } : {}),
     };
 
     const documents = await uploadDocuments();

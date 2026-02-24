@@ -84,6 +84,11 @@ export interface AnalysisResult {
   isManual: boolean; // Flag to indicate manual override
 }
 
+export interface CarteraItem {
+  entity: string;
+  amount: number;
+}
+
 export interface LoanConfiguration {
   entityName: string;
   termMonths: number;
@@ -91,6 +96,7 @@ export interface LoanConfiguration {
   buyoutQuota: number; // Valor de cuota de cartera que se va a recoger (se suma al cupo)
   cashFee: number; // Gastos retiro efectivo de la entidad
   bankFee: number; // Gastos retiro bancaria de la entidad
+  carteraItems?: CarteraItem[]; // Detalle de carteras a recoger (entidad + cuota)
 }
 
 export interface SimulationResult {

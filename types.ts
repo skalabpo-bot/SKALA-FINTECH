@@ -222,6 +222,8 @@ export interface Credit {
   beneficiarioParentesco?: string;
 
   subsanacionHabilitada?: boolean;
+  carteraItems?: { entity: string; amount: number }[];
+  cuotaDisponible?: number;
 
   comments: Comment[];
   documents: CreditDocument[];

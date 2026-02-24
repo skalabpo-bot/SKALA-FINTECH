@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { AnalysisResult, LoanConfiguration, FinancialEntity } from '../types';
+import { AnalysisResult, LoanConfiguration, FinancialEntity, CarteraItem } from '../types';
 import { loadFPMData, getTermsForEntity } from '../services/fpmService';
 import { getAllEntities } from '../services/entityService';
 
@@ -19,8 +19,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   const [isLoading, setIsLoading] = useState(true);
   
   // Buyout Logic State
-  const [manualBuyoutInput, setManualBuyoutInput] = useState<number>(0);
-  const [selectedDeductions, setSelectedDeductions] = useState<Set<number>>(new Set()); 
+  const [manualCarteraItems, setManualCarteraItems] = useState<CarteraItem[]>([]);
+  const [selectedDeductions, setSelectedDeductions] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const initData = async () => {
@@ -56,15 +56,19 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     setSelectedDeductions(newSelected);
   };
 
+  const addManualItem = () => setManualCarteraItems(prev => [...prev, { entity: '', amount: 0 }]);
+  const removeManualItem = (i: number) => setManualCarteraItems(prev => prev.filter((_, idx) => idx !== i));
+  const updateManualItem = (i: number, field: keyof CarteraItem, value: string | number) =>
+    setManualCarteraItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: value } : item));
+
   const calculateTotalBuyout = () => {
-    let total = manualBuyoutInput;
+    let total = 0;
     if (analysis.detailedDeductions) {
       analysis.detailedDeductions.forEach((item, idx) => {
-        if (selectedDeductions.has(idx)) {
-          total += item.amount;
-        }
+        if (selectedDeductions.has(idx)) total += item.amount;
       });
     }
+    manualCarteraItems.forEach(item => { total += Number(item.amount) || 0; });
     return total;
   };
 
@@ -74,6 +78,17 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     e.preventDefault();
     const ent = entities.find(e => e.id === selectedEntityId);
     if (ent && selectedTerm) {
+      // Collect cartera items: from desprendible selections + manual rows
+      const carteraItems: CarteraItem[] = [];
+      if (analysis.detailedDeductions) {
+        analysis.detailedDeductions.forEach((item, idx) => {
+          if (selectedDeductions.has(idx)) carteraItems.push({ entity: item.name, amount: item.amount });
+        });
+      }
+      manualCarteraItems.forEach(item => {
+        if (Number(item.amount) > 0) carteraItems.push({ entity: item.entity || 'Sin nombre', amount: Number(item.amount) });
+      });
+
       onSimulate({
         entityName: ent.name,
         termMonths: selectedTerm,
@@ -81,6 +96,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         buyoutQuota: currentBuyoutQuota,
         cashFee: ent.cashFee ?? 15157,
         bankFee: ent.bankFee ?? 7614,
+        carteraItems: carteraItems.length > 0 ? carteraItems : undefined,
       });
     }
   };
@@ -272,19 +288,55 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                     </div>
                  )}
                  
-                 <div className="group">
-                     <label className="text-xs text-blue-800 font-bold uppercase tracking-wide ml-1 mb-2 block group-focus-within:text-blue-600">Agregar Valor Manual</label>
-                     <div className="relative">
-                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-blue-400 font-bold group-focus-within:text-blue-600">$</span>
-                         </div>
-                         <input 
-                            type="number" 
-                            value={manualBuyoutInput} 
-                            onChange={(e) => setManualBuyoutInput(Number(e.target.value))} 
-                            className="block w-full pl-8 pr-4 py-3 rounded-xl border border-blue-200 bg-white text-blue-900 placeholder-blue-300 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-mono font-bold"
-                            placeholder="0"
-                         />
+                 {/* Manual cartera rows */}
+                 <div>
+                     <div className="flex items-center justify-between mb-2">
+                         <label className="text-xs text-blue-800 font-bold uppercase tracking-wide ml-1">Agregar Manualmente</label>
+                         <button
+                             type="button"
+                             onClick={addManualItem}
+                             className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+                         >
+                             + Añadir
+                         </button>
+                     </div>
+                     <div className="space-y-2">
+                         {manualCarteraItems.map((item, i) => (
+                             <div key={i} className="flex gap-2 items-center">
+                                 <input
+                                     type="text"
+                                     value={item.entity}
+                                     onChange={e => updateManualItem(i, 'entity', e.target.value)}
+                                     placeholder="Entidad"
+                                     className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-blue-200 bg-white text-blue-900 text-sm placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 font-medium"
+                                 />
+                                 <div className="relative flex-shrink-0">
+                                     <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-blue-400 font-bold text-sm pointer-events-none">$</span>
+                                     <input
+                                         type="number"
+                                         value={item.amount || ''}
+                                         onChange={e => updateManualItem(i, 'amount', Number(e.target.value))}
+                                         placeholder="0"
+                                         className="w-36 pl-6 pr-2 py-2 rounded-lg border border-blue-200 bg-white text-blue-900 font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                     />
+                                 </div>
+                                 <button
+                                     type="button"
+                                     onClick={() => removeManualItem(i)}
+                                     className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors flex-shrink-0 font-bold text-sm"
+                                     title="Eliminar"
+                                 >✕</button>
+                             </div>
+                         ))}
+                         {manualCarteraItems.length === 0 && (
+                             <button
+                                 type="button"
+                                 onClick={addManualItem}
+                                 className="w-full py-2.5 border border-dashed border-blue-200 text-blue-400 text-xs font-bold rounded-xl hover:border-blue-400 hover:text-blue-600 transition-colors"
+                             >
+                                 + Agregar cartera manual
+                             </button>
+                         )}
                      </div>
                  </div>
 

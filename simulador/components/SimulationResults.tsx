@@ -231,6 +231,16 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     ${deductionRows ? `<table style="margin-top:8px"><tr><th colspan="2" style="background:#fef9c3;color:#854d0e">Detalle Descuentos en Nómina</th></tr>${deductionRows}</table>` : ''}
   </section>
 
+  ${config.carteraItems && config.carteraItems.length > 0 ? `
+  <section>
+    <h2>Carteras a Recoger</h2>
+    <table>
+      <tr><th style="width:60%">Entidad</th><th style="text-align:right">Cuota Mensual</th></tr>
+      ${config.carteraItems.map(c => `<tr><td>${c.entity}</td><td style="text-align:right;font-weight:bold">${fmt(c.amount)}</td></tr>`).join('')}
+      <tr class="highlight"><th>Total Compra de Cartera</th><td style="text-align:right">${fmt(config.carteraItems.reduce((s, c) => s + c.amount, 0))}</td></tr>
+    </table>
+  </section>` : ''}
+
   <section>
     <h2>Ofertas Seleccionadas (${toExport.length})</h2>
     <div class="offers">

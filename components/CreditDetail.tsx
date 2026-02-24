@@ -562,6 +562,29 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             <EditableItem label="Patrimonio Neto" name="patrimonio" value={editFormData.patrimonio} isEditing={false} onChange={()=>{}} type="number" />
                             <EditableItem label="Cuota Disponible" name="cuotaDisponible" value={editFormData.cuotaDisponible} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, cuotaDisponible: e.target.value})} type="number" />
                         </div>
+
+                        {/* Carteras a recoger */}
+                        {credit.carteraItems && credit.carteraItems.length > 0 && (
+                            <div className="mt-6 bg-blue-50 border border-blue-100 rounded-2xl p-5">
+                                <p className="text-[10px] font-black text-blue-700 uppercase tracking-[0.2em] mb-3">Compras de Cartera a Recoger</p>
+                                <div className="space-y-2">
+                                    {credit.carteraItems.map((item, i) => (
+                                        <div key={i} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-blue-100">
+                                            <span className="text-sm font-bold text-slate-700">{item.entity || 'Sin nombre'}</span>
+                                            <span className="font-mono font-black text-blue-800 text-sm">
+                                                ${Number(item.amount).toLocaleString('es-CO')}
+                                            </span>
+                                        </div>
+                                    ))}
+                                    <div className="flex justify-between items-center px-4 py-2 border-t border-blue-200 mt-1">
+                                        <span className="text-xs font-black text-blue-700 uppercase tracking-wide">Total cartera</span>
+                                        <span className="font-mono font-black text-blue-900">
+                                            ${credit.carteraItems.reduce((s, c) => s + Number(c.amount), 0).toLocaleString('es-CO')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* FORMA DE DESEMBOLSO */}
