@@ -97,6 +97,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [tipoPension, setTipoPension] = useState('');
   const [resolucionPensionFile, setResolucionPensionFile] = useState<File | null>(null);
   const [dictamenFile, setDictamenFile] = useState<File | null>(null);
+  const [paystub2File, setPaystub2File] = useState<File | null>(null);
 
   // Datos de contacto obligatorios
   const [correo, setCorreo] = useState('');
@@ -177,6 +178,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     setTipoPension('');
     setResolucionPensionFile(null);
     setDictamenFile(null);
+    setPaystub2File(null);
     setBarrio('');
     setCiudadResidencia('');
     setEstadoCivil('');
@@ -189,6 +191,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     const documents: any[] = [];
     const uploads: Array<{ file: File; docType: string }> = [];
     if (paystubFile) uploads.push({ file: paystubFile, docType: 'DESPRENDIBLE_1' });
+    if (paystub2File) uploads.push({ file: paystub2File, docType: 'DESPRENDIBLE_2' });
     if (cedulaFront) uploads.push({ file: cedulaFront, docType: 'CEDULA_FRONTAL' });
     if (cedulaBack)  uploads.push({ file: cedulaBack,  docType: 'CEDULA_POSTERIOR' });
     if (resolucionPensionFile) uploads.push({ file: resolucionPensionFile, docType: 'RESOLUCION_PENSION' });
@@ -618,6 +621,37 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Segundo desprendible — opcional */}
+              <div className={`rounded-2xl border-2 border-dashed p-4 transition-all ${paystub2File ? 'border-green-400 bg-green-50' : 'border-slate-200 bg-slate-50/50 hover:border-primary/30'}`}>
+                <label className="flex items-center gap-4 cursor-pointer">
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,.pdf,application/pdf"
+                    onChange={e => setPaystub2File(e.target.files?.[0] || null)}
+                  />
+                  <span className="text-2xl">{paystub2File ? '✅' : '📄'}</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-black text-slate-700 uppercase tracking-wide">
+                      Desprendible adicional
+                      <span className="ml-2 text-[9px] font-bold bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full normal-case tracking-normal">Opcional</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {paystub2File ? paystub2File.name : 'Si tienes un segundo desprendible de nómina, súbelo aquí — agilizará el análisis de tu crédito'}
+                    </p>
+                  </div>
+                  {paystub2File && (
+                    <button
+                      type="button"
+                      onClick={e => { e.preventDefault(); setPaystub2File(null); }}
+                      className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </label>
               </div>
 
               {/* Gate: cédula obligatoria antes de contacto */}

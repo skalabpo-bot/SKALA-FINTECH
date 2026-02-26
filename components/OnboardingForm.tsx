@@ -316,9 +316,6 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
               <div className="bg-gradient-to-br from-slate-50/80 to-orange-50/30 p-6 md:p-8 rounded-2xl border border-slate-100/80 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                   <p className="col-span-full font-black text-primary text-[11px] uppercase tracking-widest mb-2">REFERENCIA No. 1</p>
                   <Input label="Nombre Completo" name="ref1Nombre" value={formData.ref1Nombre} onChange={handleChange} />
-                  <Input label="Cédula" name="ref1Cedula" value={formData.ref1Cedula} onChange={handleChange} placeholder="Sin puntos" />
-                  <Input label="Fecha Expedición" name="ref1FechaExpedicion" type="date" value={formData.ref1FechaExpedicion} onChange={handleChange} />
-                  <Input label="Fecha Nacimiento" name="ref1FechaNacimiento" type="date" value={formData.ref1FechaNacimiento} onChange={handleChange} />
                   <Input label="Celular / Tel" name="ref1Telefono" value={formData.ref1Telefono} onChange={handleChange} />
                   <Input label="Dirección" name="ref1Direccion" value={formData.ref1Direccion} onChange={handleChange} />
                   <Select label="Ciudad" name="ref1Ciudad" value={formData.ref1Ciudad} onChange={handleChange} options={cities} />
@@ -329,9 +326,6 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
               <div className="bg-gradient-to-br from-slate-50/80 to-orange-50/30 p-6 md:p-8 rounded-2xl border border-slate-100/80 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                   <p className="col-span-full font-black text-primary text-[11px] uppercase tracking-widest mb-2">REFERENCIA No. 2</p>
                   <Input label="Nombre Completo" name="ref2Nombre" value={formData.ref2Nombre} onChange={handleChange} />
-                  <Input label="Cédula" name="ref2Cedula" value={formData.ref2Cedula} onChange={handleChange} placeholder="Sin puntos" />
-                  <Input label="Fecha Expedición" name="ref2FechaExpedicion" type="date" value={formData.ref2FechaExpedicion} onChange={handleChange} />
-                  <Input label="Fecha Nacimiento" name="ref2FechaNacimiento" type="date" value={formData.ref2FechaNacimiento} onChange={handleChange} />
                   <Input label="Celular / Tel" name="ref2Telefono" value={formData.ref2Telefono} onChange={handleChange} />
                   <Input label="Dirección" name="ref2Direccion" value={formData.ref2Direccion} onChange={handleChange} />
                   <Select label="Ciudad" name="ref2Ciudad" value={formData.ref2Ciudad} onChange={handleChange} options={cities} />
