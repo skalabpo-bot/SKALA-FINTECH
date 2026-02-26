@@ -372,7 +372,7 @@ export const AdminDashboard: React.FC = () => {
 
         await saveAd({
             ...editingAd as AdConfig,
-            content: finalContent
+            content: finalContent ?? ''
         }, isEditingAdId);
 
         setEditingAd({ slotId: 'top-leaderboard', type: 'image', active: true, content: '', name: '', linkUrl: '', startDate: '', endDate: '' });
@@ -570,6 +570,103 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
                             <p className="text-[10px] text-slate-400 mt-1.5">Costos que se descuentan al calcular el monto a desembolsar</p>
+                          </div>
+
+                          {/* Políticas de Cartera */}
+                          <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+                            <h5 className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-3">Políticas de Compra de Cartera</h5>
+                            <div className="mb-3">
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Máx. carteras permitidas (0 = sin límite)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                className={inputClass}
+                                value={editingEntity.maxCartera ?? ''}
+                                onChange={e => setEditingEntity({...editingEntity, maxCartera: e.target.value !== '' ? Number(e.target.value) : undefined})}
+                                placeholder="Ej: 2 (dejar vacío = sin límite)"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Excepciones por pagaduría</label>
+                              <p className="text-[10px] text-slate-400 mb-2">Pagadurías con un límite diferente al general</p>
+                              {Object.entries(editingEntity.pagaduriaMaxCartera ?? {}).map(([pag, max]) => (
+                                <div key={pag} className="flex gap-2 items-center mb-2">
+                                  <span className="flex-1 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2 truncate">{pag}</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="w-20 text-xs px-2 py-2 border border-slate-200 rounded-lg text-center font-bold"
+                                    value={max}
+                                    onChange={e => {
+                                      const updated = { ...(editingEntity.pagaduriaMaxCartera ?? {}), [pag]: Number(e.target.value) };
+                                      setEditingEntity({...editingEntity, pagaduriaMaxCartera: updated});
+                                    }}
+                                  />
+                                  <button type="button" onClick={() => {
+                                    const updated = { ...(editingEntity.pagaduriaMaxCartera ?? {}) };
+                                    delete updated[pag];
+                                    setEditingEntity({...editingEntity, pagaduriaMaxCartera: updated});
+                                  }} className="text-red-400 hover:text-red-600 font-bold text-sm px-2">✕</button>
+                                </div>
+                              ))}
+                              <div className="flex gap-2 items-center mt-2">
+                                <input
+                                  type="text"
+                                  id="new-pag-exception-name"
+                                  placeholder="Pagaduría (ej: MINDEFENSA)"
+                                  className="flex-1 text-xs px-3 py-2 border border-amber-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                />
+                                <input
+                                  type="number"
+                                  id="new-pag-exception-max"
+                                  placeholder="Máx"
+                                  min="0"
+                                  className="w-20 text-xs px-2 py-2 border border-amber-200 bg-white rounded-lg text-center focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                />
+                                <button type="button" onClick={() => {
+                                  const nameEl = document.getElementById('new-pag-exception-name') as HTMLInputElement;
+                                  const maxEl = document.getElementById('new-pag-exception-max') as HTMLInputElement;
+                                  if (!nameEl.value.trim()) return;
+                                  const updated = { ...(editingEntity.pagaduriaMaxCartera ?? {}), [nameEl.value.trim().toUpperCase()]: Number(maxEl.value) || 1 };
+                                  setEditingEntity({...editingEntity, pagaduriaMaxCartera: updated});
+                                  nameEl.value = ''; maxEl.value = '';
+                                }} className="text-amber-700 hover:text-amber-900 font-bold text-lg px-2">+</button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Comisiones por Producto */}
+                          <div className="bg-green-50 p-4 rounded-xl border border-green-200">
+                            <h5 className="text-xs font-bold text-green-800 uppercase tracking-wide mb-3">Comisiones por Producto (%)</h5>
+                            <p className="text-[10px] text-green-700 mb-3">Porcentaje de comisión que gana el asesor sobre el monto aprobado</p>
+                            <div className="space-y-2">
+                              {['Libre Inversión', 'Compra de Cartera', 'Oro', 'Platino', 'Zafiro'].map(prod => (
+                                <div key={prod} className="flex items-center gap-3">
+                                  <span className="text-xs font-semibold text-slate-700 w-36 flex-shrink-0">{prod}</span>
+                                  <div className="relative flex-1">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="20"
+                                      step="0.1"
+                                      className="w-full text-xs px-3 py-2 pr-7 border border-green-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-green-400 font-bold text-right"
+                                      value={editingEntity.commissions?.[prod] ?? ''}
+                                      placeholder="0"
+                                      onChange={e => {
+                                        const val = e.target.value !== '' ? Number(e.target.value) : undefined;
+                                        const updated = { ...(editingEntity.commissions ?? {}) };
+                                        if (val !== undefined) updated[prod] = val;
+                                        else delete updated[prod];
+                                        setEditingEntity({...editingEntity, commissions: updated});
+                                      }}
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
 
                           <div className="pt-2">

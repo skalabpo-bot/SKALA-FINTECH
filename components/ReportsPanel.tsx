@@ -10,6 +10,7 @@ const ALL_AVAILABLE_COLUMNS = [
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',
     'pagaduria', 'clave_pagaduria',
     'linea_credito', 'monto', 'monto_desembolso', 'plazo', 'entidad', 'tasa', 'comision_porcentaje', 'comision_estimada',
+    'comision_pagada', 'fecha_pago_comision',
     'gastos_mensuales', 'activos', 'pasivos', 'patrimonio',
     'tipo_desembolso', 'banco_cliente', 'tipo_cuenta', 'numero_cuenta',
     'ref1_nombre', 'ref1_telefono', 'ref2_nombre', 'ref2_telefono',
@@ -22,7 +23,7 @@ const DEFAULT_COLUMNS = [
 ];
 
 export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => {
-    const [filters, setFilters] = useState<ReportFilters>({ startDate: '', endDate: '', statusId: '', entity: '' });
+    const [filters, setFilters] = useState<ReportFilters>({ startDate: '', endDate: '', statusId: '', entity: '', comisionPagada: '' });
     const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_COLUMNS);
     const [showColumnSelector, setShowColumnSelector] = useState(false);
     const [states, setStates] = useState<any[]>([]);
@@ -64,7 +65,7 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end mb-12 bg-slate-50 p-8 rounded-3xl border border-slate-200">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-end mb-12 bg-slate-50 p-8 rounded-3xl border border-slate-200">
                 <div className="space-y-2">
                     <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><Calendar size={14}/> Desde</label>
                     <input type="date" value={filters.startDate} onChange={e => setFilters({...filters, startDate: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"/>
@@ -78,6 +79,14 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                     <select value={filters.statusId} onChange={e => setFilters({...filters, statusId: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm cursor-pointer">
                         <option value="">Todos los estados</option>
                         {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                </div>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><CreditCard size={14}/> Comisión</label>
+                    <select value={filters.comisionPagada} onChange={e => setFilters({...filters, comisionPagada: e.target.value as any})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm cursor-pointer">
+                        <option value="">Todas</option>
+                        <option value="pagada">Solo pagadas</option>
+                        <option value="pendiente">Solo pendientes</option>
                     </select>
                 </div>
                 <button onClick={handleDownloadCSV} disabled={isExporting} className="flex justify-center items-center space-x-2 px-10 py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 shadow-2xl transition-all disabled:opacity-50 transform active:scale-95">

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, UserDocument, Zone, Permission, ALL_PERMISSIONS } from '../types';
 import { MockService } from '../services/mockService';
-import { Users, Plus, Pencil, Trash, X, Eye, CreditCard, MapPin, Shield, CheckCircle, XCircle, FileText, Download, CheckSquare, Square, Paperclip, Loader2, Search } from 'lucide-react';
+import { Users, Plus, Pencil, Trash, X, Eye, CreditCard, MapPin, Shield, CheckCircle, XCircle, FileText, Download, Upload, CheckSquare, Square, Paperclip, Loader2, Search, KeyRound } from 'lucide-react';
 
 const InputGroup = ({ label, name, value, onChange, type = "text", options }: any) => (
     <div>
@@ -38,12 +38,102 @@ export const UserManagement = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [viewDetailUser, setViewDetailUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'ACTIVE' | 'PENDING'>('ACTIVE');
+  const [activeTab, setActiveTab] = useState<'ACTIVE' | 'PENDING' | 'IMPORT_EXPORT'>('ACTIVE');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   
   // Animation State
   const [animatingId, setAnimatingId] = useState<string | null>(null);
+  const [sendingReset, setSendingReset] = useState<string | null>(null);
+
+  // Batch import state
+  type BatchRow = { nombre: string; email: string; cedula: string; rol: string; password: string; telefono: string; ciudad: string };
+  type BatchResult = { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string };
+  const [csvText, setCsvText] = useState('');
+  const [parsedRows, setParsedRows] = useState<BatchRow[]>([]);
+  const [importResults, setImportResults] = useState<BatchResult[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleSendPasswordReset = async (user: User) => {
+    if (!user.email) return;
+    setSendingReset(user.id);
+    try {
+      await MockService.resetPassword(user.email);
+      alert(`✅ Correo de recuperación enviado a ${user.email}`);
+    } catch (e: any) {
+      alert(`Error: ${e.message}`);
+    } finally {
+      setSendingReset(null);
+    }
+  };
+
+  const TEMPLATE_HEADERS = 'nombre,email,cedula,rol,contraseña,telefono,ciudad';
+  const TEMPLATE_EXAMPLE = [
+    TEMPLATE_HEADERS,
+    'Juan Pérez,juan@skala.co,12345678,GESTOR,Clave123!,3001234567,Bogotá',
+    'María García,maria@skala.co,87654321,ANALISTA,Clave123!,3109876543,Medellín',
+  ].join('\n');
+
+  const parseCSV = (text: string): BatchRow[] => {
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace('contraseña', 'password').replace('ñ', 'n'));
+    return lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const obj: any = {};
+      headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+      return { nombre: obj.nombre || '', email: obj.email || '', cedula: obj.cedula || '', rol: obj.rol || 'GESTOR', password: obj.password || obj['contrasena'] || '', telefono: obj.telefono || '', ciudad: obj.ciudad || '' };
+    }).filter(r => r.email && r.cedula);
+  };
+
+  const handleParseCSV = () => {
+    const rows = parseCSV(csvText);
+    setParsedRows(rows);
+    setImportResults([]);
+  };
+
+  const handleImport = async () => {
+    if (parsedRows.length === 0) return;
+    setImporting(true);
+    try {
+      const results = await (MockService as any).batchCreateUsers(parsedRows);
+      setImportResults(results);
+      refreshUsers();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const csv = await (MockService as any).exportUsersCSV();
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `usuarios_skala_${new Date().toLocaleDateString('es-CO').replace(/\//g, '-')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob(['\uFEFF' + TEMPLATE_EXAMPLE], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plantilla_usuarios.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Form State
   const [formData, setFormData] = useState<Partial<User>>({});
@@ -201,6 +291,9 @@ export const UserManagement = () => {
                 Solicitudes ({pendingUsers.length})
                 {pendingUsers.length > 0 && <span className="absolute top-2 right-0 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
             </button>
+            <button onClick={() => setActiveTab('IMPORT_EXPORT')} className={`px-4 py-2 font-bold text-sm border-b-2 transition-colors ${activeTab === 'IMPORT_EXPORT' ? 'border-primary text-primary' : 'border-transparent text-slate-500'}`}>
+                Importar / Exportar
+            </button>
         </div>
         
         {loading ? (
@@ -239,6 +332,7 @@ export const UserManagement = () => {
                                         <div className="flex justify-end gap-2">
                                             <button onClick={() => setViewDetailUser(u)} className="p-2 bg-slate-100 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors" title="Ver Detalle"><Eye size={16}/></button>
                                             <button onClick={() => handleEdit(u)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="Editar"><Pencil size={16}/></button>
+                                            <button onClick={() => handleSendPasswordReset(u)} disabled={sendingReset === u.id} className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-40" title="Enviar reset de contraseña">{sendingReset === u.id ? <Loader2 size={16} className="animate-spin"/> : <KeyRound size={16}/>}</button>
                                             <button onClick={() => handleDelete(u.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors" title="Eliminar"><Trash size={16}/></button>
                                         </div>
                                     </td>
@@ -248,7 +342,7 @@ export const UserManagement = () => {
                     </table>
                 </div>
             </div>
-        ) : (
+        ) : activeTab === 'PENDING' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {pendingUsers.length === 0 && <div className="col-span-2 text-center text-slate-400 py-10">No hay solicitudes pendientes.</div>}
                 {pendingUsers.map(u => (
@@ -280,6 +374,138 @@ export const UserManagement = () => {
                         </div>
                     </div>
                 ))}
+            </div>
+        ) : (
+            /* ── IMPORTAR / EXPORTAR ── */
+            <div className="space-y-6">
+                {/* Exportar */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                    <h3 className="font-bold text-slate-800 text-base mb-1 flex items-center gap-2">
+                        <Download size={18} className="text-primary"/> Exportar Usuarios
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-4">Descarga todos los usuarios activos en formato CSV (compatible con Excel).</p>
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting}
+                        className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-orange-700 transition-colors disabled:opacity-50"
+                    >
+                        {exporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                        {exporting ? 'Generando...' : 'Descargar CSV de Usuarios'}
+                    </button>
+                </div>
+
+                {/* Importar */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-4">
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-base mb-1 flex items-center gap-2">
+                            <Upload size={18} className="text-primary"/> Importar Usuarios desde CSV
+                        </h3>
+                        <p className="text-sm text-slate-500">Carga múltiples usuarios a la vez. Se omiten automáticamente los que ya existen por cédula o email.</p>
+                    </div>
+
+                    {/* Template */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+                        <div>
+                            <p className="text-sm font-bold text-slate-700">Plantilla de ejemplo</p>
+                            <p className="text-xs text-slate-500">Descarga el archivo CSV con las columnas requeridas y datos de ejemplo.</p>
+                        </div>
+                        <button onClick={downloadTemplate} className="flex items-center gap-2 text-sm border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors font-medium">
+                            <Download size={14}/> Plantilla
+                        </button>
+                    </div>
+
+                    {/* CSV Input */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pega el contenido CSV aquí</label>
+                        <textarea
+                            value={csvText}
+                            onChange={e => { setCsvText(e.target.value); setParsedRows([]); setImportResults([]); }}
+                            placeholder={"nombre,email,cedula,rol,contraseña,telefono,ciudad,banco\nJuan Pérez,juan@email.com,12345678,GESTOR,Pass1234!,3001234567,Bogotá,Bancolombia"}
+                            rows={6}
+                            className="w-full border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+                        />
+                    </div>
+                    <button
+                        onClick={handleParseCSV}
+                        disabled={!csvText.trim()}
+                        className="flex items-center gap-2 border border-primary text-primary px-4 py-2 rounded-xl font-bold text-sm hover:bg-orange-50 transition-colors disabled:opacity-40"
+                    >
+                        <Eye size={16}/> Previsualizar ({csvText.trim() ? csvText.trim().split('\n').length - 1 : 0} filas)
+                    </button>
+
+                    {/* Preview Table */}
+                    {parsedRows.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-[10px]">
+                                        <tr className="border-b">
+                                            <th className="p-3">Nombre</th>
+                                            <th className="p-3">Email</th>
+                                            <th className="p-3">Cédula</th>
+                                            <th className="p-3">Rol</th>
+                                            <th className="p-3">Contraseña</th>
+                                            <th className="p-3">Teléfono</th>
+                                            <th className="p-3">Ciudad</th>
+                                            <th className="p-3">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {parsedRows.map((row, i) => {
+                                            const result = importResults.find(r => r.email === row.email);
+                                            return (
+                                                <tr key={i} className={`border-b ${result?.status === 'creado' ? 'bg-green-50' : result?.status === 'omitido' ? 'bg-amber-50' : result?.status === 'error' ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                                                    <td className="p-3 font-medium text-slate-800">{row.nombre}</td>
+                                                    <td className="p-3 text-slate-600">{row.email}</td>
+                                                    <td className="p-3 text-slate-600">{row.cedula}</td>
+                                                    <td className="p-3"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{row.rol}</span></td>
+                                                    <td className="p-3 text-slate-400 tracking-widest">{'•'.repeat(Math.min(row.password?.length || 0, 8))}</td>
+                                                    <td className="p-3 text-slate-600">{row.telefono}</td>
+                                                    <td className="p-3 text-slate-600">{row.ciudad}</td>
+                                                    <td className="p-3">
+                                                        {result ? (
+                                                            <div className="space-y-1">
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${result.status === 'creado' ? 'bg-green-100 text-green-700' : result.status === 'omitido' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                                                    {result.status === 'creado' ? '✓ Creado' : result.status === 'omitido' ? '↷ Omitido' : '✗ Error'}
+                                                                </span>
+                                                                {result.motivo && (
+                                                                    <p className={`text-[9px] font-medium leading-tight ${result.status === 'error' ? 'text-red-500' : 'text-amber-500'}`}>{result.motivo}</p>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Nuevo</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Results summary */}
+                            {importResults.length > 0 && (
+                                <div className="flex gap-4 text-sm font-medium">
+                                    <span className="text-green-600">✓ {importResults.filter(r => r.status === 'creado').length} creados</span>
+                                    <span className="text-amber-600">↷ {importResults.filter(r => r.status === 'omitido').length} omitidos</span>
+                                    <span className="text-red-600">✗ {importResults.filter(r => r.status === 'error').length} errores</span>
+                                </div>
+                            )}
+
+                            {/* Import Button */}
+                            {importResults.length === 0 && (
+                                <button
+                                    onClick={handleImport}
+                                    disabled={importing || parsedRows.length === 0}
+                                    className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-700 transition-colors disabled:opacity-50"
+                                >
+                                    {importing ? <Loader2 size={16} className="animate-spin"/> : <Upload size={16}/>}
+                                    {importing ? 'Importando...' : `Importar ${parsedRows.length} usuario${parsedRows.length !== 1 ? 's' : ''}`}
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
         )}
 
@@ -332,7 +558,7 @@ export const UserManagement = () => {
                             </div>
                         </div>
 
-                        <InputGroup label="Contraseña" name="password" type="password" value={formData.password} onChange={handleInputChange} />
+                        <InputGroup label="Contraseña" name="password" type="password" value={(formData as any).password} onChange={handleInputChange} />
                         
                         <div className="col-span-1 md:col-span-2 border-t border-slate-100 pt-4 mt-2 font-bold text-slate-700 flex items-center gap-2"><MapPin size={16}/> Ubicación</div>
                         <InputGroup label="Ciudad" name="city" value={formData.city} onChange={handleInputChange} options={cities} />

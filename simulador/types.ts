@@ -17,6 +17,10 @@ export interface FinancialEntity {
   secondaryColor: string; // Mapped from secondary_color
   cashFee: number; // Gastos retiro efectivo, mapped from cash_fee
   bankFee: number; // Gastos retiro bancaria, mapped from bank_fee
+  pagadurias: string[]; // Pagadurías compatibles (vacío = no aparece en ninguna)
+  maxCartera?: number; // Máximo de compras de cartera permitidas (null = sin límite)
+  pagaduriaMaxCartera?: Record<string, number>; // Override por pagaduría, ej: {"MINDEFENSA": 1}
+  commissions?: Record<string, number>; // Comisión (%) por producto, ej: {"Libre Inversión": 3.5, "Compra de Cartera": 2.8}
 }
 
 export interface FPMEntry {
@@ -97,6 +101,8 @@ export interface LoanConfiguration {
   cashFee: number; // Gastos retiro efectivo de la entidad
   bankFee: number; // Gastos retiro bancaria de la entidad
   carteraItems?: CarteraItem[]; // Detalle de carteras a recoger (entidad + cuota)
+  customQuota?: number; // Cuota personalizada (override de availableQuota del análisis)
+  commissions?: Record<string, number>; // Comisiones por producto, pasadas desde la entidad
 }
 
 export interface SimulationResult {
@@ -109,6 +115,7 @@ export interface SimulationResult {
   maxAmount: number;
   isViable: boolean;
   discountPct: number; // Descuento seguro y aval (%)
+  commissionPct?: number; // Comisión del asesor (%) para este producto
 }
 
 export enum AppStep {

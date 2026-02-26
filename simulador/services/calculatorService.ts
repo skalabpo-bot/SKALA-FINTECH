@@ -98,6 +98,7 @@ export const simulateLoan = (
       maxAmount: Math.floor(maxAmount),
       isViable: adjustedQuota > 0 && maxAmount > 500000,
       discountPct: entry.discountPct ?? 0,
+      commissionPct: config.commissions?.[entry.product] ?? undefined,
     });
   });
 

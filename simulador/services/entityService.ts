@@ -14,6 +14,10 @@ const mapFromDb = (row: any): FinancialEntity => ({
   secondaryColor: row.secondary_color,
   cashFee: Number(row.cash_fee ?? 15157),
   bankFee: Number(row.bank_fee ?? 7614),
+  pagadurias: Array.isArray(row.pagadurias) ? row.pagadurias : [],
+  maxCartera: row.max_cartera != null ? Number(row.max_cartera) : undefined,
+  pagaduriaMaxCartera: row.pagaduria_max_cartera ?? undefined,
+  commissions: row.commissions ?? undefined,
 });
 
 export const getAllEntities = async (): Promise<FinancialEntity[]> => {
@@ -61,6 +65,9 @@ export const saveEntity = async (entity: Omit<FinancialEntity, 'id'>, id?: strin
     secondary_color: entity.secondaryColor,
     cash_fee: entity.cashFee ?? 15157,
     bank_fee: entity.bankFee ?? 7614,
+    max_cartera: entity.maxCartera ?? null,
+    pagaduria_max_cartera: entity.pagaduriaMaxCartera ?? {},
+    commissions: entity.commissions ?? {},
   };
 
   if (id) {

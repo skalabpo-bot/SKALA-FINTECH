@@ -12,9 +12,12 @@ import { AutomationsPanel } from './components/AutomationsPanel';
 import { NotificationsView } from './components/NotificationsView';
 import { ProfileView } from './components/ProfileView';
 import { UserManagement } from './components/UserManagement';
+import { WalletView } from './components/WalletView';
+import { WithdrawalPanel } from './components/WithdrawalPanel';
 import { User, Credit, UserDocument, Zone, UserRole } from './types';
 import { MockService } from './services/mockService';
-import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { supabase } from './services/supabaseClient';
+import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     window.dispatchEvent(new CustomEvent('app-alert', { detail: { message, type } }));
@@ -28,6 +31,7 @@ interface Toast {
 
 const App = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [prefilledCreditData, setPrefilledCreditData] = useState<Record<string, any> | null>(null);
@@ -38,6 +42,10 @@ const App = () => {
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
   
   const [regData, setRegData] = useState({
     name: '', email: '', phone: '', password: '', cedula: '', city: '',
@@ -56,6 +64,79 @@ const App = () => {
     };
     loadLists();
   }, []);
+
+  // Restaurar sesión activa al refrescar la página
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles').select('*').eq('id', session.user.id).single();
+          if (profile && profile.status === 'ACTIVE') {
+            const user: User = {
+              id: profile.id,
+              name: profile.full_name || 'Usuario',
+              email: profile.email,
+              role: profile.role as UserRole,
+              avatar: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.full_name || 'U')}&background=EA580C&color=fff`,
+              status: profile.status,
+              phone: profile.phone,
+              cedula: profile.cedula,
+              city: profile.city,
+              zoneId: profile.zone_id,
+              banco: profile.bank_details?.banco,
+              tipoCuenta: profile.bank_details?.tipoCuenta,
+              numeroCuenta: profile.bank_details?.numeroCuenta,
+              permissions: profile.permissions || [],
+              documents: profile.registration_docs || [],
+            };
+            setCurrentUser(user);
+          }
+        }
+      } catch (_) {
+        // sin sesión, mostrar login
+      } finally {
+        setSessionChecked(true);
+      }
+    };
+    checkSession();
+  }, []);
+
+  // Detectar token de recuperación de contraseña enviado por Supabase
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordReset(true);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== newPasswordConfirm) {
+      dispatchAlert('Las contraseñas no coinciden.', 'error');
+      return;
+    }
+    if (newPassword.length < 8) {
+      dispatchAlert('La contraseña debe tener al menos 8 caracteres.', 'error');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      dispatchAlert('¡Contraseña actualizada! Ya puedes ingresar.', 'success');
+      setShowPasswordReset(false);
+      setNewPassword('');
+      setNewPasswordConfirm('');
+    } catch (err: any) {
+      dispatchAlert(err.message || 'Error al actualizar contraseña.', 'error');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   // Sistema de alertas para pantalla de login
   useEffect(() => {
@@ -180,6 +261,7 @@ const App = () => {
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
+    const [togglingComm, setTogglingComm] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -190,6 +272,21 @@ const App = () => {
         };
         fetchData();
     }, [currentView]);
+
+    const handleToggleCommission = async (creditId: string, currentPaid: boolean) => {
+        setTogglingComm(creditId);
+        try {
+            await MockService.markCommissionPaid(creditId, !currentPaid, currentUser!.id);
+            setCredits(prev => prev.map(c => c.id === creditId
+                ? { ...c, comisionPagada: !currentPaid, fechaPagoComision: !currentPaid ? new Date().toISOString() : undefined }
+                : c
+            ));
+        } catch (e: any) {
+            dispatchAlert(e.message || 'Error al actualizar comisión', 'error');
+        } finally {
+            setTogglingComm(null);
+        }
+    };
 
     const activeFilterCount = [filterStatus, filterEntity, filterDateFrom, filterDateTo].filter(Boolean).length;
 
@@ -298,6 +395,26 @@ const App = () => {
                     <td className="px-8 py-6 font-black text-slate-800 text-base">${c.monto?.toLocaleString()}</td>
                     <td className="px-8 py-6">
                         <span className={`px-4 py-1.5 rounded-full text-white text-[9px] font-black uppercase tracking-wider shadow-sm ${states.find(s=>s.id===c.statusId)?.color}`}>{states.find(s=>s.id===c.statusId)?.name}</span>
+                        {states.find(s=>s.id===c.statusId)?.name?.includes('DESEMBOLSADO') && (
+                          c.comisionPagada
+                            // Ya cobrada: badge estático bloqueado (no se puede revertir desde la bandeja)
+                            ? <div className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                                <CheckCircle2 size={10} /> Cobrada{c.fechaPagoComision ? ` · ${new Date(c.fechaPagoComision).toLocaleDateString('es-CO', {day:'2-digit',month:'2-digit',year:'2-digit'})}` : ''}
+                              </div>
+                            // Pendiente: botón solo si tiene permiso
+                            : MockService.hasPermission(currentUser!, 'MARK_COMMISSION_PAID')
+                              ? <button
+                                  onClick={e => { e.stopPropagation(); handleToggleCommission(c.id, false); }}
+                                  disabled={togglingComm === c.id}
+                                  title="Clic para marcar como cobrada"
+                                  className="mt-1.5 flex items-center gap-1 text-[9px] font-black rounded-full px-2 py-0.5 transition-all border text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100 disabled:opacity-50"
+                                >
+                                  {togglingComm === c.id ? <span className="animate-pulse">...</span> : <><Clock size={10} /> Pendiente</>}
+                                </button>
+                              : <div className="mt-1.5 flex items-center gap-1 text-[9px] font-black text-amber-500">
+                                  <Clock size={10} /> Comisión pendiente
+                                </div>
+                        )}
                     </td>
                     <td className="px-8 py-6">
                         <p className="text-[10px] font-bold text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</p>
@@ -318,6 +435,54 @@ const App = () => {
       </div>
     );
   };
+
+  if (showPasswordReset) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border border-slate-100 animate-fade-in space-y-6">
+          <div className="text-center">
+            <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <KeyRound size={28} className="text-primary" />
+            </div>
+            <h2 className="text-2xl font-display font-black text-slate-800">Nueva Contraseña</h2>
+            <p className="text-sm text-slate-400 mt-1">Ingresa tu nueva contraseña para continuar</p>
+          </div>
+          <form onSubmit={handleSetNewPassword} className="space-y-4">
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nueva contraseña</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full px-5 py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-primary transition-all"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Confirmar contraseña</label>
+              <input
+                type="password"
+                value={newPasswordConfirm}
+                onChange={e => setNewPasswordConfirm(e.target.value)}
+                placeholder="Repite la contraseña"
+                className="w-full px-5 py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-primary transition-all"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="w-full bg-primary text-white font-black py-4 rounded-2xl hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {savingPassword ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+              {savingPassword ? 'Guardando...' : 'Guardar Nueva Contraseña'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (
@@ -358,7 +523,7 @@ const App = () => {
                   <button type="submit" disabled={isBusy} className="w-full bg-primary text-white font-black py-5 rounded-[1.5rem] shadow-2xl shadow-primary/30 hover:bg-orange-600 transition-all uppercase tracking-widest text-xs">
                     {isBusy ? <Loader2 className="animate-spin mx-auto"/> : 'Entrar a Plataforma'}
                   </button>
-                  <button type="button" onClick={()=>setAuthView('REGISTER')} className="w-full text-[10px] font-black text-slate-400 mt-6 uppercase tracking-[0.2em] hover:text-primary transition-all">Solicitar ser Gestor Aliado →</button>
+                  <button type="button" onClick={()=>setAuthView('REGISTER')} className="w-full text-sm font-black text-primary/80 mt-6 hover:text-primary transition-all flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-primary/20 hover:border-primary/50 hover:bg-primary/5">🤝 Quiero ser Gestor</button>
                </form>
            ) : authView === 'FORGOT_PASSWORD' ? (
                <form onSubmit={handlePasswordRecovery} className="space-y-6">
@@ -440,9 +605,19 @@ const App = () => {
     );
   };
 
+  if (!sessionChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-primary" size={40} />
+      </div>
+    );
+  }
+
   return (
-    <Layout currentUser={currentUser} onLogout={() => setCurrentUser(null)} currentView={currentView} onChangeView={setCurrentView}>
-      {currentView === 'dashboard' && <Dashboard currentUser={currentUser} />}
+    <Layout currentUser={currentUser} onLogout={() => { setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
+      {currentView === 'dashboard' && <Dashboard currentUser={currentUser} onNavigate={setCurrentView} />}
+      {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
+      {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
         <SimulatorView
           currentUser={currentUser}
