@@ -102,17 +102,27 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [correo, setCorreo] = useState('');
   const [telefonoCelular, setTelefonoCelular] = useState('');
   const [direccionCompleta, setDireccionCompleta] = useState('');
+  const [barrio, setBarrio] = useState('');
+  const [ciudadResidencia, setCiudadResidencia] = useState('');
+  const [estadoCivil, setEstadoCivil] = useState('');
+  const [cities, setCities] = useState<string[]>([]);
 
   // Línea de crédito (desde BD)
   const [creditLines, setCreditLines] = useState<string[]>([]);
   const [lineaCredito, setLineaCredito] = useState('');
 
+  // Pagaduría seleccionada (step previo al desprendible)
+  const [selectedPagaduria, setSelectedPagaduria] = useState('');
+  const [pagaduriaItems, setPagaduriaItems] = useState<{ name: string; tipo: string }[]>([]);
+
   const [isCreating, setIsCreating] = useState(false);
 
-  // Cargar líneas de crédito y tipos de pensión desde la BD
+  // Cargar líneas de crédito, tipos de pensión, ciudades y pagadurías desde la BD
   useEffect(() => {
     MockService.getCreditLines().then((lines: string[]) => setCreditLines(lines));
     MockService.getPensionTypes().then((types: string[]) => setPensionTypes(types));
+    MockService.getCities().then((c: string[]) => setCities(c));
+    MockService.getPagaduriaItems().then((items: { name: string; tipo: string }[]) => setPagaduriaItems(items));
   }, []);
 
   // Pre-seleccionar línea de crédito según la simulación elegida
@@ -134,7 +144,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     setIsProcessing(true);
     try {
       const fpmTable = await getFPMTable();
-      const results = simulateLoan(analysisResult.availableQuota, config, fpmTable);
+      const results = simulateLoan(config.customQuota ?? analysisResult.availableQuota, config, fpmTable);
       setLoanConfig(config);
       setSimulations(results);
       setSelectedSimIdx(null);
@@ -167,6 +177,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     setTipoPension('');
     setResolucionPensionFile(null);
     setDictamenFile(null);
+    setBarrio('');
+    setCiudadResidencia('');
+    setEstadoCivil('');
+    setSelectedPagaduria('');
     setCurrentStep(AppStep.PAYSTUB_UPLOAD);
   };
 
@@ -232,6 +246,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       correo: correo.trim(),
       telefonoCelular: telefonoCelular.trim(),
       ...(direccionCompleta.trim() ? { direccionCompleta: direccionCompleta.trim() } : {}),
+      ...(barrio.trim() ? { barrio: barrio.trim() } : {}),
+      ...(ciudadResidencia ? { ciudadResidencia } : {}),
+      ...(estadoCivil ? { estadoCivil } : {}),
     };
 
     const fromPayroll: Record<string, any> = {
@@ -283,7 +300,21 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     .map((s, i) => ({ ...s, originalIdx: i }))
     .filter(s => s.isViable);
 
-  const canCreate = correo.trim() !== '' && telefonoCelular.trim() !== '' && direccionCompleta.trim() !== '';
+  const cedulaReady = clientData !== null;
+
+  // Validaciones inline
+  const errCorreo = correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim()) ? 'Formato inválido (ej: nombre@correo.com)' : '';
+  const errCelular = telefonoCelular.trim() && !/^\d{7,10}$/.test(telefonoCelular.replace(/\s/g, '')) ? 'Debe tener 7 a 10 dígitos, sin letras' : '';
+  const errDireccion = direccionCompleta.trim() && !/[a-zA-Z]/.test(direccionCompleta) ? 'Incluye letras en la dirección (Ej: Calle 5 # 10-23, no solo números)' : '';
+  const errBarrio = barrio.trim() && /^\d+$/.test(barrio.trim()) ? 'El barrio no puede ser solo números' : '';
+
+  const canCreate = cedulaReady &&
+    correo.trim() !== '' && !errCorreo &&
+    telefonoCelular.trim() !== '' && !errCelular &&
+    direccionCompleta.trim() !== '' && !errDireccion &&
+    barrio.trim() !== '' && !errBarrio &&
+    ciudadResidencia !== '' &&
+    estadoCivil !== '';
 
   const STEP_LABELS = ['Nómina', 'Verificar', 'Configurar', 'Resultados'];
   const stepIndex = currentStep as number;
@@ -331,9 +362,44 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         ))}
       </div>
 
-      {/* Paso 1 y 2: Nómina */}
-      {(currentStep === AppStep.PAYSTUB_UPLOAD || currentStep === AppStep.VERIFY_DATA) && (
+      {/* Paso 1 y 2: Nómina — Gate de pagaduría */}
+      {(currentStep === AppStep.PAYSTUB_UPLOAD || currentStep === AppStep.VERIFY_DATA) && !selectedPagaduria && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-xl text-primary text-xl">🏦</div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">Selecciona la Pagaduría</h3>
+                <p className="text-xs text-slate-500">¿A qué pagaduría pertenece el cliente? Esto filtra las entidades disponibles.</p>
+              </div>
+            </div>
+            <select
+              value={selectedPagaduria}
+              onChange={e => setSelectedPagaduria(e.target.value)}
+              className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 px-4 text-slate-800 font-semibold focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
+            >
+              <option value="">-- Selecciona una pagaduría --</option>
+              {Array.from(new Set(pagaduriaItems.map(p => p.tipo))).map(tipo => (
+                <optgroup key={tipo} label={tipo}>
+                  {pagaduriaItems.filter(p => p.tipo === tipo).map(p => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Paso 1 y 2: Nómina (solo si ya seleccionó pagaduría) */}
+      {(currentStep === AppStep.PAYSTUB_UPLOAD || currentStep === AppStep.VERIFY_DATA) && selectedPagaduria && (
         <div className="space-y-4">
+          {/* Chip de pagaduría seleccionada */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Pagaduría:</span>
+            <span className="bg-primary/10 text-primary text-xs font-bold px-3 py-1 rounded-full border border-primary/20">{selectedPagaduria}</span>
+            <button onClick={() => setSelectedPagaduria('')} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-medium">Cambiar</button>
+          </div>
           <FinancialForm
             initialData={
               analysisResult
@@ -385,6 +451,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           analysis={analysisResult}
           onSimulate={handleSimulate}
           onBack={() => setCurrentStep(AppStep.PAYSTUB_UPLOAD)}
+          selectedPagaduria={selectedPagaduria}
         />
       )}
 
@@ -553,48 +620,104 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 )}
               </div>
 
-              {/* Datos de contacto obligatorios */}
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                  Datos de contacto <span className="text-red-500">*obligatorios</span>
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Correo electrónico</label>
-                    <input
-                      type="email"
-                      placeholder="cliente@correo.com"
-                      value={correo}
-                      onChange={e => setCorreo(e.target.value)}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Celular</label>
-                    <input
-                      type="tel"
-                      placeholder="300 000 0000"
-                      value={telefonoCelular}
-                      onChange={e => setTelefonoCelular(e.target.value)}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Dirección de residencia <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
-                    <input
-                      type="text"
-                      placeholder="Calle, Carrera # ..."
-                      value={direccionCompleta}
-                      onChange={e => setDireccionCompleta(e.target.value)}
-                      className={inputCls}
-                    />
+              {/* Gate: cédula obligatoria antes de contacto */}
+              {!cedulaReady && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 space-y-2">
+                  <p className="text-sm font-black text-amber-800">📷 Paso obligatorio: lee la cédula con IA para continuar</p>
+                  <p className="text-xs text-amber-700">Sube las fotos de la cédula en la sección de arriba y presiona "Leer Cédula con IA". No es posible continuar sin este paso.</p>
+                </div>
+              )}
+
+              {/* Datos de contacto — solo visibles una vez cedulaReady */}
+              {cedulaReady && (
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    Datos de contacto y residencia <span className="text-red-500">*obligatorios</span>
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Correo */}
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Correo electrónico <span className="text-red-400">*</span></label>
+                      <input
+                        type="email"
+                        placeholder="cliente@correo.com"
+                        value={correo}
+                        onChange={e => setCorreo(e.target.value)}
+                        className={`${inputCls} ${errCorreo ? 'border-red-400 focus:border-red-400' : ''}`}
+                      />
+                      {errCorreo && <p className="text-[10px] text-red-500 font-bold mt-1 px-1">{errCorreo}</p>}
+                    </div>
+                    {/* Celular */}
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Celular <span className="text-red-400">*</span></label>
+                      <input
+                        type="tel"
+                        placeholder="3001234567"
+                        value={telefonoCelular}
+                        onChange={e => setTelefonoCelular(e.target.value.replace(/[^\d\s]/g, ''))}
+                        className={`${inputCls} ${errCelular ? 'border-red-400 focus:border-red-400' : ''}`}
+                      />
+                      {errCelular && <p className="text-[10px] text-red-500 font-bold mt-1 px-1">{errCelular}</p>}
+                    </div>
+                    {/* Dirección */}
+                    <div className="sm:col-span-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Dirección de residencia <span className="text-red-400">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="Calle 5 # 10-23"
+                        value={direccionCompleta}
+                        onChange={e => setDireccionCompleta(e.target.value)}
+                        className={`${inputCls} ${errDireccion ? 'border-red-400 focus:border-red-400' : ''}`}
+                      />
+                      {errDireccion && <p className="text-[10px] text-red-500 font-bold mt-1 px-1">⚠️ {errDireccion}</p>}
+                    </div>
+                    {/* Barrio */}
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Barrio <span className="text-red-400">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="Ej: El Poblado"
+                        value={barrio}
+                        onChange={e => setBarrio(e.target.value)}
+                        className={`${inputCls} ${errBarrio ? 'border-red-400 focus:border-red-400' : ''}`}
+                      />
+                      {errBarrio && <p className="text-[10px] text-red-500 font-bold mt-1 px-1">{errBarrio}</p>}
+                    </div>
+                    {/* Ciudad residencia */}
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ciudad de residencia <span className="text-red-400">*</span></label>
+                      <select
+                        value={ciudadResidencia}
+                        onChange={e => setCiudadResidencia(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="">Seleccione...</option>
+                        {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    {/* Estado civil */}
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Estado civil <span className="text-red-400">*</span></label>
+                      <select
+                        value={estadoCivil}
+                        onChange={e => setEstadoCivil(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="">Seleccione...</option>
+                        <option value="SOLTERO">Soltero(a)</option>
+                        <option value="CASADO">Casado(a)</option>
+                        <option value="UNION_LIBRE">Unión libre</option>
+                        <option value="DIVORCIADO">Divorciado(a)</option>
+                        <option value="VIUDO">Viudo(a)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {!canCreate && (
+              {cedulaReady && !canCreate && (
                 <p className="text-xs text-center text-slate-400 font-medium">
-                  Ingresa correo, celular y dirección para continuar
+                  Completa todos los campos marcados con <span className="text-red-400">*</span> para continuar
                 </p>
               )}
 

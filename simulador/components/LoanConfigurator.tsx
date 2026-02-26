@@ -8,16 +8,18 @@ interface LoanConfiguratorProps {
   analysis: AnalysisResult;
   onSimulate: (config: LoanConfiguration) => void;
   onBack: () => void;
+  selectedPagaduria?: string;
 }
 
-export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack }) => {
+export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria }) => {
   const [entities, setEntities] = useState<FinancialEntity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
   const [terms, setTerms] = useState<number[]>([]);
   const [selectedTerm, setSelectedTerm] = useState<number | null>(144);
   const [cushion, setCushion] = useState<number>(0);
+  const [customQuota, setCustomQuota] = useState<number>(analysis.availableQuota);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Buyout Logic State
   const [manualCarteraItems, setManualCarteraItems] = useState<CarteraItem[]>([]);
   const [selectedDeductions, setSelectedDeductions] = useState<Set<number>>(new Set());
@@ -28,8 +30,12 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         // Load FPMs and Entities parallel
         const [_, ents] = await Promise.all([loadFPMData(), getAllEntities()]);
         setEntities(ents);
-        
-        if (ents.length > 0) setSelectedEntityId(ents[0].id);
+
+        const pagKey = selectedPagaduria?.toUpperCase().trim() ?? '';
+        const visible = selectedPagaduria
+          ? ents.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey))
+          : ents;
+        if (visible.length > 0) setSelectedEntityId(visible[0].id);
         setIsLoading(false);
     };
     initData();
@@ -97,6 +103,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         cashFee: ent.cashFee ?? 15157,
         bankFee: ent.bankFee ?? 7614,
         carteraItems: carteraItems.length > 0 ? carteraItems : undefined,
+        customQuota: customQuota < analysis.availableQuota ? customQuota : undefined,
+        commissions: ent.commissions,
       });
     }
   };
@@ -105,7 +113,24 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
   };
 
-  const availableAfterCushion = Math.max(0, analysis.availableQuota + currentBuyoutQuota - cushion);
+  const pagKey = selectedPagaduria?.toUpperCase().trim() ?? '';
+  const visibleEntities = selectedPagaduria
+    ? entities.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey))
+    : entities;
+
+  // Políticas de cartera: límite efectivo para la entidad + pagaduría seleccionada
+  const selectedEntity = entities.find(e => e.id === selectedEntityId);
+  const effectiveMaxCartera: number | undefined = (() => {
+    if (!selectedEntity) return undefined;
+    if (selectedPagaduria && selectedEntity.pagaduriaMaxCartera?.[selectedPagaduria] != null) {
+      return selectedEntity.pagaduriaMaxCartera[selectedPagaduria];
+    }
+    return selectedEntity.maxCartera;
+  })();
+  const totalCarteraCount = selectedDeductions.size + manualCarteraItems.filter(i => Number(i.amount) > 0).length;
+  const carteraAtLimit = effectiveMaxCartera != null && totalCarteraCount >= effectiveMaxCartera;
+
+  const availableAfterCushion = Math.max(0, customQuota + currentBuyoutQuota - cushion);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -164,13 +189,15 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
               {/* Entity Selector - RICH CARDS */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Entidad Financiera</label>
-                {entities.length === 0 && !isLoading ? (
+                {visibleEntities.length === 0 && !isLoading ? (
                     <div className="text-center p-8 border-dashed border-2 border-slate-200 rounded-2xl text-slate-400 bg-slate-50">
-                        No hay entidades activas. Configure en Admin.
+                        {selectedPagaduria
+                          ? `No hay entidades disponibles para ${selectedPagaduria}.`
+                          : 'No hay entidades activas. Configure en Admin.'}
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {entities.map(ent => {
+                    {visibleEntities.map(ent => {
                         const isSelected = selectedEntityId === ent.id;
                         return (
                             <div 
@@ -253,6 +280,34 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                  </div>
               </div>
 
+              {/* Custom Quota */}
+              <div className="group">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 ml-1 group-focus-within:text-primary-600 transition-colors">Cuota a Utilizar</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <span className="text-slate-400 font-bold text-lg group-focus-within:text-primary-500 transition-colors">$</span>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={analysis.availableQuota}
+                    step={1}
+                    value={customQuota}
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      setCustomQuota(Math.min(analysis.availableQuota, Math.max(0, val)));
+                    }}
+                    className="block w-full pl-9 pr-4 py-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all font-bold text-xl font-mono shadow-sm"
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-1.5 ml-1">
+                  Cupo disponible del análisis: {formatCurrency(analysis.availableQuota)}
+                  {customQuota < analysis.availableQuota && (
+                    <span className="ml-2 text-amber-500 font-bold">· Reducida manualmente</span>
+                  )}
+                </p>
+              </div>
+
               {/* Buyout Section (Simplified Visual) */}
               <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 shadow-inner">
                  <div className="flex items-center justify-between mb-4">
@@ -264,7 +319,25 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                      </h4>
                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Opcional</span>
                  </div>
-                 
+
+                 {/* Aviso de política de cartera */}
+                 {effectiveMaxCartera != null && (
+                   <div className={`flex items-start gap-2 px-3 py-2 rounded-lg mb-4 text-xs font-semibold ${carteraAtLimit ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-amber-50 border border-amber-200 text-amber-800'}`}>
+                     <span className="mt-0.5 text-base">{carteraAtLimit ? '🚫' : '⚠️'}</span>
+                     <span>
+                       <strong>{selectedEntity?.name}</strong> acepta máximo{' '}
+                       <strong>{effectiveMaxCartera} {effectiveMaxCartera === 1 ? 'compra de cartera' : 'compras de cartera'}</strong>
+                       {selectedPagaduria && selectedEntity?.pagaduriaMaxCartera?.[selectedPagaduria] != null && (
+                         <> en <strong>{selectedPagaduria}</strong></>
+                       )}.
+                       {carteraAtLimit && <span className="ml-1 font-bold">Ya alcanzaste el límite.</span>}
+                       {!carteraAtLimit && effectiveMaxCartera != null && (
+                         <span className="ml-1">Llevas {totalCarteraCount} de {effectiveMaxCartera}.</span>
+                       )}
+                     </span>
+                   </div>
+                 )}
+
                  {/* List of auto-detected deductions */}
                  {analysis.detailedDeductions && analysis.detailedDeductions.length > 0 && (
                     <div className="space-y-2 mb-6">
@@ -295,7 +368,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                          <button
                              type="button"
                              onClick={addManualItem}
-                             className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+                             disabled={carteraAtLimit}
+                             className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                          >
                              + Añadir
                          </button>
@@ -328,7 +402,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                                  >✕</button>
                              </div>
                          ))}
-                         {manualCarteraItems.length === 0 && (
+                         {manualCarteraItems.length === 0 && !carteraAtLimit && (
                              <button
                                  type="button"
                                  onClick={addManualItem}

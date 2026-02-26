@@ -7,6 +7,7 @@ import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText
 
 interface DashboardProps {
   currentUser: User;
+  onNavigate?: (view: string) => void;
 }
 
 // --- SUBCOMPONENTS ---
@@ -212,9 +213,10 @@ const RecentActivityList = ({ currentUser }: { currentUser: User }) => {
 
 // --- MAIN DASHBOARD COMPONENT ---
 
-export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH'>('ALL');
+  const [billeteraEnabled, setBilleteraEnabled] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -223,6 +225,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
     };
     fetchStats();
   }, [currentUser, timeFilter]);
+
+  useEffect(() => {
+    MockService.getBilleteraEnabled?.().then((v: boolean) => setBilleteraEnabled(v)).catch(() => {});
+    const handle = (e: any) => setBilleteraEnabled(e.detail.enabled);
+    window.addEventListener('billetera-changed', handle);
+    return () => window.removeEventListener('billetera-changed', handle);
+  }, []);
 
   if (!stats) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>;
 
@@ -246,11 +255,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
             <NewsCarousel />
           </div>
           {/* KPIs (2/5) — 2x2 en PC */}
-          <div className="lg:col-span-2 grid grid-cols-2 gap-4">
-            <StatCard title="Ganancia Estimada" value={stats.totalCommissionEarned} icon={Wallet} color="text-yellow-600" bg="bg-yellow-100" trend={8}/>
-            <StatCard title="Desembolsados" value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
-            <StatCard title="En Proceso" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
-            <StatCard title="Devueltos" value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" trend={-5}/>
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            {/* Billetera — card especial (solo si está habilitada) */}
+            {billeteraEnabled && (
+            <div
+              onClick={() => onNavigate?.('wallet')}
+              className="bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl p-5 cursor-pointer hover:shadow-lg transition-all group"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Wallet size={18} className="text-white/80" />
+                  <span className="text-[10px] font-black text-white/80 uppercase tracking-widest">Mi Billetera</span>
+                </div>
+                <ChevronRight size={16} className="text-white/60 group-hover:translate-x-1 transition-transform" />
+              </div>
+              <p className="text-2xl font-black text-white font-mono">${(stats.totalCommissionPending || 0).toLocaleString('es-CO')}</p>
+              <p className="text-[10px] text-white/70 mt-1">Por cobrar · <span className="font-bold text-white/90">${(stats.totalCommissionPaid || 0).toLocaleString('es-CO')} ya cobrado</span></p>
+            </div>
+            )}
+            <div className="grid grid-cols-2 gap-4 flex-1">
+              <StatCard title="Desembolsados" value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
+              <StatCard title="En Proceso" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title="Devueltos" value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" trend={-5}/>
+              <StatCard title="Total Créditos" value={stats.totalCredits} icon={FileText} color="text-slate-600" bg="bg-slate-100" />
+            </div>
           </div>
         </div>
       ) : (

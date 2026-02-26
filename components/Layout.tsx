@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { User, Notification } from '../types';
 import { MockService } from '../services/mockService';
-import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine } from 'lucide-react';
 
 interface Toast {
     id: string;
@@ -23,6 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
   const [pendingGestorsCount, setPendingGestorsCount] = useState(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [billeteraEnabled, setBilleteraEnabled] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = Math.random().toString(36).substr(2, 9);
@@ -33,6 +34,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
   useEffect(() => {
     const handleAlert = (e: any) => showToast(e.detail.message, e.detail.type);
     window.addEventListener('app-alert', handleAlert);
+
+    const handleBilleteraChanged = (e: any) => setBilleteraEnabled(e.detail.enabled);
+    window.addEventListener('billetera-changed', handleBilleteraChanged);
 
     const fetchCounts = async () => {
       try {
@@ -48,6 +52,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
       } catch (err) { console.error(err); }
     };
 
+    // Cargar flag de billetera
+    MockService.getBilleteraEnabled?.().then((v: boolean) => setBilleteraEnabled(v)).catch(() => {});
+
     // Ejecutar inmediatamente
     fetchCounts();
 
@@ -60,6 +67,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
 
     return () => {
         window.removeEventListener('app-alert', handleAlert);
+        window.removeEventListener('billetera-changed', handleBilleteraChanged);
         window.removeEventListener('notifications-updated', handleNotifUpdated);
         clearInterval(interval);
     };
@@ -110,6 +118,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
           {MockService.hasPermission(currentUser, 'MANAGE_NEWS') && <NavItem view="news" icon={Megaphone} label="Novedades" />}
           {MockService.hasPermission(currentUser, 'MANAGE_AUTOMATIONS') && <NavItem view="automations" icon={Workflow} label="Automatizaciones" />}
           {MockService.hasPermission(currentUser, 'VIEW_REPORTS') && <NavItem view="reports" icon={Filter} label="Reportes" />}
+          {billeteraEnabled && MockService.hasPermission(currentUser, 'REQUEST_WITHDRAWAL') && <NavItem view="wallet" icon={Wallet} label="Mi Billetera" />}
+          {billeteraEnabled && MockService.hasPermission(currentUser, 'MANAGE_WITHDRAWALS') && <NavItem view="withdrawals" icon={ArrowDownToLine} label="Retiros" />}
 
           {MockService.hasPermission(currentUser, 'MANAGE_USERS') && <NavItem view="users" icon={Users} label="Usuarios" badge={pendingGestorsCount} />}
           {MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && <NavItem view="admin" icon={Settings} label="Administración" />}

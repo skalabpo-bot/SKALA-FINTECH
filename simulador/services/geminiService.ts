@@ -255,25 +255,36 @@ export const analyzeCedulaDocument = async (images: CedulaImage[]): Promise<Clie
   trackUsage();
 
   const sidesNote = images.length > 1
-    ? "Se te proporcionan AMBAS caras de la cédula. Extrae todos los campos combinando la información de las dos imágenes."
-    : "Se te proporciona UNA cara de la cédula. Extrae todos los campos visibles.";
+    ? "Se te proporcionan AMBAS caras de la cédula colombiana. Extrae todos los campos combinando la información de ambas imágenes."
+    : "Se te proporciona UNA cara de la cédula colombiana. Extrae todos los campos visibles.";
 
   const prompt = `
-    Analiza ${images.length > 1 ? 'estas imágenes' : 'esta imagen'} de cédula de ciudadanía colombiana. ${sidesNote}
+Eres un experto en lectura óptica de cédulas de ciudadanía colombianas (Registraduría Nacional). ${sidesNote}
 
-    CAMPOS REQUERIDOS:
-    1. fullName: Nombre completo (nombres + apellidos juntos) — cara frontal
-    2. firstName: Solo los nombres (primer y segundo nombre) — cara frontal
-    3. lastName: Solo los apellidos (primer y segundo apellido) — cara frontal
-    4. idNumber: Número de identificación (solo dígitos, sin puntos ni espacios) — cara frontal
-    5. sex: Sexo del titular ("M" para masculino, "F" para femenino, o el valor exacto que aparezca) — cara frontal
-    6. birthDate: Fecha de nacimiento en formato DD/MM/AAAA — cara frontal
-    7. birthCity: Ciudad de nacimiento — cara frontal
-    8. expeditionDate: Fecha de expedición en formato DD/MM/AAAA — cara posterior
-    9. expeditionCity: Ciudad de expedición — cara posterior
+REGLAS CRÍTICAS DE TRANSCRIPCIÓN:
+- Transcribe el texto EXACTAMENTE como aparece impreso. No interpretes, no corrijas ortografía.
+- Todo el texto en cédulas colombianas está en MAYÚSCULAS. Devuelve en MAYÚSCULAS.
+- CARACTERES ESPECIALES — ten máxima atención:
+  * La letra Ñ puede verse borrosa pero ES Ñ, nunca la escribas como "N", "Y", "Y1", "Ñ" o variantes raras.
+  * Tildes: Á É Í Ó Ú son letras válidas en nombres colombianos. Escríbelas con tilde si están en el documento.
+  * No confundas: O (letra) con 0 (cero), I (i mayúscula) con 1 (uno), l (ele) con 1 (uno).
+- El campo SEXO en cédulas colombianas solo puede ser "M" (Masculino) o "F" (Femenino).
+- El número de cédula son SOLO dígitos (entre 6 y 10 dígitos), sin puntos, comas ni espacios.
+- Las fechas van en formato DD/MM/AAAA.
+- Si un campo no es visible o no aparece en la imagen, devuelve "".
 
-    Si algún campo no es visible en ninguna de las imágenes, devuelve una cadena vacía "".
-    Retorna SOLO JSON. Sin markdown.
+CAMPOS A EXTRAER:
+1. fullName: Nombre completo = firstName + " " + lastName (Ej: "JUAN CARLOS MUÑOZ PEÑA")
+2. firstName: Solo el o los nombres (Ej: "JUAN CARLOS")
+3. lastName: Solo el o los apellidos (Ej: "MUÑOZ PEÑA")
+4. idNumber: Número de cédula, SOLO dígitos (Ej: "1020304050")
+5. sex: SOLO "M" o "F"
+6. birthDate: Fecha de nacimiento en DD/MM/AAAA (Ej: "15/03/1985")
+7. birthCity: Ciudad de nacimiento en mayúsculas (Ej: "BOGOTÁ")
+8. expeditionDate: Fecha de expedición en DD/MM/AAAA (Ej: "10/06/2010")
+9. expeditionCity: Ciudad de expedición en mayúsculas (Ej: "MEDELLÍN")
+
+Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
   const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash"];
@@ -319,16 +330,27 @@ export const analyzeCedulaDocument = async (images: CedulaImage[]): Promise<Clie
         if (response.text) {
           console.log(`✅ ÉXITO: Cédula leída con modelo ${modelName}`);
           const data = JSON.parse(response.text);
+
+          // Normalizar sexo — solo M o F
+          let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
+          if (sex.length > 1) sex = sex[0]; // tomar solo el primer carácter
+
+          // Limpiar número de cédula — solo dígitos
+          const idNumber = (data.idNumber || '').replace(/\D/g, '');
+
+          // Limpiar texto en mayúsculas y trim
+          const up = (v: any) => (v || '').toString().toUpperCase().trim();
+
           return {
-            fullName: data.fullName || '',
-            firstName: data.firstName || '',
-            lastName: data.lastName || '',
-            idNumber: data.idNumber || '',
-            sex: data.sex || '',
-            birthDate: data.birthDate || '',
-            birthCity: data.birthCity || '',
-            expeditionDate: data.expeditionDate || '',
-            expeditionCity: data.expeditionCity || '',
+            fullName: up(data.fullName),
+            firstName: up(data.firstName),
+            lastName: up(data.lastName),
+            idNumber,
+            sex,
+            birthDate: (data.birthDate || '').trim(),
+            birthCity: up(data.birthCity),
+            expeditionDate: (data.expeditionDate || '').trim(),
+            expeditionCity: up(data.expeditionCity),
           };
         }
       } catch (error: any) {

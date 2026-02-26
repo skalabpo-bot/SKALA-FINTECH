@@ -1,7 +1,8 @@
 import { supabase, supabaseAdmin } from './supabaseClient';
-import { 
-    Credit, User, UserRole, AlliedEntity, Notification, Permission, Comment, 
-    CreditDocument, CreditState, Zone, DashboardStats, ReportFilters, NewsItem, CreditHistoryItem
+import {
+    Credit, User, UserRole, AlliedEntity, Notification, Permission, Comment,
+    CreditDocument, CreditState, Zone, DashboardStats, ReportFilters, NewsItem, CreditHistoryItem,
+    WithdrawalRequest
 } from '../types';
 
 // Ciudades y Bancos de Colombia (datos semilla / fallback si las tablas no existen)
@@ -26,11 +27,11 @@ export const INITIAL_STATES: CreditState[] = [
 ];
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
-    [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL'],
-    [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA'],
+    [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
+    [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'REQUEST_WITHDRAWAL'],
     [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO'],
-    [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA'],
-    [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA'],
+    [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID'],
+    [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
     [UserRole.COORDINADOR_ZONA]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA']
 };
 
@@ -54,6 +55,8 @@ const mapCreditFromDB = (c: any): Credit => {
         tasa: Number(c.interest_rate || 0),
         commissionPercentage: Number(c.commission_percent || 0),
         estimatedCommission: Number(c.commission_est || 0),
+        comisionPagada: c.comision_pagada || false,
+        fechaPagoComision: c.fecha_pago_comision || undefined,
         comments: [],
         documents: [],
         history: []
@@ -120,7 +123,7 @@ export const ProductionService = {
 
     resetPassword: async (email: string) => {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/reset-password`,
+            redirectTo: window.location.origin,
         });
         if (error) throw new Error("Error al enviar el correo de recuperación.");
         return true;
@@ -343,10 +346,10 @@ export const ProductionService = {
             description: 'Actualización de campos maestros del expediente.'
         });
 
-        // Webhook: crédito editado (con teléfonos para destinatarios)
+        // Webhook: crédito editado
+        let gestorW: any = null, analistaW: any = null, cd: any = clientFields;
         try {
             const { data: creditInfo } = await supabase.from('credits').select('assigned_gestor_id, assigned_analyst_id, client_data').eq('id', creditId).single();
-            let gestorW: any = null, analistaW: any = null;
             if (creditInfo?.assigned_gestor_id) {
                 const { data: g } = await supabase.from('profiles').select('full_name, phone, email').eq('id', creditInfo.assigned_gestor_id).single();
                 gestorW = { id: creditInfo.assigned_gestor_id, nombre: g?.full_name || '', telefono: g?.phone || '', email: g?.email || '' };
@@ -355,28 +358,26 @@ export const ProductionService = {
                 const { data: a } = await supabase.from('profiles').select('full_name, phone, email').eq('id', creditInfo.assigned_analyst_id).single();
                 analistaW = { id: creditInfo.assigned_analyst_id, nombre: a?.full_name || '', telefono: a?.phone || '', email: a?.email || '' };
             }
-            const cd = creditInfo?.client_data || clientFields;
-            ProductionService.triggerWebhooks('credit_edited', {
-                credit_id: creditId,
-                editado_por: userId,
-                gestor: gestorW,
-                analista: analistaW,
-                cliente: {
-                    nombre: cd.nombreCompleto || `${cd.nombres || ''} ${cd.apellidos || ''}`.trim(),
-                    documento: cd.numeroDocumento || '',
-                    celular: cd.telefonoCelular || '',
-                    correo: cd.correo || ''
-                },
-                datos_actualizados: {
-                    monto: Number(monto) || 0,
-                    plazo: Number(plazo) || 0,
-                    entidad: entidadAliada || '',
-                    tasa: Number(tasa) || 0
-                }
-            });
-        } catch (e) {
-            ProductionService.triggerWebhooks('credit_edited', { credit_id: creditId, editado_por: userId });
-        }
+            if (creditInfo?.client_data) cd = creditInfo.client_data;
+        } catch { /* usar datos base si falla el fetch */ }
+        ProductionService.triggerWebhooks('credit_edited', {
+            credit_id: creditId,
+            editado_por: userId,
+            gestor: gestorW,
+            analista: analistaW,
+            cliente: {
+                nombre: cd.nombreCompleto || `${cd.nombres || ''} ${cd.apellidos || ''}`.trim(),
+                documento: cd.numeroDocumento || '',
+                celular: cd.telefonoCelular || '',
+                correo: cd.correo || ''
+            },
+            datos_actualizados: {
+                monto: Number(monto) || 0,
+                plazo: Number(plazo) || 0,
+                entidad: entidadAliada || '',
+                tasa: Number(tasa) || 0
+            }
+        });
     },
 
     toggleSubsanacion: async (creditId: string, enable: boolean, user: User) => {
@@ -871,24 +872,15 @@ export const ProductionService = {
         }
 
         // Webhook: nuevo comentario
-        try {
-            ProductionService.triggerWebhooks('comment_added', {
-                credit_id: creditId,
-                comentario: text,
-                tiene_adjunto: !!file,
-                autor: { id: user.id, nombre: user.name, rol: user.role },
-                gestor: gestorInfo,
-                analista: analystInfo,
-                cliente: clienteInfo
-            });
-        } catch (e) {
-            ProductionService.triggerWebhooks('comment_added', {
-                credit_id: creditId,
-                comentario: text,
-                tiene_adjunto: !!file,
-                autor: { id: user.id, nombre: user.name, rol: user.role }
-            });
-        }
+        ProductionService.triggerWebhooks('comment_added', {
+            credit_id: creditId,
+            comentario: text,
+            tiene_adjunto: !!file,
+            autor: { id: user.id, nombre: user.name, rol: user.role },
+            gestor: gestorInfo,
+            analista: analystInfo,
+            cliente: clienteInfo
+        });
     },
 
     uploadImage: async (file: File) => {
@@ -979,6 +971,8 @@ export const ProductionService = {
             totalAmountSolicited: credits.reduce((acc, c) => acc + (c.monto || 0), 0),
             totalAmountDisbursed: credits.filter(c => disbursedStates.includes(c.statusId)).reduce((acc, c) => acc + (c.monto || 0), 0),
             totalCommissionEarned: credits.filter(c => disbursedStates.includes(c.statusId)).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
+            totalCommissionPending: credits.filter(c => disbursedStates.includes(c.statusId) && !c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
+            totalCommissionPaid: credits.filter(c => disbursedStates.includes(c.statusId) && c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
             byStatus: {}
         };
         credits.forEach(c => {
@@ -994,6 +988,194 @@ export const ProductionService = {
             if (!error && data && data.length > 0) return data.map((p: any) => p.name);
         } catch (e) { /* fallback */ }
         return ["COLPENSIONES", "CREMIL", "CASUR", "FIDUPREVISORA", "GOBIERNO", "PRIVADA"];
+    },
+
+    getPagaduriaItems: async (): Promise<{ name: string; tipo: string }[]> => {
+        // Mapa estático: palabras clave → tipo. Cubre variaciones de nombre.
+        const inferTipo = (name: string): string => {
+            const n = name.toUpperCase();
+            if (/POLICIA|POLICÍA|EJÉRCITO|EJERCITO|ACTIVO|ACTIVA|FUERZAS MILITARES ACTIV/.test(n))
+                return '👮 Fuerza Pública Activa';
+            if (/CREMIL|CASUR|CAGEN|TEGEN|MINDEFENSA|PENSIONADO.*MILITAR|RETIRO.*FUERZA|FUERZA.*RETIRO/.test(n))
+                return '🪖 Fuerza Pública Pensionados / Retiros';
+            if (/COLPENSIONES|FOPEP|FIDUPREVISORA|ESTATAL|GOBERNA|ALCALD|MUNICIPIO|DEPARTAMENTO|UNIVERSIDAD.*PUBLICA|PÚBLICA/.test(n))
+                return '🏛️ Entidades Públicas / Estatales';
+            if (/POSITIVA|MAPFRE|PORVENIR|BBVA SEGURO|PROTECCIÓN|PROTECCION|ASULADO|SURA|ALFA|COLFONDOS|BOLÍVAR|BOLIVAR|ANDINA|RENTA|ARL|VITALI/.test(n))
+                return '🛡️ Aseguradoras – Rentas Vitalicias / ARL';
+            return 'Otras';
+        };
+        try {
+            const { data, error } = await supabase.from('pagadurias').select('name, tipo').order('name');
+            if (!error && data && data.length > 0) {
+                const items = data.map((p: any) => ({
+                    name: p.name.toUpperCase().trim(),
+                    tipo: p.tipo && p.tipo !== 'Sin clasificar' ? p.tipo : inferTipo(p.name),
+                }));
+                // Deduplicar por nombre normalizado (elimina duplicados por diferencia de mayúsculas)
+                const seen = new Set<string>();
+                const deduped = items.filter((item: any) => {
+                    if (seen.has(item.name)) return false;
+                    seen.add(item.name);
+                    return true;
+                });
+                return deduped.sort((a: any, b: any) => a.tipo.localeCompare(b.tipo) || a.name.localeCompare(b.name));
+            }
+        } catch (e) { /* fallback */ }
+        // Fallback completo con la lista de Credialianza
+        return [
+            { name: 'POLICÍA NACIONAL', tipo: '👮 Fuerza Pública Activa' },
+            { name: 'EJÉRCITO NACIONAL', tipo: '👮 Fuerza Pública Activa' },
+            { name: 'PENSIONADO MINDEFENSA', tipo: '🪖 Fuerza Pública Pensionados / Retiros' },
+            { name: 'CREMIL', tipo: '🪖 Fuerza Pública Pensionados / Retiros' },
+            { name: 'CASUR', tipo: '🪖 Fuerza Pública Pensionados / Retiros' },
+            { name: 'CAGEN – TEGEN', tipo: '🪖 Fuerza Pública Pensionados / Retiros' },
+            { name: 'COLPENSIONES', tipo: '🏛️ Entidades Públicas / Estatales' },
+            { name: 'FOPEP', tipo: '🏛️ Entidades Públicas / Estatales' },
+            { name: 'FIDUPREVISORA', tipo: '🏛️ Entidades Públicas / Estatales' },
+            { name: 'POSITIVA', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'MAPFRE', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'PORVENIR', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'BBVA SEGUROS', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'PROTECCIÓN', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'RENTAS ASULADO', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'SURA', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'SEGUROS ALFA', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'COLFONDOS', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'SEGUROS BOLÍVAR', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+            { name: 'ANDINA VIDA', tipo: '🛡️ Aseguradoras – Rentas Vitalicias / ARL' },
+        ];
+    },
+
+    addPagaduriaWithTipo: async (name: string, tipo: string) => {
+        const { error } = await supabase.from('pagadurias').insert({ name: name.toUpperCase().trim(), tipo: tipo.trim() });
+        if (error) throw error;
+    },
+
+    getStateActions: async (stateId?: string): Promise<any[]> => {
+        try {
+            let q = supabase.from('state_actions').select('*').order('order_index');
+            if (stateId) q = (q as any).eq('state_id', stateId);
+            const { data, error } = await q;
+            if (error) return [];
+            return data || [];
+        } catch { return []; }
+    },
+
+    saveStateAction: async (action: { id?: string; state_id: string; label: string; roles: string[]; order_index?: number; result_action?: string; result_state_id?: string | null }): Promise<void> => {
+        const fullPayload: any = {
+            state_id: action.state_id,
+            label: action.label.trim(),
+            roles: action.roles,
+            order_index: action.order_index ?? 0,
+            result_action: action.result_action ?? 'none',
+            result_state_id: action.result_state_id ?? null,
+        };
+        const basePayload: any = {
+            state_id: action.state_id,
+            label: action.label.trim(),
+            roles: action.roles,
+            order_index: action.order_index ?? 0,
+        };
+
+        const run = async (payload: any) => {
+            if (action.id) {
+                const { error } = await supabase.from('state_actions').update(payload).eq('id', action.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('state_actions').insert(payload);
+                if (error) throw error;
+            }
+        };
+
+        try {
+            await run(fullPayload);
+        } catch {
+            // Fallback: columnas result_action/result_state_id aún no existen en BD
+            await run(basePayload);
+        }
+    },
+
+    deleteStateAction: async (id: string): Promise<void> => {
+        await supabase.from('state_actions').delete().eq('id', id);
+    },
+
+    logStateAction: async (creditId: string, label: string, user: any): Promise<void> => {
+        await supabase.from('credit_history').insert({
+            credit_id: creditId,
+            user_id: user.id,
+            action: 'ACCIÓN',
+            description: `✓ ${label} — confirmado por ${user.name}`,
+        });
+
+        // Disparar webhook de automatización
+        try {
+            const { data: credit } = await supabase
+                .from('credits')
+                .select('*, gestor_profile:assigned_gestor_id(full_name, phone, email)')
+                .eq('id', creditId)
+                .single();
+
+            let analystProfile: any = null;
+            if (credit?.assigned_analyst_id) {
+                const { data: ap } = await supabase
+                    .from('profiles')
+                    .select('full_name, phone, email')
+                    .eq('id', credit.assigned_analyst_id)
+                    .single();
+                analystProfile = ap;
+            }
+
+            const clientData = credit?.client_data || {};
+            const gestorProfile = credit?.gestor_profile || {};
+
+            ProductionService.triggerWebhooks('state_action_executed', {
+                credit_id: creditId,
+                solicitud_number: credit?.solicitud_number,
+                accion: label,
+                ejecutado_por: { nombre: user.name, rol: user.role },
+                gestor: {
+                    id: credit?.assigned_gestor_id,
+                    nombre: gestorProfile.full_name || 'N/A',
+                    telefono: gestorProfile.phone || '',
+                    email: gestorProfile.email || '',
+                },
+                analista: analystProfile ? {
+                    id: credit?.assigned_analyst_id,
+                    nombre: analystProfile.full_name || 'N/A',
+                    telefono: analystProfile.phone || '',
+                    email: analystProfile.email || '',
+                } : null,
+                cliente: {
+                    nombre: clientData.nombreCompleto || '',
+                    documento: clientData.numeroDocumento || '',
+                    celular: clientData.telefonoCelular || '',
+                    correo: clientData.correo || '',
+                },
+                credito: {
+                    monto: credit?.amount,
+                    plazo: credit?.term,
+                    entidad: credit?.entity_name,
+                    tasa: credit?.interest_rate,
+                },
+            });
+        } catch (e) {
+            console.warn('No se pudo disparar webhook de acción rápida:', e);
+        }
+    },
+
+    getBilleteraEnabled: async (): Promise<boolean> => {
+        try {
+            const { data } = await supabase.from('system_config').select('value').eq('key', 'billetera_enabled').single();
+            if (data?.value === 'false') return false;
+        } catch { /* sin registro = habilitado por defecto */ }
+        return true;
+    },
+
+    setBilleteraEnabled: async (enabled: boolean): Promise<void> => {
+        await supabase.from('system_config').upsert(
+            { key: 'billetera_enabled', value: enabled ? 'true' : 'false' },
+            { onConflict: 'key' }
+        );
     },
 
     getPensionTypes: async (): Promise<string[]> => {
@@ -1356,6 +1538,16 @@ export const ProductionService = {
             } catch (e) { /* silently skip */ }
         }
 
+        // Resolver TESORERIA
+        if (roles.includes('TESORERIA')) {
+            try {
+                const { data: tesoreros } = await supabase.from('profiles').select('full_name, phone, email').eq('role', 'TESORERIA').eq('status', 'ACTIVE');
+                (tesoreros || []).forEach((t: any) => {
+                    destinatarios.push({ nombre: t.full_name || '', telefono: t.phone || '', email: t.email || '', rol: 'TESORERIA' });
+                });
+            } catch (e) { /* silently skip */ }
+        }
+
         // Para eventos de usuario (user_approved, user_rejected, etc.), el destinatario es el propio usuario
         if (payload.usuario && (roles.includes('GESTOR') || roles.includes('ANALISTA'))) {
             const exists = destinatarios.some(d => d.telefono === (payload.usuario.telefono || ''));
@@ -1553,6 +1745,8 @@ export const ProductionService = {
         if (filters.endDate) filtered = filtered.filter(c => new Date(c.createdAt) <= new Date(filters.endDate + 'T23:59:59'));
         if (filters.statusId) filtered = filtered.filter(c => c.statusId === filters.statusId);
         if (filters.entity) filtered = filtered.filter(c => c.entidadAliada === filters.entity);
+        if ((filters as any).comisionPagada === 'pagada') filtered = filtered.filter(c => c.comisionPagada === true);
+        if ((filters as any).comisionPagada === 'pendiente') filtered = filtered.filter(c => !c.comisionPagada);
 
         const columnMap: Record<string, (c: any) => string> = {
             'fecha_creacion': c => new Date(c.createdAt).toLocaleDateString(),
@@ -1571,6 +1765,8 @@ export const ProductionService = {
             'tipo_cuenta': c => c.tipoCuenta || '',
             'numero_cuenta': c => c.numeroCuenta || '',
             'comision_estimada': c => String(c.estimatedCommission || 0),
+            'comision_pagada': c => c.comisionPagada ? 'Sí' : 'No',
+            'fecha_pago_comision': c => c.fechaPagoComision ? new Date(c.fechaPagoComision).toLocaleDateString('es-CO') : '',
             'linea_credito': c => c.lineaCredito || '',
             'correo_cliente': c => c.correo || '',
             'direccion_cliente': c => c.direccionCompleta || '',
@@ -1609,5 +1805,292 @@ export const ProductionService = {
 
         // BOM UTF-8 para que Excel interprete bien caracteres especiales (ñ, á, etc.)
         return '\uFEFF' + [headers.join(','), ...rows].join('\n');
-    }
+    },
+
+    // ─── BILLETERA / COMISIONES ─────────────────────────────────────────────────
+
+    markCommissionPaid: async (creditId: string, paid: boolean, processedBy: string) => {
+        const { error } = await supabase.from('credits').update({
+            comision_pagada: paid,
+            fecha_pago_comision: paid ? new Date().toISOString() : null,
+        }).eq('id', creditId);
+        if (error) throw error;
+        await supabase.from('credit_history').insert({
+            credit_id: creditId,
+            user_id: processedBy,
+            action: paid ? 'COMISIÓN MARCADA COMO PAGADA' : 'COMISIÓN REVERTIDA A PENDIENTE',
+            description: paid ? 'La comisión de este crédito fue marcada como pagada.' : 'La comisión fue revertida a pendiente de pago.',
+        });
+    },
+
+    getWithdrawalRequests: async (user: User): Promise<WithdrawalRequest[]> => {
+        let query = supabase.from('withdrawal_requests')
+            .select('*, gestor:gestor_id(full_name, phone)')
+            .order('created_at', { ascending: false });
+
+        const canViewAll = ProductionService.hasPermission(user, 'MANAGE_WITHDRAWALS');
+        if (!canViewAll) {
+            query = query.eq('gestor_id', user.id);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            gestorId: r.gestor_id,
+            gestorName: r.gestor?.full_name || 'Sin nombre',
+            gestorPhone: r.gestor?.phone || '',
+            estado: r.estado,
+            montoTotal: Number(r.monto_total || 0),
+            creditIds: Array.isArray(r.credit_ids) ? r.credit_ids : (JSON.parse(r.credit_ids || '[]')),
+            createdAt: new Date(r.created_at),
+            processedAt: r.processed_at ? new Date(r.processed_at) : undefined,
+            processedBy: r.processed_by || undefined,
+            notas: r.notas || undefined,
+        }));
+    },
+
+    createWithdrawalRequest: async (gestorId: string, creditIds: string[], montoTotal: number, currentUser: User) => {
+        // TODO: re-activar límite de 1 retiro por día en producción
+        // const today = new Date();
+        // today.setHours(0, 0, 0, 0);
+        // const { data: existing } = await supabase
+        //     .from('withdrawal_requests')
+        //     .select('id')
+        //     .eq('gestor_id', gestorId)
+        //     .gte('created_at', today.toISOString());
+        // if (existing && existing.length > 0) {
+        //     throw new Error('Ya realizaste una solicitud de retiro hoy. Solo se permite una solicitud por día. Disponible mañana.');
+        // }
+
+        const { data, error } = await supabase.from('withdrawal_requests').insert({
+            gestor_id: gestorId,
+            estado: 'PENDIENTE',
+            monto_total: montoTotal,
+            credit_ids: creditIds,
+        }).select().single();
+        if (error) throw error;
+
+        // Notificar a admins y tesorería
+        const { data: recipients } = await supabase
+            .from('profiles')
+            .select('id')
+            .in('role', ['ADMIN', 'TESORERIA'])
+            .eq('status', 'ACTIVE');
+
+        if (recipients && recipients.length > 0) {
+            await supabase.from('notifications').insert(
+                recipients.map((r: any) => ({
+                    user_id: r.id,
+                    title: 'Nueva Solicitud de Retiro',
+                    message: `${currentUser.name} solicitó un retiro de $${montoTotal.toLocaleString('es-CO')} (${creditIds.length} crédito${creditIds.length > 1 ? 's' : ''}).`,
+                    type: 'info',
+                    is_read: false,
+                    credit_id: null,
+                }))
+            );
+        }
+
+        // Webhook
+        ProductionService.triggerWebhooks('withdrawal_requested', {
+            request_id: data.id,
+            gestor: { id: gestorId, nombre: currentUser.name, email: currentUser.email, telefono: currentUser.phone || '' },
+            monto_total: montoTotal,
+            creditos: creditIds.length,
+        });
+
+        return data;
+    },
+
+    processWithdrawalRequest: async (requestId: string, estado: 'PROCESADO' | 'RECHAZADO', processedBy: string, notas?: string) => {
+        const { data: req, error: fetchErr } = await supabase
+            .from('withdrawal_requests')
+            .select('credit_ids, gestor_id, monto_total')
+            .eq('id', requestId)
+            .single();
+        if (fetchErr) throw fetchErr;
+
+        const { error } = await supabase.from('withdrawal_requests').update({
+            estado,
+            processed_at: new Date().toISOString(),
+            processed_by: processedBy,
+            notas: notas || null,
+        }).eq('id', requestId);
+        if (error) throw error;
+
+        // Si se procesa: marcar comisiones como pagadas en todos los créditos incluidos
+        if (estado === 'PROCESADO') {
+            const creditIds: string[] = Array.isArray(req.credit_ids)
+                ? req.credit_ids
+                : JSON.parse(req.credit_ids || '[]');
+            for (const creditId of creditIds) {
+                await ProductionService.markCommissionPaid(creditId, true, processedBy);
+            }
+        }
+
+        // Notificar al gestor
+        const estadoLabel = estado === 'PROCESADO' ? 'procesada' : 'rechazada';
+        const notifType = estado === 'PROCESADO' ? 'success' : 'warning';
+        await supabase.from('notifications').insert({
+            user_id: req.gestor_id,
+            title: `Retiro ${estadoLabel}`,
+            message: estado === 'PROCESADO'
+                ? `Tu solicitud de retiro por $${Number(req.monto_total).toLocaleString('es-CO')} fue procesada. El pago está en camino.`
+                : `Tu solicitud de retiro fue rechazada.${notas ? ` Motivo: ${notas}` : ''}`,
+            type: notifType,
+            is_read: false,
+            credit_id: null,
+        });
+    },
+
+    generateWithdrawalCSV: (requests: WithdrawalRequest[]): string => {
+        const fmt = (n: number) => `$${n.toLocaleString('es-CO')}`;
+        const headers = ['Fecha', 'Gestor', 'Celular Gestor', 'Monto Total', 'Créditos', 'Estado', 'Procesado', 'Notas'];
+        const rows = requests.map(r => [
+            `"${new Date(r.createdAt).toLocaleDateString('es-CO')}"`,
+            `"${r.gestorName || ''}"`,
+            `"${r.gestorPhone || ''}"`,
+            `"${fmt(r.montoTotal)}"`,
+            `"${r.creditIds.length}"`,
+            `"${r.estado}"`,
+            `"${r.processedAt ? new Date(r.processedAt).toLocaleDateString('es-CO') : ''}"`,
+            `"${(r.notas || '').replace(/"/g, '""')}"`,
+        ].join(','));
+        return '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    },
+
+    // ─── IMPORTACIÓN / EXPORTACIÓN MASIVA DE USUARIOS ──────────────────────────
+
+    batchCreateUsers: async (rows: { nombre: string; email: string; cedula: string; rol: string; password: string; telefono?: string; ciudad?: string }[]) => {
+        if (!supabaseAdmin) throw new Error('Configura VITE_SUPABASE_SERVICE_KEY en las variables de entorno para importar usuarios.');
+
+        // Traer cédulas y emails ya existentes
+        const { data: existing } = await supabase.from('profiles').select('cedula, email');
+        const existingCedulas = new Set((existing || []).map((u: any) => String(u.cedula || '').trim()));
+        const existingEmails  = new Set((existing || []).map((u: any) => String(u.email  || '').trim().toLowerCase()));
+
+        const results: { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string }[] = [];
+
+        for (const row of rows) {
+            const emailNorm  = row.email.trim().toLowerCase();
+            const cedulaNorm = String(row.cedula).trim();
+
+            if (existingCedulas.has(cedulaNorm)) {
+                results.push({ ...row, status: 'omitido', motivo: 'Cédula ya existe' });
+                continue;
+            }
+            if (existingEmails.has(emailNorm)) {
+                results.push({ ...row, status: 'omitido', motivo: 'Email ya existe' });
+                continue;
+            }
+            if (!row.password || row.password.trim().length < 6) {
+                results.push({ ...row, status: 'error', motivo: 'Contraseña muy corta (mín. 6 caracteres)' });
+                continue;
+            }
+
+            try {
+                const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                    email: emailNorm,
+                    password: row.password.trim(),
+                    email_confirm: true,
+                });
+                if (authError) throw authError;
+
+                const uid = authData.user.id;
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: uid,
+                    full_name: row.nombre.trim(),
+                    email: emailNorm,
+                    cedula: cedulaNorm,
+                    role: row.rol.toUpperCase().trim(),
+                    status: 'ACTIVE',
+                    phone: row.telefono?.trim() || null,
+                    city: row.ciudad?.trim() || null,
+                });
+                if (profileError) {
+                    // Si falla el perfil, eliminar el usuario de auth para no dejar huérfanos
+                    await supabaseAdmin.auth.admin.deleteUser(uid);
+                    throw profileError;
+                }
+
+                existingCedulas.add(cedulaNorm);
+                existingEmails.add(emailNorm);
+                results.push({ ...row, status: 'creado' });
+
+                // Disparar webhook exclusivo de importación masiva
+                ProductionService.triggerWebhooks('user_batch_imported', {
+                    usuario: {
+                        id: uid,
+                        nombre: row.nombre.trim(),
+                        email: emailNorm,
+                        telefono: row.telefono?.trim() || '',
+                        cedula: cedulaNorm,
+                        ciudad: row.ciudad?.trim() || '',
+                        rol: row.rol.toUpperCase().trim(),
+                        estado: 'ACTIVE',
+                        contrasena_temporal: row.password.trim(),
+                    }
+                });
+
+                // Notificación in-app al nuevo usuario con sus credenciales
+                await supabase.from('notifications').insert({
+                    user_id: uid,
+                    title: '¡Bienvenido a Skala!',
+                    message: `Tu cuenta ha sido creada. Ingresa con tu correo ${emailNorm} y la contraseña que te proporcionaron.`,
+                    type: 'success',
+                    read: false,
+                    created_at: new Date().toISOString(),
+                });
+            } catch (e: any) {
+                results.push({ ...row, status: 'error', motivo: e.message || 'Error desconocido' });
+            }
+        }
+
+        return results;
+    },
+
+    // ── DOCUMENTOS LEGALES ──────────────────────────────────────────────────────
+    getLegalDocuments: async (creditId: string) => {
+        const { data } = await supabase
+            .from('documents')
+            .select('*')
+            .eq('credit_id', creditId)
+            .like('type', 'LEGAL:%')
+            .order('uploaded_at', { ascending: false });
+        return (data || []).map((d: any) => ({
+            id: d.id,
+            type: d.type.replace('LEGAL:', ''),
+            name: d.name,
+            url: d.url,
+            uploadedAt: new Date(d.uploaded_at),
+        }));
+    },
+
+    uploadLegalDocument: async (creditId: string, file: File, docType: string) => {
+        const url = await ProductionService.uploadImage(file);
+        const { data, error } = await supabase.from('documents').insert({
+            credit_id: creditId,
+            name: file.name,
+            url,
+            type: `LEGAL:${docType}`,
+        }).select().single();
+        if (error) throw error;
+        return { id: data.id, type: docType, name: data.name, url, uploadedAt: new Date(data.uploaded_at) };
+    },
+
+    deleteLegalDocument: async (docId: string) => {
+        const { error } = await supabase.from('documents').delete().eq('id', docId);
+        if (error) throw error;
+    },
+
+    exportUsersCSV: async () => {
+        const users = await ProductionService.getUsers();
+        const headers = ['Nombre', 'Email', 'Cédula', 'Rol', 'Teléfono', 'Ciudad', 'Estado', 'Fecha Creación'];
+        const rows = users.map((u: any) => [
+            u.name || '', u.email || '', u.cedula || '', u.role || '',
+            u.phone || '', u.city || '', u.status || '',
+            u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CO') : '',
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+        return '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    },
 };

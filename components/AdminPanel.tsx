@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { MockService } from '../services/mockService';
-import { User, CreditState, UserRole, Zone, AlliedEntity, RateConfig, ALL_PERMISSIONS, Permission } from '../types';
-import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Building, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square } from 'lucide-react';
+import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '../types';
+import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
+import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
 
 const STATE_COLORS = [
     { value: 'bg-gray-500', label: 'Gris' },
@@ -33,7 +34,6 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [states, setStates] = useState<CreditState[]>([]);
     const [pagadurias, setPagadurias] = useState<string[]>([]);
     const [zones, setZones] = useState<Zone[]>([]);
-    const [entities, setEntities] = useState<AlliedEntity[]>([]);
     const [cities, setCities] = useState<string[]>([]);
     const [banks, setBanks] = useState<string[]>([]);
     const [roles, setRoles] = useState<RoleItem[]>([]);
@@ -45,11 +45,12 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [newBank, setNewBank] = useState('');
     const [newZoneName, setNewZoneName] = useState('');
 
-    // Entity Inputs
-    const [entityName, setEntityName] = useState('');
-    const [tempRates, setTempRates] = useState<RateConfig[]>([]);
-    const [currentRate, setCurrentRate] = useState('');
-    const [currentComm, setCurrentComm] = useState('');
+    // State Actions
+    const [editingStateActions, setEditingStateActions] = useState<any[]>([]);
+    const [newActionLabel, setNewActionLabel] = useState('');
+    const [newActionRole, setNewActionRole] = useState('');
+    const [newActionResultAction, setNewActionResultAction] = useState('none');
+    const [newActionResultStateId, setNewActionResultStateId] = useState('');
 
     // Workflow
     const [newStateName, setNewStateName] = useState('');
@@ -63,42 +64,33 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
     const [editRolePerms, setEditRolePerms] = useState<string[]>([]);
 
+    // Feature flags
+    const [billeteraEnabled, setBilleteraEnabledState] = useState(false);
+    const [billeteraLoading, setBilleteraLoading] = useState(true);
+
     useEffect(() => {
         refreshData();
+        MockService.getBilleteraEnabled?.().then((v: boolean) => {
+            setBilleteraEnabledState(v);
+            setBilleteraLoading(false);
+        }).catch(() => setBilleteraLoading(false));
     }, []);
 
     const refreshData = async () => {
-        const [fetchedStates, fetchedPagadurias, fetchedZones, fetchedEntities, fetchedUsers, fetchedCities, fetchedBanks, fetchedRoles] = await Promise.all([
+        const [fetchedStates, fetchedPagadurias, fetchedZones, fetchedUsers, fetchedCities, fetchedBanks, fetchedRoles] = await Promise.all([
             MockService.getStates(), MockService.getPagadurias(), MockService.getZones(),
-            MockService.getEntities(), MockService.getUsers(), MockService.getCities(), MockService.getBanks(),
+            MockService.getUsers(), MockService.getCities(), MockService.getBanks(),
             MockService.getRoles()
         ]);
         setStates(fetchedStates);
         setPagadurias(fetchedPagadurias);
         setZones(fetchedZones);
-        setEntities(fetchedEntities);
         setUserCount(fetchedUsers.length);
         setCities(fetchedCities);
         setBanks(fetchedBanks);
         setRoles(fetchedRoles);
     };
 
-    const handleAddRateToEntity = () => {
-        if (currentRate && currentComm) {
-            setTempRates(prev => [...prev, { rate: Number(currentRate), commission: Number(currentComm) }]);
-            setCurrentRate('');
-            setCurrentComm('');
-        }
-    };
-
-    const handleSaveEntity = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if(entityName && tempRates.length > 0) {
-            await MockService.addEntity({ id: '', name: entityName, rates: tempRates });
-            await refreshData();
-            setEntityName(''); setTempRates([]);
-        }
-    };
 
     const handleAddCityToZone = async (zoneId: string, city: string) => {
         if (!city.trim()) return;
@@ -110,9 +102,12 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     };
 
     // --- State Edit ---
-    const startEditState = (s: CreditState) => {
+    const startEditState = async (s: CreditState) => {
         setEditingStateId(s.id);
         setEditStateData({ name: s.name, color: s.color, role_responsible: s.roleResponsible, is_final: s.isFinal || false });
+        setNewActionLabel(''); setNewActionRole(''); setNewActionResultAction('none'); setNewActionResultStateId('');
+        const actions = await MockService.getStateActions?.(s.id) ?? [];
+        setEditingStateActions(actions);
     };
 
     const saveEditState = async () => {
@@ -222,6 +217,78 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                 <div className="flex-1"></div>
                                                 <button onClick={() => setEditingStateId(null)} className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50">Cancelar</button>
                                                 <button onClick={saveEditState} className="px-4 py-1.5 text-xs bg-primary text-white rounded-lg font-bold hover:bg-orange-700">Guardar</button>
+                                            </div>
+
+                                            {/* ACCIONES DEL ESTADO */}
+                                            <div className="pt-3 border-t border-slate-100">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><Zap size={10}/> Acciones rápidas en este estado</p>
+                                                <div className="space-y-1.5 mb-2">
+                                                    {editingStateActions.map(a => (
+                                                        <div key={a.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5">
+                                                            <Zap size={12} className="text-amber-500 shrink-0"/>
+                                                            <span className="text-xs font-bold text-slate-700 flex-1">{a.label}</span>
+                                                            {a.roles?.length > 0 && <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-bold">{a.roles.join(', ')}</span>}
+                                                            {a.result_action === 'change_status' && a.result_state_id && (
+                                                                <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                                                                    → {states.find(s => s.id === a.result_state_id)?.name ?? a.result_state_id}
+                                                                </span>
+                                                            )}
+                                                            <button type="button" onClick={async () => {
+                                                                await MockService.deleteStateAction?.(a.id);
+                                                                setEditingStateActions(prev => prev.filter(x => x.id !== a.id));
+                                                            }} className="text-slate-300 hover:text-red-500 transition-colors"><X size={12}/></button>
+                                                        </div>
+                                                    ))}
+                                                    {editingStateActions.length === 0 && <p className="text-[10px] text-slate-300 italic px-1">Sin acciones configuradas</p>}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Ej: OK Validación"
+                                                            value={newActionLabel}
+                                                            onChange={e => setNewActionLabel(e.target.value)}
+                                                            onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
+                                                            className="flex-1 text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-none focus:border-primary"
+                                                        />
+                                                        <select value={newActionRole} onChange={e => setNewActionRole(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-600 outline-none">
+                                                            <option value="">Todos los roles</option>
+                                                            {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex gap-2 items-center">
+                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide whitespace-nowrap">Al ejecutarse:</span>
+                                                        <select value={newActionResultAction} onChange={e => { setNewActionResultAction(e.target.value); setNewActionResultStateId(''); }} className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-600 outline-none flex-1">
+                                                            <option value="none">Solo registrar</option>
+                                                            <option value="change_status">Cambiar estado a...</option>
+                                                        </select>
+                                                        {newActionResultAction === 'change_status' && (
+                                                            <select value={newActionResultStateId} onChange={e => setNewActionResultStateId(e.target.value)} className="text-xs px-2 py-1.5 border border-blue-300 rounded-lg bg-blue-50 text-blue-700 outline-none font-bold flex-1">
+                                                                <option value="">— Seleccionar estado —</option>
+                                                                {states.filter(s => s.id !== editingStateId).map(s => (
+                                                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
+                                                        <button type="button" onClick={async () => {
+                                                            if (!newActionLabel.trim() || !editingStateId) return;
+                                                            if (newActionResultAction === 'change_status' && !newActionResultStateId) return;
+                                                            await MockService.saveStateAction?.({
+                                                                state_id: editingStateId,
+                                                                label: newActionLabel.trim(),
+                                                                roles: newActionRole ? [newActionRole] : [],
+                                                                order_index: editingStateActions.length,
+                                                                result_action: newActionResultAction,
+                                                                result_state_id: newActionResultAction === 'change_status' ? newActionResultStateId : null,
+                                                            });
+                                                            const updated = await MockService.getStateActions?.(editingStateId) ?? [];
+                                                            setEditingStateActions(updated);
+                                                            setNewActionLabel(''); setNewActionRole(''); setNewActionResultAction('none'); setNewActionResultStateId('');
+                                                        }} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0">
+                                                            + Agregar
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     ) : (
@@ -371,8 +438,53 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                 </div>
             </div>
 
-            {/* MIGRACIÓN SIMULADOR */}
-            <SimuladorMigrationPanel />
+            {/* FUNCIONALIDADES — Feature flags */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <div className="flex items-center gap-3 mb-5">
+                    <div className="p-2 bg-violet-100 rounded-xl">
+                        <Layers size={20} className="text-violet-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Funcionalidades</h2>
+                        <p className="text-xs text-slate-500">Activa o desactiva módulos del sistema sin necesidad de código.</p>
+                    </div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                    <div className="flex items-center justify-between py-4">
+                        <div>
+                            <p className="font-semibold text-slate-800 text-sm">Módulo Billetera</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Muestra "Mi Billetera" y "Retiros" en el menú a los gestores y tesorería.</p>
+                        </div>
+                        <button
+                            disabled={billeteraLoading}
+                            onClick={async () => {
+                                const next = !billeteraEnabled;
+                                setBilleteraEnabledState(next);
+                                await MockService.setBilleteraEnabled?.(next);
+                                window.dispatchEvent(new CustomEvent('billetera-changed', { detail: { enabled: next } }));
+                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: next ? 'Módulo Billetera activado.' : 'Módulo Billetera desactivado.', type: 'success' } }));
+                            }}
+                            className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-40 ${billeteraEnabled ? 'bg-green-500' : 'bg-slate-300'}`}
+                        >
+                            <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${billeteraEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* SIMULADOR — Entidades & Factores FPM */}
+            <div>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-orange-100 rounded-xl">
+                        <CreditCard size={20} className="text-orange-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Simulador de Crédito</h2>
+                        <p className="text-xs text-slate-500">Gestiona entidades financieras, factores FPM y pagadurías del simulador.</p>
+                    </div>
+                </div>
+                <SimuladorAdminDashboard />
+            </div>
 
             {/* LISTS ROW */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -409,53 +521,6 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     onDelete={async (v: string) => { await MockService.deleteBank(v); await refreshData(); }}
                 />
 
-                {/* ENTITIES */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full min-h-[350px]">
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800">
-                        <Building size={20} className="text-emerald-500"/> Entidades & Tasas
-                    </h3>
-                    <form onSubmit={handleSaveEntity} className="mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                        <input type="text" placeholder="Nombre Entidad" value={entityName} onChange={e => setEntityName(e.target.value)} className="w-full text-xs px-3 py-2 bg-white rounded-lg border border-slate-300 text-slate-900 font-bold mb-2 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none" required/>
-                        <div className="bg-white border border-slate-200 p-2 rounded-lg mb-2 shadow-sm">
-                             <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Agregar Tasa y Comisión</p>
-                             <div className="flex gap-2">
-                                <input type="number" step="0.1" placeholder="Tasa %" value={currentRate} onChange={e => setCurrentRate(e.target.value)} className="w-1/3 text-xs p-2 border border-slate-300 rounded bg-white text-slate-900 font-bold outline-none focus:border-emerald-500"/>
-                                <input type="number" step="0.1" placeholder="Comisión %" value={currentComm} onChange={e => setCurrentComm(e.target.value)} className="w-1/3 text-xs p-2 border border-slate-300 rounded bg-white text-slate-900 font-bold outline-none focus:border-emerald-500"/>
-                                <button type="button" onClick={handleAddRateToEntity} className="flex-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition-colors">Agregar</button>
-                             </div>
-                             {tempRates.length > 0 && (
-                                 <div className="flex flex-wrap gap-1 mt-2">
-                                     {tempRates.map((r, i) => (
-                                         <span key={i} className="text-[10px] bg-emerald-50 border border-emerald-100 px-2 py-1 rounded flex items-center gap-1 text-emerald-800 font-bold">
-                                             T: {r.rate}% | C: {r.commission}%
-                                             <button type="button" onClick={() => setTempRates(prev => prev.filter((_, idx) => idx !== i))}><X size={10}/></button>
-                                         </span>
-                                     ))}
-                                 </div>
-                             )}
-                        </div>
-                        <button type="submit" disabled={!entityName || tempRates.length === 0} className="w-full bg-emerald-600 text-white p-2 rounded-lg hover:bg-emerald-700 shadow-sm font-bold text-xs disabled:opacity-50 transition-colors">Guardar Entidad</button>
-                    </form>
-                    <div className="flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                        {entities.map((ent) => (
-                            <div key={ent.id} className="px-3 py-3 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors group">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-1">
-                                        <p className="text-sm font-bold text-slate-800">{ent.name}</p>
-                                        <div className="flex flex-wrap gap-1 mt-1">
-                                            {ent.rates.map((r, i) => (
-                                                <span key={i} className="text-[9px] text-slate-600 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">
-                                                    {r.rate}% (Com: {r.commission}%)
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <button onClick={async () => { if(confirm('Eliminar entidad?')) { await MockService.deleteEntity(ent.id); await refreshData(); } }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"><Trash size={14}/></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
             </div>
         </div>
     );

@@ -8,12 +8,12 @@ export enum UserRole {
   COORDINADOR_ZONA = 'COORDINADOR_ZONA'
 }
 
-export type Permission = 
+export type Permission =
   | 'VIEW_DASHBOARD'
   | 'CREATE_CREDIT'
   | 'VIEW_OWN_CREDITS'
   | 'VIEW_ALL_CREDITS'
-  | 'VIEW_ASSIGNED_CREDITS' 
+  | 'VIEW_ASSIGNED_CREDITS'
   | 'EDIT_CREDIT_INFO'
   | 'CHANGE_CREDIT_STATUS'
   | 'ADD_COMMENT'
@@ -24,13 +24,17 @@ export type Permission =
   | 'EXPORT_DATA'
   | 'MANAGE_AUTOMATIONS'
   | 'ASSIGN_ANALYST_MANUAL'
-  | 'VIEW_ZONE_CREDITS';
+  | 'VIEW_ZONE_CREDITS'
+  | 'MARK_COMMISSION_PAID'
+  | 'REQUEST_WITHDRAWAL'
+  | 'MANAGE_WITHDRAWALS';
 
 export const ALL_PERMISSIONS: Permission[] = [
-  'VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 
+  'VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS',
   'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT',
   'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA',
-  'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'VIEW_ZONE_CREDITS'
+  'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'VIEW_ZONE_CREDITS',
+  'MARK_COMMISSION_PAID', 'REQUEST_WITHDRAWAL', 'MANAGE_WITHDRAWALS'
 ];
 
 export interface Zone {
@@ -224,10 +228,27 @@ export interface Credit {
   subsanacionHabilitada?: boolean;
   carteraItems?: { entity: string; amount: number }[];
   cuotaDisponible?: number;
+  comisionPagada?: boolean;
+  fechaPagoComision?: string;
+  observaciones?: string;
 
   comments: Comment[];
   documents: CreditDocument[];
   history: CreditHistoryItem[];
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  gestorId: string;
+  gestorName?: string;
+  gestorPhone?: string;
+  estado: 'PENDIENTE' | 'PROCESADO' | 'RECHAZADO';
+  montoTotal: number;
+  creditIds: string[];
+  createdAt: Date;
+  processedAt?: Date;
+  processedBy?: string;
+  notas?: string;
 }
 
 export interface DashboardStats {
@@ -238,6 +259,8 @@ export interface DashboardStats {
   totalAmountSolicited: number;
   totalAmountDisbursed: number;
   totalCommissionEarned: number;
+  totalCommissionPending: number;  // desembolsados, comision_pagada=false
+  totalCommissionPaid: number;     // desembolsados, comision_pagada=true
   byStatus: Record<string, number>;
 }
 
@@ -246,6 +269,7 @@ export interface ReportFilters {
   endDate: string;
   statusId: string;
   entity: string;
+  comisionPagada: '' | 'pagada' | 'pendiente';
 }
 
 export type AutomationEvent =
@@ -260,6 +284,9 @@ export type AutomationEvent =
     | 'user_rejected'
     | 'user_deleted'
     | 'user_updated'
+    | 'withdrawal_requested'
+    | 'user_batch_imported'
+    | 'state_action_executed'
     | 'all';
 
 export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; description: string; category: string }[] = [
@@ -277,10 +304,13 @@ export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; descrip
     { value: 'user_rejected', label: 'Usuario rechazado', description: 'Datos del usuario rechazado', category: 'Usuarios' },
     { value: 'user_deleted', label: 'Usuario eliminado', description: 'ID y datos del usuario eliminado', category: 'Usuarios' },
     { value: 'user_updated', label: 'Perfil de usuario actualizado', description: 'Datos actualizados del perfil', category: 'Usuarios' },
+    { value: 'withdrawal_requested', label: 'Solicitud de retiro de fondos', description: 'Gestor, monto total, créditos incluidos', category: 'Comisiones' },
+    { value: 'user_batch_imported', label: 'Usuario creado por importación masiva', description: 'Nombre, email, cédula, teléfono, ciudad, rol, contraseña temporal', category: 'Usuarios' },
+    { value: 'state_action_executed', label: 'Acción rápida ejecutada', description: 'Nombre de la acción, gestor, cliente y datos del crédito', category: 'Créditos' },
 ];
 
 export type AutomationType = 'webhook' | 'whatsapp' | 'email' | 'notificacion';
-export type AutomationRecipient = 'GESTOR' | 'ANALISTA' | 'CLIENTE' | 'ADMIN' | 'COORDINADOR_ZONA';
+export type AutomationRecipient = 'GESTOR' | 'ANALISTA' | 'CLIENTE' | 'ADMIN' | 'COORDINADOR_ZONA' | 'TESORERIA';
 
 export const AUTOMATION_TYPES: { value: AutomationType; label: string; icon: string }[] = [
     { value: 'whatsapp', label: 'WhatsApp', icon: '💬' },
@@ -295,6 +325,7 @@ export const AUTOMATION_RECIPIENTS: { value: AutomationRecipient; label: string 
     { value: 'CLIENTE', label: 'Cliente' },
     { value: 'ADMIN', label: 'Administrador' },
     { value: 'COORDINADOR_ZONA', label: 'Coordinador de Zona' },
+    { value: 'TESORERIA', label: 'Tesorería' },
 ];
 
 export interface AutomationRule {

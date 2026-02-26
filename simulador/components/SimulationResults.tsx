@@ -403,15 +403,25 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                     )}
 
                     {/* Footer */}
-                    <div className="relative z-10 flex justify-between items-end border-t border-white/10 pt-4">
-                       <div>
-                          <p className={`text-[10px] uppercase ${styles.accentColor}`}>Tasa M.V.</p>
-                          <p className={`font-mono font-bold ${styles.textColor}`}>{sim.rate}%</p>
+                    <div className="relative z-10 border-t border-white/10 pt-4 space-y-2">
+                       <div className="flex justify-between items-center">
+                          <div>
+                            <p className={`text-[10px] uppercase ${styles.accentColor}`}>Tasa M.V.</p>
+                            <p className={`font-mono font-bold ${styles.textColor}`}>{sim.rate}%</p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-[10px] uppercase ${styles.accentColor}`}>Factor</p>
+                            <p className={`font-mono font-bold ${styles.textColor}`}>{sim.fpmUsed}</p>
+                          </div>
                        </div>
-                       <div className="text-right">
-                          <p className={`text-[10px] uppercase ${styles.accentColor}`}>Factor</p>
-                          <p className={`font-mono font-bold ${styles.textColor}`}>{sim.fpmUsed}</p>
-                       </div>
+                       {sim.commissionPct != null && sim.commissionPct > 0 && (
+                         <div className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
+                           <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comisión Gestor</span>
+                           <span className={`font-mono font-bold text-sm ${styles.textColor}`}>
+                             {sim.commissionPct}% = {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.floor(sim.maxAmount * sim.commissionPct / 100))}
+                           </span>
+                         </div>
+                       )}
                     </div>
 
                     {!sim.isViable && (
@@ -529,7 +539,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                 </div>
 
                 {/* Hidden inputs */}
-                <input ref={galleryRef} type="file" accept="image/*" className="hidden"
+                <input ref={galleryRef} type="file" accept="image/*,.pdf,application/pdf" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleSideFile(side, f); e.target.value = ''; }} />
                 <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleSideFile(side, f); e.target.value = ''; }} />
@@ -583,43 +593,49 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
           )
         )}
 
-        {/* Datos extraídos */}
+        {/* Datos extraídos — editables */}
         {clientData && (
           <div className="space-y-4">
             {/* Banner de verificación */}
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
               <span className="text-lg mt-0.5">⚠️</span>
               <div>
-                <p className="text-xs font-black text-amber-800 uppercase tracking-wide">Verifica los datos antes de continuar</p>
-                <p className="text-xs text-amber-700 mt-0.5">Revisa cada campo cuidadosamente. Si algún dato no coincide con la cédula, vuelve a tomar la foto con mejor calidad.</p>
+                <p className="text-xs font-black text-amber-800 uppercase tracking-wide">Verifica y corrige los datos si es necesario</p>
+                <p className="text-xs text-amber-700 mt-0.5">Puedes editar cualquier campo directamente si la IA no lo leyó correctamente.</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
-              {[
-                { label: 'Nombre(s)', value: clientData.firstName },
-                { label: 'Apellido(s)', value: clientData.lastName },
-                { label: 'N° Identificación', value: clientData.idNumber },
-                { label: 'Sexo', value: clientData.sex },
-                { label: 'Nombre Completo', value: clientData.fullName },
-                { label: 'Fecha de Nacimiento', value: clientData.birthDate },
-                { label: 'Ciudad de Nacimiento', value: clientData.birthCity },
-                { label: 'Fecha de Expedición', value: clientData.expeditionDate },
-                { label: 'Ciudad de Expedición', value: clientData.expeditionCity },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex flex-col gap-0.5 py-2 border-b border-slate-100 last:border-0">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{label}</span>
-                  <span className={`font-bold ${value ? 'text-slate-800' : 'text-red-400 italic font-normal text-xs'}`}>
-                    {value || '⚠ No detectado — verifica la foto'}
-                  </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {([
+                { label: 'Nombre(s)', key: 'firstName' },
+                { label: 'Apellido(s)', key: 'lastName' },
+                { label: 'N° Identificación', key: 'idNumber' },
+                { label: 'Nombre Completo', key: 'fullName' },
+                { label: 'Sexo', key: 'sex' },
+                { label: 'Fecha de Nacimiento', key: 'birthDate' },
+                { label: 'Ciudad de Nacimiento', key: 'birthCity' },
+                { label: 'Fecha de Expedición', key: 'expeditionDate' },
+                { label: 'Ciudad de Expedición', key: 'expeditionCity' },
+              ] as { label: string; key: keyof ClientData }[]).map(({ label, key }) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{label}</label>
+                  <input
+                    type="text"
+                    value={clientData[key] || ''}
+                    onChange={e => onClientDataChange({ ...clientData, [key]: e.target.value })}
+                    placeholder={`Ingresa ${label.toLowerCase()}`}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500 transition-all ${
+                      clientData[key] ? 'border-slate-200 bg-white' : 'border-red-300 bg-red-50 placeholder-red-400'
+                    }`}
+                  />
                 </div>
               ))}
-              <div className="sm:col-span-2 pt-3 flex items-center gap-4">
+              <div className="sm:col-span-2 pt-1 flex items-center gap-4">
                 <button onClick={() => { onClientDataChange(null); setCedulaError(null); }}
                   className="text-xs text-slate-500 hover:text-red-600 font-bold border border-slate-200 hover:border-red-300 px-3 py-1.5 rounded-lg transition-all">
                   🔄 Volver a leer cédula
                 </button>
-                <p className="text-[10px] text-slate-400">¿Los datos son correctos? Puedes continuar.</p>
+                <p className="text-[10px] text-slate-400">Ajusta los datos si hay errores y luego continúa.</p>
               </div>
             </div>
           </div>

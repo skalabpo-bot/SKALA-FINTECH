@@ -1,16 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Credit, User, CreditState } from '../types';
+import { Credit, User, CreditState, UserRole } from '../types';
 import { MockService } from '../services/mockService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
-    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2
+    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload
 } from 'lucide-react';
 
 export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBack: () => void }> = ({ creditId, currentUser, onBack }) => {
   const [credit, setCredit] = useState<Credit | undefined>(undefined);
   const [states, setStates] = useState<CreditState[]>([]);
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'DOCUMENTS' | 'HISTORY' | 'CHAT'>('DETAILS');
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'DOCUMENTS' | 'HISTORY' | 'CHAT' | 'LEGAL_DOCS'>('DETAILS');
+  const [legalDocs, setLegalDocs] = useState<any[]>([]);
+  const [legalDocsLoading, setLegalDocsLoading] = useState(false);
+  const [uploadingLegal, setUploadingLegal] = useState(false);
+  const [legalDocType, setLegalDocType] = useState('Pagaré');
+  const [deletingLegalId, setDeletingLegalId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [sendingComment, setSendingComment] = useState(false);
@@ -39,6 +44,10 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   // Textos de respuesta para tareas de texto (key = task.id)
   const [taskTexts, setTaskTexts] = useState<Record<string, string>>({});
 
+  // Acciones rápidas por estado
+  const [stateActions, setStateActions] = useState<any[]>([]);
+  const [executingActionId, setExecutingActionId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,11 +65,31 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     loadExtras();
   }, [creditId]);
 
+  // Cargar acciones del estado actual cuando cambia el crédito/estado
+  useEffect(() => {
+    if (credit?.statusId) {
+      MockService.getStateActions?.(credit.statusId).then((actions: any[]) => {
+        // Filtrar por rol si la acción tiene restricción
+        const filtered = actions.filter((a: any) =>
+          !a.roles || a.roles.length === 0 || a.roles.includes(currentUser.role)
+        );
+        setStateActions(filtered);
+      }).catch(() => setStateActions([]));
+    }
+  }, [credit?.statusId]);
+
   useEffect(() => {
     if (activeTab === 'CHAT') {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [activeTab, credit?.comments]);
+    if (activeTab === 'LEGAL_DOCS' && credit) {
+        setLegalDocsLoading(true);
+        (MockService as any).getLegalDocuments(credit.id)
+            .then((docs: any[]) => setLegalDocs(docs))
+            .catch(() => setLegalDocs([]))
+            .finally(() => setLegalDocsLoading(false));
+    }
+  }, [activeTab, credit?.comments, credit?.id]);
 
   const refreshData = async () => {
     setLoading(true);
@@ -267,6 +296,40 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                      RESP: {currentStateObj.roleResponsible}
                  </div>
              )}
+             {/* ACCIONES RÁPIDAS DEL ESTADO */}
+             {stateActions.length > 0 && stateActions.map(action => (
+                <button
+                    key={action.id}
+                    disabled={executingActionId === action.id}
+                    onClick={async () => {
+                        setExecutingActionId(action.id);
+                        try {
+                            await MockService.logStateAction?.(credit.id, action.label, currentUser);
+                            // Si la acción tiene cambio de estado configurado, ejecutarlo automáticamente
+                            if (action.result_action === 'change_status' && action.result_state_id) {
+                                await MockService.updateCreditStatus(
+                                    credit.id,
+                                    action.result_state_id,
+                                    currentUser,
+                                    `Cambio automático por acción: ${action.label}`
+                                );
+                            }
+                            await refreshData();
+                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: `✓ "${action.label}" registrado`, type: 'success' } }));
+                        } catch {
+                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error al registrar acción', type: 'error' } }));
+                        } finally { setExecutingActionId(null); }
+                    }}
+                    className="flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 disabled:cursor-wait"
+                >
+                    {executingActionId === action.id
+                        ? <Loader2 size={13} className="animate-spin"/>
+                        : <Check size={13}/>
+                    }
+                    {action.label}
+                </button>
+             ))}
+
              {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && (
                 <select
                     value={credit.statusId}
@@ -360,6 +423,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           <TabButton active={activeTab==='DOCUMENTS'} onClick={()=>setActiveTab('DOCUMENTS')} label="Documentos" />
           <TabButton active={activeTab==='HISTORY'} onClick={()=>setActiveTab('HISTORY')} label="Trazabilidad" />
           <TabButton active={activeTab==='CHAT'} onClick={()=>setActiveTab('CHAT')} label="Chat Operativo" />
+          {[UserRole.ADMIN, UserRole.ANALISTA, UserRole.ASISTENTE_OPERATIVO].includes(currentUser.role as any) && (
+              <TabButton active={activeTab==='LEGAL_DOCS'} onClick={()=>setActiveTab('LEGAL_DOCS')} label="📁 Docs. Legales" />
+          )}
       </div>
 
       <div className="flex flex-col lg:grid lg:grid-cols-4 gap-6 lg:gap-8">
@@ -684,6 +750,90 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                 </div>
             )}
 
+            {activeTab === 'LEGAL_DOCS' && (
+                <div className="space-y-6 animate-fade-in">
+                    {/* Header */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-center gap-3">
+                        <div className="p-2 bg-amber-100 rounded-xl"><FolderLock size={20} className="text-amber-600"/></div>
+                        <div>
+                            <p className="font-bold text-amber-800 text-sm">Documentos Legales</p>
+                            <p className="text-xs text-amber-600">Visible solo para Analistas, Administradores y Asistentes Operativos</p>
+                        </div>
+                    </div>
+
+                    {/* Upload row */}
+                    <div className="flex gap-2 items-center">
+                        <input
+                            type="text"
+                            placeholder="Nombre del documento (ej: Pagaré, Contrato...)"
+                            value={legalDocType}
+                            onChange={e => setLegalDocType(e.target.value)}
+                            className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        />
+                        <label className={`flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer transition-colors whitespace-nowrap ${uploadingLegal || !legalDocType.trim() ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {uploadingLegal ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>}
+                            {uploadingLegal ? 'Subiendo...' : 'Subir archivo'}
+                            <input type="file" className="hidden" disabled={uploadingLegal || !legalDocType.trim()} onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file || !credit) return;
+                                setUploadingLegal(true);
+                                try {
+                                    const doc = await (MockService as any).uploadLegalDocument(credit.id, file, legalDocType.trim());
+                                    setLegalDocs(prev => [doc, ...prev]);
+                                    setLegalDocType('');
+                                } catch (err: any) {
+                                    alert('Error al subir: ' + err.message);
+                                } finally {
+                                    setUploadingLegal(false);
+                                    e.target.value = '';
+                                }
+                            }}/>
+                        </label>
+                    </div>
+
+                    {/* Lista de documentos */}
+                    {legalDocsLoading ? (
+                        <div className="flex justify-center py-12"><Loader2 className="animate-spin text-amber-400" size={28}/></div>
+                    ) : legalDocs.length === 0 ? (
+                        <div className="text-center py-16 text-slate-300 font-bold italic text-sm">No hay documentos legales cargados aún.</div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {legalDocs.map(d => (
+                                <div key={d.id} className="group p-4 bg-white rounded-xl border border-amber-100 flex flex-col items-center text-center gap-3 hover:border-amber-300 hover:shadow-md transition-all duration-300 relative">
+                                    <div className="p-3 bg-amber-50 rounded-lg text-amber-500 transition-transform group-hover:scale-105"><FolderLock size={24}/></div>
+                                    <div className="w-full">
+                                        <p className="text-[9px] font-bold text-slate-700 uppercase tracking-wide truncate" title={d.type}>{d.type}</p>
+                                        <p className="text-[8px] text-slate-400 mt-1 font-medium truncate">{d.name}</p>
+                                        <p className="text-[8px] text-slate-300 mt-0.5">{new Date(d.uploadedAt).toLocaleDateString('es-CO')}</p>
+                                    </div>
+                                    <div className="flex gap-2 w-full">
+                                        <a href={d.url} target="_blank" className="flex-1 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[9px] font-bold text-slate-600 flex items-center justify-center gap-1 hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-all"><Download size={11}/> Ver</a>
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm('¿Eliminar este documento?')) return;
+                                                setDeletingLegalId(d.id);
+                                                try {
+                                                    await (MockService as any).deleteLegalDocument(d.id);
+                                                    setLegalDocs(prev => prev.filter(x => x.id !== d.id));
+                                                } catch (err: any) {
+                                                    alert('Error al eliminar: ' + err.message);
+                                                } finally {
+                                                    setDeletingLegalId(null);
+                                                }
+                                            }}
+                                            disabled={deletingLegalId === d.id}
+                                            className="p-1.5 bg-red-50 border border-red-100 rounded-lg text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 transition-all disabled:opacity-40"
+                                        >
+                                            {deletingLegalId === d.id ? <Loader2 size={11} className="animate-spin"/> : <Trash size={11}/>}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {activeTab === 'HISTORY' && (
                 <div className="space-y-3 animate-fade-in pr-2 max-h-[65vh] overflow-y-auto custom-scrollbar">
                     {credit.history.length === 0 && <div className="text-center py-16 text-slate-300 font-bold italic text-sm">Sin registros de trazabilidad histórica.</div>}
@@ -792,6 +942,23 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all">
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Comisión Estimada</p>
                         <p className="text-3xl font-display font-black text-emerald-400 mt-2">${Number(credit.estimatedCommission || 0).toLocaleString()}</p>
+                        {MockService.hasPermission(currentUser, 'MARK_COMMISSION_PAID') ? (
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await MockService.markCommissionPaid(credit.id, !credit.comisionPagada, currentUser.id);
+                                        setCredit(prev => prev ? { ...prev, comisionPagada: !prev.comisionPagada, fechaPagoComision: !prev.comisionPagada ? new Date().toISOString() : undefined } : prev);
+                                    } catch (e: any) { alert(e.message); }
+                                }}
+                                className={`mt-3 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all cursor-pointer ${credit.comisionPagada ? 'bg-emerald-500/20 text-emerald-300 hover:bg-red-500/20 hover:text-red-300' : 'bg-white/10 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-300'}`}
+                            >
+                                {credit.comisionPagada ? '✓ Pagada' : '○ Pendiente'}
+                            </button>
+                        ) : (
+                            <span className={`mt-3 inline-flex items-center text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full ${credit.comisionPagada ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-400'}`}>
+                                {credit.comisionPagada ? '✓ Pagada' : '○ Pendiente'}
+                            </span>
+                        )}
                     </div>
                     <div className="pt-8 border-t border-white/10 flex justify-between items-center px-2">
                         <div>
@@ -861,6 +1028,23 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all">
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Comisión Estimada</p>
                         <p className="text-3xl font-display font-black text-emerald-400 mt-2">${Number(credit.estimatedCommission || 0).toLocaleString()}</p>
+                        {MockService.hasPermission(currentUser, 'MARK_COMMISSION_PAID') ? (
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await MockService.markCommissionPaid(credit.id, !credit.comisionPagada, currentUser.id);
+                                        setCredit(prev => prev ? { ...prev, comisionPagada: !prev.comisionPagada, fechaPagoComision: !prev.comisionPagada ? new Date().toISOString() : undefined } : prev);
+                                    } catch (e: any) { alert(e.message); }
+                                }}
+                                className={`mt-3 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all cursor-pointer ${credit.comisionPagada ? 'bg-emerald-500/20 text-emerald-300 hover:bg-red-500/20 hover:text-red-300' : 'bg-white/10 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-300'}`}
+                            >
+                                {credit.comisionPagada ? '✓ Pagada' : '○ Pendiente'}
+                            </button>
+                        ) : (
+                            <span className={`mt-3 inline-flex items-center text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full ${credit.comisionPagada ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-400'}`}>
+                                {credit.comisionPagada ? '✓ Pagada' : '○ Pendiente'}
+                            </span>
+                        )}
                     </div>
                     <div className="pt-8 border-t border-white/10 flex justify-between items-center px-2">
                         <div>
@@ -1056,31 +1240,41 @@ const TabButton = ({ active, onClick, label }: any) => (
     </button>
 );
 
-const EditableItem = ({ label, name, value, isEditing, onChange, type = "text", options }: any) => (
-    <div className={`p-6 rounded-[1.8rem] border-2 transition-all duration-500 ${isEditing ? 'bg-white border-primary/20 shadow-xl scale-[1.02] z-10' : 'bg-white border-slate-50 hover:border-slate-100 hover:shadow-lg'}`}>
-        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-3 px-1">{label}</p>
-        {isEditing ? (
-            options ? (
-                <select 
-                    name={name} 
-                    value={value} 
-                    onChange={onChange} 
-                    className="w-full text-xs font-bold text-slate-800 bg-white border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-primary shadow-sm"
-                >
-                    <option value="">Seleccione...</option>
-                    {options.map((o: any) => { const val = typeof o === 'object' ? o.value : o; const lbl = typeof o === 'object' ? o.label : o; return <option key={val} value={val}>{lbl}</option>; })}
-                </select>
+const EditableItem = ({ label, name, value, isEditing, onChange, type = "text", options }: any) => {
+    // Si el valor actual no está en las opciones (ej. ciudad traída por IA no coincide con la BD),
+    // lo añadimos temporalmente para que no se pierda al abrir el modo edición.
+    const effectiveOptions = options && value
+        ? options.some((o: any) => (typeof o === 'object' ? o.value : o) === value)
+            ? options
+            : [value, ...options]
+        : options;
+
+    return (
+        <div className={`p-6 rounded-[1.8rem] border-2 transition-all duration-500 ${isEditing ? 'bg-white border-primary/20 shadow-xl scale-[1.02] z-10' : 'bg-white border-slate-50 hover:border-slate-100 hover:shadow-lg'}`}>
+            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-3 px-1">{label}</p>
+            {isEditing ? (
+                effectiveOptions ? (
+                    <select
+                        name={name}
+                        value={value}
+                        onChange={onChange}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-primary shadow-sm"
+                    >
+                        <option value="">Seleccione...</option>
+                        {effectiveOptions.map((o: any) => { const val = typeof o === 'object' ? o.value : o; const lbl = typeof o === 'object' ? o.label : o; return <option key={val} value={val}>{lbl}</option>; })}
+                    </select>
+                ) : (
+                    <input
+                        type={type}
+                        name={name}
+                        value={value || ''}
+                        onChange={onChange}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-primary shadow-sm"
+                    />
+                )
             ) : (
-                <input 
-                    type={type} 
-                    name={name} 
-                    value={value || ''} 
-                    onChange={onChange} 
-                    className="w-full text-xs font-bold text-slate-800 bg-white border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-primary shadow-sm" 
-                />
-            )
-        ) : (
-            <p className="text-sm font-black text-slate-700 truncate px-1" title={value}>{value || '---'}</p>
-        )}
-    </div>
-);
+                <p className="text-sm font-black text-slate-700 truncate px-1" title={value}>{value || '---'}</p>
+            )}
+        </div>
+    );
+};
