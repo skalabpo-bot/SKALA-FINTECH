@@ -48,10 +48,17 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [stateActions, setStateActions] = useState<any[]>([]);
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
 
+  // Read receipts
+  const [creditReads, setCreditReads] = useState<{ userId: string; userName: string; lastReadAt: Date }[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     refreshData();
+    // Marcar como leído y cargar lecturas de otros usuarios
+    MockService.markCreditAsRead(creditId, currentUser.id, currentUser.name);
+    MockService.getCreditReadsByCredit(creditId).then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads));
+
     const loadExtras = async () => {
       const [ent, pag, cit, bnk, st, analystList, lines] = await Promise.all([MockService.getEntities(), MockService.getPagadurias(), MockService.getCities(), MockService.getBanks(), MockService.getStates(), MockService.getAnalysts ? MockService.getAnalysts() : Promise.resolve([]), MockService.getCreditLines()]);
       setEntities(ent);
@@ -177,6 +184,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
         await MockService.addComment(credit!.id, commentText, currentUser, attachedFile || undefined);
         setCommentText(''); setAttachedFile(null);
         await refreshData();
+        // Actualizar lecturas y marcar propio mensaje como leído
+        MockService.markCreditAsRead(creditId, currentUser.id, currentUser.name);
+        MockService.getCreditReadsByCredit(creditId).then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads));
         if (attachedFile) {
             window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: "Documento subido correctamente", type: 'success' } }));
         }
@@ -859,7 +869,13 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                 <div className="flex flex-col animate-fade-in max-h-[65vh]">
                     <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30 rounded-xl border border-slate-100 mb-3 custom-scrollbar min-h-0">
                         {credit.comments.length === 0 && <div className="text-center py-12 text-slate-300 font-bold text-xs">Envía un mensaje para iniciar el historial operativo.</div>}
-                        {credit.comments.map(c => (
+                        {credit.comments.map(c => {
+                            const readers = creditReads.filter(r =>
+                                r.userId !== currentUser.id &&
+                                r.userId !== c.userId &&
+                                r.lastReadAt > new Date(c.timestamp)
+                            );
+                            return (
                             <div key={c.id} className={`flex flex-col ${c.userId === currentUser.id ? 'items-end' : 'items-start'}`}>
                                 <div className={`max-w-[85%] rounded-xl p-3 text-xs shadow-sm ${c.isSystem ? 'bg-orange-50 border border-orange-100 w-full text-center italic text-orange-700 font-medium' : (c.userId === currentUser.id ? 'bg-primary text-white font-medium' : 'bg-white border border-slate-100 text-slate-700 font-medium')}`}>
                                     {!c.isSystem && <div className="font-bold mb-1.5 text-[8px] uppercase tracking-wider opacity-80">{c.userName} <span className="opacity-50">({c.userRole})</span></div>}
@@ -871,8 +887,15 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                     )}
                                     <div className="text-[8px] opacity-60 mt-2 text-right font-bold">{c.timestamp.toLocaleTimeString()}</div>
                                 </div>
+                                {readers.length > 0 && (
+                                    <div className={`mt-0.5 text-[8px] font-bold text-slate-400 flex items-center gap-1 ${c.userId === currentUser.id ? 'self-end' : 'self-start'}`}>
+                                        <span>✓✓</span>
+                                        <span>Visto por {readers.map(r => r.userName.split(' ')[0]).join(', ')} · {readers[readers.length - 1].lastReadAt.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' })}</span>
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                            );
+                        })}
                         <div ref={messagesEndRef} />
                     </div>
                     <form onSubmit={handleSendComment} className="flex gap-2 bg-white p-2 rounded-xl border border-slate-100 shadow-sm items-center">

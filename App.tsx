@@ -262,13 +262,20 @@ const App = () => {
     const [filterDateTo, setFilterDateTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [togglingComm, setTogglingComm] = useState<string | null>(null);
+    const [creditReadMap, setCreditReadMap] = useState<Record<string, Date>>({});
 
     useEffect(() => {
         const fetchData = async () => {
-            const [cr, st, ent] = await Promise.all([MockService.getCredits(currentUser!), MockService.getStates(), MockService.getEntities()]);
+            const [cr, st, ent, readMap] = await Promise.all([
+                MockService.getCredits(currentUser!),
+                MockService.getStates(),
+                MockService.getEntities(),
+                MockService.getCreditReadMap(currentUser!.id)
+            ]);
             setCredits(cr);
             setStates(st);
             setEntities(ent);
+            setCreditReadMap(readMap);
         };
         fetchData();
     }, [currentView]);
@@ -376,10 +383,16 @@ const App = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 text-sm">
-              {filtered.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
+              {filtered.map(c => {
+                const lastRead = creditReadMap[c.id];
+                const hasUnread = !!lastRead && new Date(c.updatedAt) > lastRead;
+                return (
+                  <tr key={c.id} className={`hover:bg-slate-50/50 transition-colors group ${hasUnread ? 'bg-orange-50/30' : ''}`}>
                     <td className="px-8 py-6">
-                        <p className="text-2xl font-black text-primary">{c.solicitudNumber || 'N/A'}</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-2xl font-black text-primary">{c.solicitudNumber || 'N/A'}</p>
+                            {hasUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-300 flex-shrink-0" title="Actividad no leída"/>}
+                        </div>
                     </td>
                     <td className="px-8 py-6">
                         <p className="font-black text-slate-800 text-base">{c.nombreCompleto}</p>
@@ -420,10 +433,17 @@ const App = () => {
                         <p className="text-[10px] font-bold text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</p>
                     </td>
                     <td className="px-8 py-6 text-right">
-                        <button onClick={() => { setSelectedCreditId(c.id); setCurrentView('detail'); }} className="px-6 py-2.5 bg-slate-100 group-hover:bg-primary group-hover:text-white text-slate-600 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest shadow-sm">Gestionar</button>
+                        <button onClick={() => {
+                            setSelectedCreditId(c.id);
+                            setCurrentView('detail');
+                            // Marcar como leído y actualizar el map local inmediatamente
+                            MockService.markCreditAsRead(c.id, currentUser!.id, currentUser!.name);
+                            setCreditReadMap(prev => ({ ...prev, [c.id]: new Date() }));
+                        }} className="px-6 py-2.5 bg-slate-100 group-hover:bg-primary group-hover:text-white text-slate-600 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest shadow-sm">Gestionar</button>
                     </td>
                   </tr>
-              ))}
+                );
+              })}
               {filtered.length === 0 && (
                   <tr>
                       <td colSpan={8} className="px-8 py-20 text-center text-slate-300 font-bold italic">No se encontraron expedientes.</td>

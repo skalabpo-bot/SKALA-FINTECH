@@ -2110,4 +2110,30 @@ export const ProductionService = {
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
         return '\uFEFF' + [headers.join(','), ...rows].join('\n');
     },
+
+    // --- LECTURAS DE CRÉDITO (read receipts) ---
+    markCreditAsRead: async (creditId: string, userId: string, userName: string) => {
+        try {
+            await supabase.from('credit_reads').upsert(
+                { credit_id: creditId, user_id: userId, user_name: userName, last_read_at: new Date().toISOString() },
+                { onConflict: 'credit_id,user_id' }
+            );
+        } catch { /* tabla puede no existir aún */ }
+    },
+
+    getCreditReadMap: async (userId: string): Promise<Record<string, Date>> => {
+        try {
+            const { data } = await supabase.from('credit_reads').select('credit_id, last_read_at').eq('user_id', userId);
+            const map: Record<string, Date> = {};
+            (data || []).forEach((r: any) => { map[r.credit_id] = new Date(r.last_read_at); });
+            return map;
+        } catch { return {}; }
+    },
+
+    getCreditReadsByCredit: async (creditId: string): Promise<{ userId: string; userName: string; lastReadAt: Date }[]> => {
+        try {
+            const { data } = await supabase.from('credit_reads').select('user_id, user_name, last_read_at').eq('credit_id', creditId);
+            return (data || []).map((r: any) => ({ userId: r.user_id, userName: r.user_name || 'Usuario', lastReadAt: new Date(r.last_read_at) }));
+        } catch { return []; }
+    },
 };
