@@ -34,6 +34,7 @@ export const UserManagement = () => {
   const [zones, setZones] = useState<Zone[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [banks, setBanks] = useState<string[]>([]);
+  const [entityNames, setEntityNames] = useState<string[]>([]);
   const [roleNames, setRoleNames] = useState<string[]>(Object.values(UserRole));
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -144,12 +145,13 @@ export const UserManagement = () => {
   const refreshUsers = async () => {
       setLoading(true);
       try {
-          const [uData, zData, cData, bData, rData] = await Promise.all([MockService.getUsers(), MockService.getZones(), MockService.getCities(), MockService.getBanks(), MockService.getRoles()]);
+          const [uData, zData, cData, bData, rData, eData] = await Promise.all([MockService.getUsers(), MockService.getZones(), MockService.getCities(), MockService.getBanks(), MockService.getRoles(), MockService.getEntities()]);
           setUsers(uData);
           setZones(zData);
           setCities(cData);
           setBanks(bData);
           setRoleNames(rData.map((r: any) => r.name));
+          setEntityNames((eData || []).filter((e: any) => e.isActive !== false).map((e: any) => e.name));
       } catch (err) {
           console.error("Error loading users:", err);
       } finally {
@@ -326,7 +328,11 @@ export const UserManagement = () => {
                                         </span>
                                     </td>
                                     <td className="p-4 text-slate-600 font-medium">
-                                        {u.city || zones.find(z => z.id === u.zoneId)?.name || '-'}
+                                        {u.role === 'ANALISTA_ENTIDAD'
+                                            ? (u.assignedEntities && u.assignedEntities.length > 0
+                                                ? <span className="text-[10px] text-blue-600 font-bold">{u.assignedEntities.join(', ')}</span>
+                                                : <span className="text-[10px] text-slate-400">Todas</span>)
+                                            : (u.city || zones.find(z => z.id === u.zoneId)?.name || '-')}
                                     </td>
                                     <td className="p-4 text-right">
                                         <div className="flex justify-end gap-2">
@@ -574,6 +580,35 @@ export const UserManagement = () => {
                                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
                             </select>
                         </div>
+
+                        {/* Entidades asignadas: solo para ANALISTA_ENTIDAD */}
+                        {formData.role === 'ANALISTA_ENTIDAD' && (
+                            <div className="col-span-1 md:col-span-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Entidades Asignadas <span className="text-slate-400 font-normal">(vacío = ve todas)</span></label>
+                                <div className="border rounded bg-white p-2 flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                                    {entityNames.map(eName => {
+                                        const checked = (formData.assignedEntities || []).includes(eName);
+                                        return (
+                                            <button
+                                                key={eName}
+                                                type="button"
+                                                onClick={() => {
+                                                    const current = formData.assignedEntities || [];
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        assignedEntities: checked ? current.filter(e => e !== eName) : [...current, eName]
+                                                    }));
+                                                }}
+                                                className={`text-[10px] px-2 py-1 rounded-md font-bold border transition-colors ${checked ? 'bg-blue-500 text-white border-blue-500' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-blue-400'}`}
+                                            >
+                                                {eName}
+                                            </button>
+                                        );
+                                    })}
+                                    {entityNames.length === 0 && <span className="text-xs text-slate-400">No hay entidades configuradas</span>}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="col-span-1 md:col-span-2 border-t border-slate-100 pt-4 mt-2 font-bold text-slate-700 flex items-center gap-2"><CreditCard size={16}/> Bancario</div>
                         <InputGroup label="Banco" name="banco" value={formData.banco} onChange={handleInputChange} options={banks} />

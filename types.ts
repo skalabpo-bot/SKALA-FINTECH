@@ -5,7 +5,8 @@ export enum UserRole {
   ASISTENTE_OPERATIVO = 'ASISTENTE_OPERATIVO',
   ANALISTA = 'ANALISTA',
   TESORERIA = 'TESORERIA',
-  SUPERVISOR_ASIGNADO = 'SUPERVISOR_ASIGNADO'
+  SUPERVISOR_ASIGNADO = 'SUPERVISOR_ASIGNADO',
+  ANALISTA_ENTIDAD = 'ANALISTA_ENTIDAD'
 }
 
 export type Permission =
@@ -78,6 +79,7 @@ export interface User {
   banco?: string;
   tipoCuenta?: 'AHORROS' | 'CORRIENTE';
   numeroCuenta?: string;
+  assignedEntities?: string[];
 }
 
 export interface NewsItem {

@@ -113,7 +113,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           const dataToSave = { ...editFormData };
           // Si el gestor guardó en modo subsanación, quitar el permiso automáticamente
           const currentStateName = states.find(s => s.id === credit?.statusId)?.name?.toUpperCase() ?? '';
-          const isGestorSubsanacion = currentUser.role === 'GESTOR' && currentStateName.includes('DEVUELTO') && !!credit?.subsanacionHabilitada;
+          const isGestorSubsanacion = currentUser.role === 'GESTOR' && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
           if (isGestorSubsanacion) dataToSave.subsanacionHabilitada = false;
           await MockService.updateCreditData(credit!.id, dataToSave, currentUser.id);
           setIsEditing(false);
@@ -258,7 +258,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   // Recalcular el estado actual en cada render para que se actualice inmediatamente
   const currentStateObj = states.find(s => s.id === credit.statusId);
   const isDevuelto = currentStateObj?.name?.toUpperCase().includes('DEVUELTO') ?? false;
-  const canEditAsGestor = currentUser.role === 'GESTOR' && isDevuelto && !!credit.subsanacionHabilitada;
+  const isAplazado = currentStateObj?.name?.toUpperCase().includes('APLAZADO') ?? false;
+  const isEditableState = isDevuelto || isAplazado;
+  const canEditAsGestor = currentUser.role === 'GESTOR' && isEditableState && !!credit.subsanacionHabilitada;
   const effectiveCanEdit = canEdit || canEditAsGestor;
 
   // Tareas de la devolución actual
@@ -351,8 +353,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
              )}
-             {/* ANALISTA (o quien tenga permiso de cambiar estado) puede habilitar / deshabilitar edición al gestor cuando está DEVUELTO */}
-             {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && currentUser.role !== 'GESTOR' && isDevuelto && (
+             {/* ANALISTA (o quien tenga permiso de cambiar estado) puede habilitar / deshabilitar edición al gestor cuando está DEVUELTO o APLAZADO */}
+             {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && currentUser.role !== 'GESTOR' && isEditableState && (
                 <button
                     onClick={handleToggleSubsanacion}
                     className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${
@@ -365,8 +367,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     {credit.subsanacionHabilitada ? 'Bloquear Edición' : 'Habilitar Edición al Gestor'}
                 </button>
              )}
-             {/* GESTOR puede cambiar de DEVUELTO a SUBSANADO únicamente */}
-             {currentUser.role === 'GESTOR' && !MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && isDevuelto && (
+             {/* GESTOR puede cambiar de DEVUELTO/APLAZADO a SUBSANADO únicamente */}
+             {currentUser.role === 'GESTOR' && !MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && isEditableState && (
                 <button
                     onClick={() => {
                         if (!allTasksDone) {
@@ -444,7 +446,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     )}
 
                     {/* TAREAS DE DEVOLUCIÓN */}
-                    {isDevuelto && devolucionTasksList.length > 0 && (
+                    {isEditableState && devolucionTasksList.length > 0 && (
                         <div className="bg-white border-2 border-red-100 rounded-3xl p-6 -mb-8">
                             <div className="flex items-center justify-between mb-5">
                                 <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] flex items-center gap-3">

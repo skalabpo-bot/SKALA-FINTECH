@@ -32,7 +32,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO'],
     [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID'],
     [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
-    [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA']
+    [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA'],
+    [UserRole.ANALISTA_ENTIDAD]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA']
 };
 
 const mapCreditFromDB = (c: any): Credit => {
@@ -78,7 +79,8 @@ const mapUserFromDB = (p: any): User => ({
     tipoCuenta: p.bank_details?.tipoCuenta,
     numeroCuenta: p.bank_details?.numeroCuenta,
     permissions: p.permissions || [],
-    documents: p.registration_docs || []
+    documents: p.registration_docs || [],
+    assignedEntities: Array.isArray(p.assigned_entities) ? p.assigned_entities : []
 });
 
 export const ProductionService = {
@@ -529,6 +531,11 @@ export const ProductionService = {
                 }
             } else if (user.role === 'ANALISTA') {
                 query = query.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
+            } else if (user.role === 'ANALISTA_ENTIDAD') {
+                if (user.assignedEntities && user.assignedEntities.length > 0) {
+                    query = query.in('entity_name', user.assignedEntities);
+                }
+                // si no tiene entidades asignadas, puede ver todos
             } else {
                 query = query.eq('assigned_gestor_id', user.id);
             }
@@ -546,6 +553,10 @@ export const ProductionService = {
                         fallbackQuery = fallbackQuery.in('assigned_gestor_id', zoneGestorIds);
                     } else {
                         return [];
+                    }
+                } else if (user.role === 'ANALISTA_ENTIDAD') {
+                    if (user.assignedEntities && user.assignedEntities.length > 0) {
+                        fallbackQuery = fallbackQuery.in('entity_name', user.assignedEntities);
                     }
                 } else {
                     fallbackQuery = fallbackQuery.eq('assigned_gestor_id', user.id);
@@ -1199,6 +1210,7 @@ export const ProductionService = {
         if (d.status) updateData.status = d.status;
         if (d.zoneId !== undefined) updateData.zone_id = d.zoneId || null;
         if (d.permissions !== undefined) updateData.permissions = d.permissions || [];
+        if (d.assignedEntities !== undefined) updateData.assigned_entities = d.assignedEntities || [];
         const { error } = await supabase.from('profiles').update(updateData).eq('id', id);
         if (error) throw error;
 
