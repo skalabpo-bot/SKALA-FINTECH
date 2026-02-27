@@ -38,6 +38,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [banks, setBanks] = useState<string[]>([]);
     const [roles, setRoles] = useState<RoleItem[]>([]);
     const [userCount, setUserCount] = useState(0);
+    const [allUsers, setAllUsers] = useState<any[]>([]);
 
     // Inputs
     const [newPagaduria, setNewPagaduria] = useState('');
@@ -46,6 +47,8 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [newZoneName, setNewZoneName] = useState('');
     const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
     const [editingZoneName, setEditingZoneName] = useState('');
+    const [reassignFromId, setReassignFromId] = useState<string | null>(null);
+    const [reassignToId, setReassignToId] = useState<string>('');
 
     // State Actions
     const [editingStateActions, setEditingStateActions] = useState<any[]>([]);
@@ -87,6 +90,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
         setStates(fetchedStates);
         setPagadurias(fetchedPagadurias);
         setZones(fetchedZones);
+        setAllUsers(fetchedUsers);
         setUserCount(fetchedUsers.length);
         setCities(fetchedCities);
         setBanks(fetchedBanks);
@@ -370,6 +374,34 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                             }}
                                         />
                                     </div>
+                                    {/* Reasignar usuarios de este supervisor a otro */}
+                                    {(() => {
+                                        const zoneUsers = allUsers.filter((u: any) => u.zoneId === z.id);
+                                        if (zoneUsers.length === 0) return null;
+                                        return (
+                                            <div className="mt-2 pt-2 border-t border-slate-100">
+                                                <div className="flex items-center gap-1 mb-1">
+                                                    <span className="text-[9px] font-bold text-slate-500">{zoneUsers.length} usuario{zoneUsers.length !== 1 ? 's' : ''} asignado{zoneUsers.length !== 1 ? 's' : ''}</span>
+                                                </div>
+                                                {reassignFromId === z.id ? (
+                                                    <div className="flex gap-1 items-center">
+                                                        <select value={reassignToId} onChange={e => setReassignToId(e.target.value)} className="flex-1 text-[10px] p-1 border rounded bg-white text-slate-700">
+                                                            <option value="">Sin supervisor</option>
+                                                            {zones.filter(oz => oz.id !== z.id).map(oz => <option key={oz.id} value={oz.id}>{oz.name}</option>)}
+                                                        </select>
+                                                        <button onClick={async () => {
+                                                            await MockService.bulkReassignZone(z.id, reassignToId || null);
+                                                            setReassignFromId(null); setReassignToId('');
+                                                            await refreshData();
+                                                        }} className="text-[9px] px-2 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 font-bold">Mover</button>
+                                                        <button onClick={() => { setReassignFromId(null); setReassignToId(''); }} className="text-[9px] px-2 py-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300">✕</button>
+                                                    </div>
+                                                ) : (
+                                                    <button onClick={() => { setReassignFromId(z.id); setReassignToId(''); }} className="text-[9px] text-indigo-500 hover:text-indigo-700 font-bold underline underline-offset-2">Reasignar a otro supervisor</button>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>

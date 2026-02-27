@@ -1678,6 +1678,10 @@ export const ProductionService = {
     deleteZone: async (id: string) => { await supabase.from('zones').delete().eq('id', id); },
     updateZoneCities: async (id: string, c: string[]) => { await supabase.from('zones').update({ cities: c }).eq('id', id); },
     renameZone: async (id: string, name: string) => { await supabase.from('zones').update({ name: name.trim() }).eq('id', id); },
+    bulkReassignZone: async (fromZoneId: string, toZoneId: string | null) => {
+        const { error } = await supabase.from('profiles').update({ zone_id: toZoneId || null }).eq('zone_id', fromZoneId);
+        if (error) throw error;
+    },
     // --- ROLES CRUD ---
     getRoles: async () => {
         try {
