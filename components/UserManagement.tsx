@@ -306,7 +306,7 @@ export const UserManagement = () => {
                             <tr className="border-b">
                                 <th className="p-4 text-left">Usuario</th>
                                 <th className="p-4 text-left">Rol</th>
-                                <th className="p-4 text-left">Zona</th>
+                                <th className="p-4 text-left">Supervisor Asignado</th>
                                 <th className="p-4 text-right">Acciones</th>
                             </tr>
                         </thead>
@@ -563,14 +563,14 @@ export const UserManagement = () => {
                         <div className="col-span-1 md:col-span-2 border-t border-slate-100 pt-4 mt-2 font-bold text-slate-700 flex items-center gap-2"><MapPin size={16}/> Ubicación</div>
                         <InputGroup label="Ciudad" name="city" value={formData.city} onChange={handleInputChange} options={cities} />
                         <div className="mb-4">
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Zona</label>
-                            <select 
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Supervisor Asignado</label>
+                            <select
                                 name="zoneId"
-                                value={formData.zoneId || ''} 
-                                onChange={handleInputChange} 
+                                value={formData.zoneId || ''}
+                                onChange={handleInputChange}
                                 className="w-full p-2 border rounded bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                             >
-                                <option value="">Global / Sin Zona</option>
+                                <option value="">Global / Sin Supervisor</option>
                                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
                             </select>
                         </div>

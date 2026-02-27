@@ -5,7 +5,7 @@ export enum UserRole {
   ASISTENTE_OPERATIVO = 'ASISTENTE_OPERATIVO',
   ANALISTA = 'ANALISTA',
   TESORERIA = 'TESORERIA',
-  COORDINADOR_ZONA = 'COORDINADOR_ZONA'
+  SUPERVISOR_ASIGNADO = 'SUPERVISOR_ASIGNADO'
 }
 
 export type Permission =
@@ -310,7 +310,7 @@ export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; descrip
 ];
 
 export type AutomationType = 'webhook' | 'whatsapp' | 'email' | 'notificacion';
-export type AutomationRecipient = 'GESTOR' | 'ANALISTA' | 'CLIENTE' | 'ADMIN' | 'COORDINADOR_ZONA' | 'TESORERIA';
+export type AutomationRecipient = 'GESTOR' | 'ANALISTA' | 'CLIENTE' | 'ADMIN' | 'SUPERVISOR_ASIGNADO' | 'TESORERIA';
 
 export const AUTOMATION_TYPES: { value: AutomationType; label: string; icon: string }[] = [
     { value: 'whatsapp', label: 'WhatsApp', icon: '💬' },
@@ -324,7 +324,7 @@ export const AUTOMATION_RECIPIENTS: { value: AutomationRecipient; label: string 
     { value: 'ANALISTA', label: 'Analista' },
     { value: 'CLIENTE', label: 'Cliente' },
     { value: 'ADMIN', label: 'Administrador' },
-    { value: 'COORDINADOR_ZONA', label: 'Coordinador de Zona' },
+    { value: 'SUPERVISOR_ASIGNADO', label: 'Supervisor Asignado' },
     { value: 'TESORERIA', label: 'Tesorería' },
 ];
 

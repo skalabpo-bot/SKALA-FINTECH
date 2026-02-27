@@ -557,7 +557,7 @@ const App = () => {
                           {regCities.map(c=><option key={c} value={c}>{c}</option>)}
                       </select>
                       <select value={regData.zonaId} onChange={e=>setRegData({...regData, zonaId: e.target.value})} className="w-full px-6 py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-primary">
-                          <option value="">Zona de trabajo (opcional)...</option>
+                          <option value="">Supervisor asignado (opcional)...</option>
                           {regZones.map(z=><option key={z.id} value={z.id}>{z.name}</option>)}
                       </select>
                   </div>

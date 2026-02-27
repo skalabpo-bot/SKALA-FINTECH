@@ -32,7 +32,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO'],
     [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID'],
     [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
-    [UserRole.COORDINADOR_ZONA]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA']
+    [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA']
 };
 
 const mapCreditFromDB = (c: any): Credit => {
@@ -114,8 +114,8 @@ export const ProductionService = {
         if (!user.roleDisplayName) {
             user.roleDisplayName = user.role.replace(/_/g, ' ');
         }
-        // Asegurar que COORDINADOR_ZONA siempre tenga VIEW_ZONE_CREDITS
-        if (user.role === 'COORDINADOR_ZONA' && user.permissions && !user.permissions.includes('VIEW_ZONE_CREDITS' as Permission)) {
+        // Asegurar que SUPERVISOR_ASIGNADO siempre tenga VIEW_ZONE_CREDITS
+        if (user.role === 'SUPERVISOR_ASIGNADO' && user.permissions && !user.permissions.includes('VIEW_ZONE_CREDITS' as Permission)) {
             user.permissions.push('VIEW_ZONE_CREDITS' as Permission);
         }
         return user;
@@ -512,11 +512,11 @@ export const ProductionService = {
         let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
-        const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'COORDINADOR_ZONA';
+        const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
 
         if (!canViewAll) {
             if (canViewZone && user.zoneId) {
-                // COORDINADOR_ZONA: obtener todos los gestores de su zona y filtrar créditos
+                // SUPERVISOR_ASIGNADO: obtener todos los gestores de su zona y filtrar créditos
                 const { data: zoneProfiles } = await supabase
                     .from('profiles')
                     .select('id')
@@ -1528,12 +1528,12 @@ export const ProductionService = {
             } catch (e) { /* silently skip */ }
         }
 
-        // Resolver COORDINADOR_ZONA
-        if (roles.includes('COORDINADOR_ZONA')) {
+        // Resolver SUPERVISOR_ASIGNADO
+        if (roles.includes('SUPERVISOR_ASIGNADO')) {
             try {
-                const { data: coords } = await supabase.from('profiles').select('full_name, phone, email').eq('role', 'COORDINADOR_ZONA').eq('status', 'ACTIVE');
+                const { data: coords } = await supabase.from('profiles').select('full_name, phone, email').eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
                 (coords || []).forEach((c: any) => {
-                    destinatarios.push({ nombre: c.full_name || '', telefono: c.phone || '', email: c.email || '', rol: 'COORDINADOR_ZONA' });
+                    destinatarios.push({ nombre: c.full_name || '', telefono: c.phone || '', email: c.email || '', rol: 'SUPERVISOR_ASIGNADO' });
                 });
             } catch (e) { /* silently skip */ }
         }
@@ -1665,6 +1665,7 @@ export const ProductionService = {
     addZone: async (n: string) => { await supabase.from('zones').insert({ name: n, cities: [] }); },
     deleteZone: async (id: string) => { await supabase.from('zones').delete().eq('id', id); },
     updateZoneCities: async (id: string, c: string[]) => { await supabase.from('zones').update({ cities: c }).eq('id', id); },
+    renameZone: async (id: string, name: string) => { await supabase.from('zones').update({ name: name.trim() }).eq('id', id); },
     // --- ROLES CRUD ---
     getRoles: async () => {
         try {

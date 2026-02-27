@@ -44,6 +44,8 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [newCity, setNewCity] = useState('');
     const [newBank, setNewBank] = useState('');
     const [newZoneName, setNewZoneName] = useState('');
+    const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+    const [editingZoneName, setEditingZoneName] = useState('');
 
     // State Actions
     const [editingStateActions, setEditingStateActions] = useState<any[]>([]);
@@ -153,13 +155,13 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             <div className="flex flex-col md:flex-row justify-between items-end mb-2">
                 <div>
                     <h2 className="text-3xl font-display font-bold text-slate-800">Configuración del Sistema</h2>
-                    <p className="text-slate-500 text-sm mt-1">Administra flujos, zonas, roles y parámetros globales.</p>
+                    <p className="text-slate-500 text-sm mt-1">Administra flujos, supervisores, roles y parámetros globales.</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <QuickStat label="Usuarios Activos" value={userCount} icon={Users} colorClass="text-blue-600" bgClass="bg-blue-50" />
-                <QuickStat label="Zonas Operativas" value={zones.length} icon={Globe} colorClass="text-indigo-600" bgClass="bg-indigo-50" />
+                <QuickStat label="Supervisores" value={zones.length} icon={Globe} colorClass="text-indigo-600" bgClass="bg-indigo-50" />
                 <QuickStat label="Estados del Flujo" value={states.length} icon={Layers} colorClass="text-orange-600" bgClass="bg-orange-50" />
                 <QuickStat label="Roles del Sistema" value={roles.length} icon={Shield} colorClass="text-violet-600" bgClass="bg-violet-50" />
             </div>
@@ -323,18 +325,26 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     {/* ZONES */}
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Map size={20} className="text-indigo-500"/> Zonas</h3>
+                            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Map size={20} className="text-indigo-500"/> Supervisores</h3>
                         </div>
                         <form onSubmit={async (e) => { e.preventDefault(); if(newZoneName) { await MockService.addZone(newZoneName); await refreshData(); setNewZoneName(''); } }} className="flex gap-2 mb-4">
-                            <input type="text" placeholder="Nueva Zona..." value={newZoneName} onChange={e => setNewZoneName(e.target.value)} className="flex-1 text-xs px-3 py-2 bg-slate-50 rounded-lg border-none focus:ring-1 focus:ring-indigo-500 text-slate-900"/>
+                            <input type="text" placeholder="Nuevo Supervisor..." value={newZoneName} onChange={e => setNewZoneName(e.target.value)} className="flex-1 text-xs px-3 py-2 bg-slate-50 rounded-lg border-none focus:ring-1 focus:ring-indigo-500 text-slate-900"/>
                             <button type="submit" className="bg-indigo-500 text-white p-2 rounded-lg hover:bg-indigo-600"><Plus size={16}/></button>
                         </form>
                         <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                             {zones.map(z => (
                                 <div key={z.id} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 hover:bg-white transition-colors">
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="font-bold text-xs text-slate-700">{z.name}</span>
-                                        <button onClick={async () => { await MockService.deleteZone(z.id); await refreshData(); }} className="text-slate-300 hover:text-red-500"><Trash size={12}/></button>
+                                        {editingZoneId === z.id ? (
+                                            <form onSubmit={async (e) => { e.preventDefault(); if(editingZoneName.trim()) { await MockService.renameZone(z.id, editingZoneName.trim()); await refreshData(); } setEditingZoneId(null); }} className="flex gap-1 flex-1 mr-2">
+                                                <input autoFocus type="text" value={editingZoneName} onChange={e => setEditingZoneName(e.target.value)} className="flex-1 text-xs px-2 py-1 border border-indigo-400 rounded bg-white text-slate-900"/>
+                                                <button type="submit" className="text-xs px-2 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600">✓</button>
+                                                <button type="button" onClick={() => setEditingZoneId(null)} className="text-xs px-2 py-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300">✕</button>
+                                            </form>
+                                        ) : (
+                                            <button onClick={() => { setEditingZoneId(z.id); setEditingZoneName(z.name); }} className="font-bold text-xs text-slate-700 hover:text-indigo-600 text-left">{z.name}</button>
+                                        )}
+                                        <button onClick={async () => { await MockService.deleteZone(z.id); await refreshData(); }} className="text-slate-300 hover:text-red-500 ml-1"><Trash size={12}/></button>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mb-2">
                                         {z.cities.map(city => (
