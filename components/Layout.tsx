@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { User, Notification } from '../types';
 import { MockService } from '../services/mockService';
-import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone } from 'lucide-react';
 
 interface Toast {
     id: string;
@@ -24,11 +24,49 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [billeteraEnabled, setBilleteraEnabled] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = Math.random().toString(36).substr(2, 9);
       setToasts(prev => [...prev, { id, message, type }]);
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
+
+  // PWA Install prompt
+  useEffect(() => {
+    // Detectar si ya está instalada
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsAppInstalled(true);
+    }
+
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setInstallPrompt(null);
+      showToast('App instalada correctamente', 'success');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
   };
 
   useEffect(() => {
@@ -126,6 +164,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         </nav>
 
         <div className="p-4 border-t space-y-2">
+          {/* Botón instalar app */}
+          {installPrompt && !isAppInstalled && (
+            <button
+              onClick={handleInstallClick}
+              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 text-sm font-bold text-white bg-primary rounded-xl hover:bg-orange-600 transition-all shadow-md shadow-primary/20 animate-fade-in"
+            >
+              <Download size={16} />
+              <span>Instalar App</span>
+            </button>
+          )}
+          {isAppInstalled && (
+            <div className="flex items-center justify-center space-x-2 px-4 py-2 text-[10px] font-bold text-green-600 bg-green-50 rounded-lg">
+              <Smartphone size={14} />
+              <span>App instalada</span>
+            </div>
+          )}
+
           <button onClick={() => onChangeView('profile')} className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-white transition-colors text-left">
             <img src={currentUser.avatar} className="w-8 h-8 rounded-full border object-cover" />
             <div className="flex-1 min-w-0">

@@ -17,6 +17,7 @@ import { WithdrawalPanel } from './components/WithdrawalPanel';
 import { User, Credit, UserDocument, Zone, UserRole } from './types';
 import { MockService } from './services/mockService';
 import { supabase } from './services/supabaseClient';
+import { subscribeToPush, registerServiceWorker } from './services/pushNotificationService';
 import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -92,6 +93,8 @@ const App = () => {
               documents: profile.registration_docs || [],
             };
             setCurrentUser(user);
+            // Suscribir a push notifications silenciosamente
+            subscribeToPush(user.id).catch(() => {});
           }
         }
       } catch (_) {
@@ -100,6 +103,7 @@ const App = () => {
         setSessionChecked(true);
       }
     };
+    registerServiceWorker();
     checkSession();
   }, []);
 
@@ -159,6 +163,8 @@ const App = () => {
         if (user) {
           setCurrentUser(user);
           setCurrentView('dashboard');
+          // Suscribir a push notifications después del login
+          subscribeToPush(user.id).catch(() => {});
           dispatchAlert(`Bienvenido, ${user.name}`, 'success');
         } else {
           dispatchAlert('Su cuenta está pendiente de aprobación por administración.', 'info');

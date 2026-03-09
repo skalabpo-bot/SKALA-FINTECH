@@ -122,18 +122,30 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     Extrae valores numéricos exactos y LISTA los descuentos.
 
     PASO 1 - DETECCIÓN DE ENTIDAD:
-    Determina si el desprendible es de CREMIL (Caja de Retiro de las Fuerzas Militares).
-    Indicadores de CREMIL: palabras como "CREMIL", "Fuerzas Militares", "Ejército", "Armada", "Fuerza Aérea", "Policía Nacional", "CASUR", "FOPEP", membrete militar o policial.
-    - Si es CREMIL → entityType: "CREMIL"
-    - Si no → entityType: "GENERAL"
+    Determina el tipo de entidad según el membrete del desprendible. Evalúa EN ORDEN:
+
+    a) CREMIL (Caja de Retiro de las Fuerzas Militares):
+       Indicadores: "CREMIL", "Fuerzas Militares", "Ejército", "Armada", "Fuerza Aérea", "CASUR", "FOPEP", membrete militar.
+       → entityType: "CREMIL"
+
+    b) MIN_DEFENSA (Ministerio de Defensa / Policía Nacional):
+       Indicadores: "Ministerio de Defensa", "Min Defensa", "MINDEFENSA", "Policía Nacional", "PONAL", "DGSM".
+       → entityType: "MIN_DEFENSA"
+
+    c) SEGUROS_ALFA:
+       Indicadores: "Seguros Alfa", "ALFA", "Seguros de Vida Alfa".
+       → entityType: "SEGUROS_ALFA"
+
+    d) Si no coincide con ninguno de los anteriores:
+       → entityType: "GENERAL"
 
     PASO 2 - EXTRACCIÓN DE CAMPOS:
     1. entityType: "CREMIL" o "GENERAL" según el paso anterior.
     2. employerName: Nombre de la empresa o pagaduría que expide el desprendible (ej: "Policía Nacional", "Seguros Alfa", "Alcaldía de Bogotá"). Extrae exactamente el nombre que aparece en el membrete.
     3. monthlyIncome: Suma salarial fija (Básico, Sueldo, Asignación, Mesada).
     4. mandatoryDeductions:
-       - Si es GENERAL: SUMA SOLO Salud y Pensión (Fondos de Ley obligatorios).
-       - Si es CREMIL: Pon 0 (en CREMIL la ley aplica sobre el salario bruto directamente).
+       - Si es GENERAL o SEGUROS_ALFA: SUMA SOLO Salud y Pensión (Fondos de Ley obligatorios).
+       - Si es CREMIL o MIN_DEFENSA: Pon 0 (la ley aplica sobre el salario bruto directamente).
     5. embargos: Valor de embargos judiciales.
     6. otherDeductions: Suma de TODO lo demás (Libranzas, Préstamos, Seguros, Aportes, etc). EXCLUYE Salud/Pensión/Embargos.
     7. detailedDeductions: Lista detallada de CADA item incluido en 'otherDeductions'.
@@ -197,7 +209,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
             otherDeductions: data.otherDeductions || 0,
             embargos: data.embargos || 0,
             detailedDeductions: data.detailedDeductions || [],
-            entityType: data.entityType === 'CREMIL' ? 'CREMIL' : 'GENERAL',
+            entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
             employerName: data.employerName || ''
           };
         }

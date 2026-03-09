@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { FinancialForm } from '../simulador/components/FinancialForm';
 import { LoanConfigurator } from '../simulador/components/LoanConfigurator';
 import { SimulationResults } from '../simulador/components/SimulationResults';
+import { SimulatorProvider } from '../simulador/context/SimulatorContext';
+import { getRadicacionAbierta } from '../simulador/services/settingsService';
 import {
   AppStep,
   AnalysisResult,
@@ -116,7 +118,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [selectedPagaduria, setSelectedPagaduria] = useState('');
   const [pagaduriaItems, setPagaduriaItems] = useState<{ name: string; tipo: string }[]>([]);
 
+  const [observaciones, setObservaciones] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [radicacionAbierta, setRadicacionAbierta] = useState(true);
 
   // Cargar líneas de crédito, tipos de pensión, ciudades y pagadurías desde la BD
   useEffect(() => {
@@ -124,6 +128,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     MockService.getPensionTypes().then((types: string[]) => setPensionTypes(types));
     MockService.getCities().then((c: string[]) => setCities(c));
     MockService.getPagaduriaItems().then((items: { name: string; tipo: string }[]) => setPagaduriaItems(items));
+    getRadicacionAbierta().then(setRadicacionAbierta);
   }, []);
 
   // Pre-seleccionar línea de crédito según la simulación elegida
@@ -146,6 +151,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     try {
       const fpmTable = await getFPMTable();
       const results = simulateLoan(config.customQuota ?? analysisResult.availableQuota, config, fpmTable);
+      // Sort by gestor commission (highest first)
+      results.sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0));
       setLoanConfig(config);
       setSimulations(results);
       setSelectedSimIdx(null);
@@ -183,6 +190,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     setCiudadResidencia('');
     setEstadoCivil('');
     setSelectedPagaduria('');
+    setObservaciones('');
     setCurrentStep(AppStep.PAYSTUB_UPLOAD);
   };
 
@@ -270,6 +278,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       ...fromContact,
       ...fromPayroll,
       ...(documents.length > 0 ? { documents } : {}),
+      ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
     };
   };
 
@@ -311,7 +320,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const errDireccion = direccionCompleta.trim() && !/[a-zA-Z]/.test(direccionCompleta) ? 'Incluye letras en la dirección (Ej: Calle 5 # 10-23, no solo números)' : '';
   const errBarrio = barrio.trim() && /^\d+$/.test(barrio.trim()) ? 'El barrio no puede ser solo números' : '';
 
+  const paystubReady = paystubFile !== null;
+
   const canCreate = cedulaReady &&
+    paystubReady &&
     correo.trim() !== '' && !errCorreo &&
     telefonoCelular.trim() !== '' && !errCelular &&
     direccionCompleta.trim() !== '' && !errDireccion &&
@@ -323,7 +335,19 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const stepIndex = currentStep as number;
 
   return (
+    <SimulatorProvider>
     <div className="animate-fade-in">
+      {/* Radicación cerrada banner */}
+      {!radicacionAbierta && (
+        <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-2xl p-5 flex items-start gap-3">
+          <span className="text-2xl mt-0.5">🔒</span>
+          <div>
+            <p className="text-sm font-black text-red-800">Radicacion cerrada temporalmente</p>
+            <p className="text-xs text-red-600 mt-1">No es posible crear creditos en este momento. Puedes simular pero no radicar. Un administrador debe reabrir la radicacion.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -654,6 +678,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 </label>
               </div>
 
+              {/* Gate: desprendible obligatorio */}
+              {!paystubReady && (
+                <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-5 space-y-2">
+                  <p className="text-sm font-black text-orange-800">📄 Desprendible obligatorio</p>
+                  <p className="text-xs text-orange-700">Debes subir al menos un desprendible de nomina para poder radicar el credito, asi el calculo se haya hecho manual.</p>
+                </div>
+              )}
+
               {/* Gate: cédula obligatoria antes de contacto */}
               {!cedulaReady && (
                 <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 space-y-2">
@@ -755,37 +787,59 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 </p>
               )}
 
+              {/* Observaciones */}
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Observaciones <span className="text-slate-300 normal-case tracking-normal font-bold">(opcional — visible en la bandeja)</span>
+                </p>
+                <textarea
+                  value={observaciones}
+                  onChange={e => setObservaciones(e.target.value)}
+                  placeholder="Ej: Cliente solicita desembolso urgente, tiene cartera con Bayport..."
+                  rows={3}
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+
               {/* Botones duales */}
               {canCreate && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                  {/* Opción 1: Radicar ahora */}
-                  <button
-                    onClick={handleRadicarAhora}
-                    disabled={isCreating}
-                    className="flex flex-col items-center gap-2 py-5 px-4 rounded-2xl bg-primary hover:bg-orange-600 shadow-xl shadow-primary/30 transition-all text-white disabled:opacity-40"
-                  >
-                    {isCreating ? (
-                      <Loader2 size={22} className="animate-spin" />
-                    ) : (
-                      <Zap size={22} />
-                    )}
-                    <span className="font-black text-sm uppercase tracking-wide">
-                      {isCreating ? 'Radicando...' : 'Radicar Ahora'}
-                    </span>
-                    <span className="text-[10px] text-white/70 text-center leading-tight">Crea el crédito con los datos actuales y completa después</span>
-                  </button>
+                radicacionAbierta ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    {/* Opción 1: Radicar ahora */}
+                    <button
+                      onClick={handleRadicarAhora}
+                      disabled={isCreating}
+                      className="flex flex-col items-center gap-2 py-5 px-4 rounded-2xl bg-primary hover:bg-orange-600 shadow-xl shadow-primary/30 transition-all text-white disabled:opacity-40"
+                    >
+                      {isCreating ? (
+                        <Loader2 size={22} className="animate-spin" />
+                      ) : (
+                        <Zap size={22} />
+                      )}
+                      <span className="font-black text-sm uppercase tracking-wide">
+                        {isCreating ? 'Radicando...' : 'Radicar Ahora'}
+                      </span>
+                      <span className="text-[10px] text-white/70 text-center leading-tight">Crea el crédito con los datos actuales y completa después</span>
+                    </button>
 
-                  {/* Opción 2: Completar formulario */}
-                  <button
-                    onClick={handleCompletarFormulario}
-                    disabled={isCreating}
-                    className="flex flex-col items-center gap-2 py-5 px-4 rounded-2xl border-2 border-slate-200 hover:border-primary/60 bg-white hover:bg-primary/5 transition-all text-slate-700 disabled:opacity-40"
-                  >
-                    <FileText size={22} className="text-slate-400" />
-                    <span className="font-black text-sm uppercase tracking-wide">Completar Formulario</span>
-                    <span className="text-[10px] text-slate-400 text-center leading-tight">Llena todos los datos del cliente antes de radicar</span>
-                  </button>
-                </div>
+                    {/* Opción 2: Completar formulario */}
+                    <button
+                      onClick={handleCompletarFormulario}
+                      disabled={isCreating}
+                      className="flex flex-col items-center gap-2 py-5 px-4 rounded-2xl border-2 border-slate-200 hover:border-primary/60 bg-white hover:bg-primary/5 transition-all text-slate-700 disabled:opacity-40"
+                    >
+                      <FileText size={22} className="text-slate-400" />
+                      <span className="font-black text-sm uppercase tracking-wide">Completar Formulario</span>
+                      <span className="text-[10px] text-slate-400 text-center leading-tight">Llena todos los datos del cliente antes de radicar</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5 text-center">
+                    <span className="text-xl">🔒</span>
+                    <p className="text-sm font-black text-red-800 mt-2">Radicacion cerrada</p>
+                    <p className="text-xs text-red-600 mt-1">No es posible crear creditos en este momento.</p>
+                  </div>
+                )
               )}
             </div>
           )}
@@ -801,5 +855,6 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         </div>
       )}
     </div>
+    </SimulatorProvider>
   );
 };

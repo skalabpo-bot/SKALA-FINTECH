@@ -18,6 +18,7 @@ const mapFromDb = (row: any): FinancialEntity => ({
   maxCartera: row.max_cartera != null ? Number(row.max_cartera) : undefined,
   pagaduriaMaxCartera: row.pagaduria_max_cartera ?? undefined,
   commissions: row.commissions ?? undefined,
+  requiresFullForm: row.requires_full_form ?? false,
 });
 
 export const getAllEntities = async (): Promise<FinancialEntity[]> => {

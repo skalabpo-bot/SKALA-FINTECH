@@ -5,6 +5,7 @@ import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '
 import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
 import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
+import { getRadicacionAbierta, updateRadicacionAbierta } from '../simulador/services/settingsService';
 
 const STATE_COLORS = [
     { value: 'bg-gray-500', label: 'Gris' },
@@ -72,6 +73,8 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     // Feature flags
     const [billeteraEnabled, setBilleteraEnabledState] = useState(false);
     const [billeteraLoading, setBilleteraLoading] = useState(true);
+    const [radicacionAbierta, setRadicacionAbiertaState] = useState(true);
+    const [radicacionLoading, setRadicacionLoading] = useState(true);
 
     useEffect(() => {
         refreshData();
@@ -79,6 +82,10 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             setBilleteraEnabledState(v);
             setBilleteraLoading(false);
         }).catch(() => setBilleteraLoading(false));
+        getRadicacionAbierta().then((v) => {
+            setRadicacionAbiertaState(v);
+            setRadicacionLoading(false);
+        }).catch(() => setRadicacionLoading(false));
     }, []);
 
     const refreshData = async () => {
@@ -509,6 +516,24 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                             className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-40 ${billeteraEnabled ? 'bg-green-500' : 'bg-slate-300'}`}
                         >
                             <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${billeteraEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between py-4">
+                        <div>
+                            <p className="font-semibold text-slate-800 text-sm">Radicacion de Creditos</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Cierra la radicacion para no permitir crear creditos mientras haces cambios.</p>
+                        </div>
+                        <button
+                            disabled={radicacionLoading}
+                            onClick={async () => {
+                                const next = !radicacionAbierta;
+                                setRadicacionAbiertaState(next);
+                                await updateRadicacionAbierta(next);
+                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: next ? 'Radicacion abierta — los gestores pueden crear creditos.' : 'Radicacion cerrada — los gestores NO pueden crear creditos.', type: next ? 'success' : 'warning' } }));
+                            }}
+                            className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-40 ${radicacionAbierta ? 'bg-green-500' : 'bg-red-500'}`}
+                        >
+                            <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${radicacionAbierta ? 'translate-x-5' : 'translate-x-0'}`} />
                         </button>
                     </div>
                 </div>

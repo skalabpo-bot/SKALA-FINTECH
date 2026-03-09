@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FinancialData, AnalysisResult } from '../types';
 import { calculateCapacity } from '../services/calculatorService';
 import { analyzePaystubDocument } from '../services/geminiService';
+import { useSimulator } from '../context/SimulatorContext';
 
 interface FinancialFormProps {
   initialData?: FinancialData;
@@ -10,6 +11,14 @@ interface FinancialFormProps {
   onPaystubFile?: (file: File) => void;
   onEmployerName?: (name: string) => void;
 }
+
+// Loading stage messages
+const LOADING_STAGES = [
+  'Optimizando imagen...',
+  'Identificando campos...',
+  'Extrayendo datos...',
+  'Verificando...',
+];
 
 // Utility to compress image before sending to AI
 const compressImage = (file: File): Promise<string> => {
@@ -21,10 +30,9 @@ const compressImage = (file: File): Promise<string> => {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1024; // Resize to max 1024px width for speed
+        const MAX_WIDTH = 1024;
         const scaleSize = MAX_WIDTH / img.width;
-        
-        // Only resize if bigger than max
+
         if (scaleSize < 1) {
             canvas.width = MAX_WIDTH;
             canvas.height = img.height * scaleSize;
@@ -35,10 +43,8 @@ const compressImage = (file: File): Promise<string> => {
 
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        // Compress to JPEG 0.7 quality
+
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        // Remove prefix for API
         resolve(dataUrl.split(',')[1]);
       };
       img.onerror = (err) => reject(err);
@@ -47,23 +53,35 @@ const compressImage = (file: File): Promise<string> => {
   });
 };
 
+// Entity type badge config
+const ENTITY_BADGES: Record<string, { label: string; color: string }> = {
+  CREMIL: { label: 'CREMIL Detectado — Ley 50 sobre salario bruto (50%)', color: 'green' },
+  MIN_DEFENSA: { label: 'Min Defensa Detectado — Ley 50 + restriccion SMMLV', color: 'blue' },
+  SEGUROS_ALFA: { label: 'Seguros Alfa Detectado — Ley 1527 al 52%', color: 'purple' },
+};
+
 export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAnalysisComplete, onPaystubFile, onEmployerName }) => {
-  // Refs para callbacks opcionales (evita recrear processFile por cambios de referencia)
+  const { state: { smmlv } } = useSimulator();
+
   const onPaystubFileRef = useRef(onPaystubFile);
   const onEmployerNameRef = useRef(onEmployerName);
   useEffect(() => { onPaystubFileRef.current = onPaystubFile; }, [onPaystubFile]);
   useEffect(() => { onEmployerNameRef.current = onEmployerName; }, [onEmployerName]);
-  const [data, setData] = useState<FinancialData>(initialData || { 
+
+  const [data, setData] = useState<FinancialData>(initialData || {
     entityType: 'GENERAL',
-    monthlyIncome: 0, 
-    mandatoryDeductions: 0, 
-    otherDeductions: 0, 
+    monthlyIncome: 0,
+    mandatoryDeductions: 0,
+    otherDeductions: 0,
     embargos: 0,
     detailedDeductions: [],
     manualQuota: 0
   });
   const [isAnalizing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasUploadedPaystub, setHasUploadedPaystub] = useState(false);
+  const [lastFile, setLastFile] = useState<File | null>(null);
+  const [loadingStage, setLoadingStage] = useState(0);
 
   useEffect(() => {
     if (initialData) {
@@ -71,18 +89,43 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     }
   }, [initialData]);
 
+  // Animate loading stages
+  useEffect(() => {
+    if (!isAnalizing) {
+      setLoadingStage(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setLoadingStage(prev => (prev + 1) % LOADING_STAGES.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [isAnalizing]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setData(prev => ({ ...prev, [name]: Number(value) }));
   };
 
   const handleCalculate = (currentData: FinancialData) => {
-    const result = calculateCapacity(currentData);
+    const result = calculateCapacity(currentData, smmlv);
     onAnalysisComplete(result);
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validation: income minimum
+    if (!data.manualQuota || data.manualQuota <= 0) {
+      if (data.monthlyIncome < 100000) {
+        setError('El ingreso mensual debe ser mayor a $100,000.');
+        return;
+      }
+      if (data.mandatoryDeductions + data.otherDeductions + data.embargos > data.monthlyIncome) {
+        setError('Las deducciones no pueden ser mayores al ingreso.');
+        return;
+      }
+    }
+
     if (data.manualQuota && data.manualQuota > 0) {
       handleCalculate(data);
       return;
@@ -91,7 +134,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
       handleCalculate(data);
       return;
     }
-    setError("Por favor ingrese los datos del desprendible O una cuota directa.");
+    setError('Por favor ingrese los datos del desprendible O una cuota directa.');
   };
 
   const processFile = useCallback(async (file: File) => {
@@ -101,6 +144,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
       return;
     }
 
+    setLastFile(file);
     setIsAnalyzing(true);
     setError(null);
 
@@ -122,15 +166,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
       const extractedData = await analyzePaystubDocument(base64String, file.type.includes('image') ? 'image/jpeg' : file.type);
 
-      // Notificar employer name al padre si está disponible
       if (extractedData.employerName) {
         onEmployerNameRef.current?.(extractedData.employerName);
-      }
-
-      // Bloquear pagadurías aún no soportadas
-      if (extractedData.employerName && /seguros(\s+de\s+vida)?\s*alfa/i.test(extractedData.employerName)) {
-        setError(`⚠️ Seguros Alfa aún no está disponible para cálculo automático con IA.\n\nPor favor ingrese los datos manualmente.`);
-        return;
       }
 
       setData(prev => ({
@@ -138,15 +175,22 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
         manualQuota: prev.manualQuota,
       }));
 
+      setHasUploadedPaystub(true);
       handleCalculate(extractedData);
 
     } catch (err) {
-      setError('No pudimos leer el documento automáticamente. Por favor ingrese los datos manualmente.');
+      setError('No pudimos leer el documento automaticamente. Por favor ingrese los datos manualmente o reintente.');
       console.error(err);
     } finally {
       setIsAnalyzing(false);
     }
-  }, []); 
+  }, [smmlv]);
+
+  const handleRetry = () => {
+    if (lastFile) {
+      processFile(lastFile);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -176,11 +220,18 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
   const isManualMode = (data.manualQuota || 0) > 0;
 
-  // Reusable nice input style
   const inputContainerClass = "group relative transition-all duration-300";
   const labelClass = "block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 ml-1 group-focus-within:text-primary-600 transition-colors";
   const inputClass = "block w-full pl-10 pr-4 py-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all font-mono font-bold text-xl shadow-sm group-hover:border-slate-300";
   const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-primary-500 transition-colors";
+
+  // Entity badge
+  const badge = ENTITY_BADGES[data.entityType];
+  const badgeColors: Record<string, string> = {
+    green: 'bg-green-100 text-green-800 border-green-300',
+    blue: 'bg-blue-100 text-blue-800 border-blue-300',
+    purple: 'bg-purple-100 text-purple-800 border-purple-300',
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden font-sans">
@@ -193,33 +244,40 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
               </svg>
             </span>
-            Análisis Financiero
+            Analisis Financiero
           </h3>
-          <p className="text-sm text-slate-500 mt-1 ml-10">Digitalización de desprendible y cálculo de capacidad de ley.</p>
-          {data.entityType === 'CREMIL' && (
-            <div className="ml-10 mt-2 inline-flex items-center gap-1.5 bg-green-100 text-green-800 border border-green-300 text-xs font-bold px-3 py-1 rounded-full">
+          <p className="text-sm text-slate-500 mt-1 ml-10">Digitalizacion de desprendible y calculo de capacidad de ley.</p>
+          {badge && (
+            <div className={`ml-10 mt-2 inline-flex items-center gap-1.5 border text-xs font-bold px-3 py-1 rounded-full ${badgeColors[badge.color] || badgeColors.green}`}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                 <path fillRule="evenodd" d="M16.403 12.652a3 3 0 000-5.304 3 3 0 00-3.75-3.751 3 3 0 00-5.305 0 3 3 0 00-3.751 3.75 3 3 0 000 5.305 3 3 0 003.75 3.751 3 3 0 005.305 0 3 3 0 003.751-3.75zm-2.546-4.46a.75.75 0 00-1.214-.883l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
               </svg>
-              CREMIL Detectado — Ley aplicada sobre salario bruto (50%)
+              {badge.label}
+            </div>
+          )}
+          {hasUploadedPaystub && (
+            <div className="ml-10 mt-2 inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 border border-emerald-300 text-xs font-bold px-3 py-1 rounded-full">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+              </svg>
+              Desprendible cargado
             </div>
           )}
         </div>
       </div>
 
       <div className="p-8 space-y-8">
-        
-        {/* Dropzone IA */}
+
+        {/* Dropzone IA — always visible */}
         <div className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden group
-          ${isAnalizing ? 'border-primary-400 bg-primary-50' : 'border-slate-300 hover:border-primary-400 hover:bg-slate-50'}
-          ${isManualMode ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-          
-          <input 
-            type="file" 
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" 
+          ${isAnalizing ? 'border-primary-400 bg-primary-50' : hasUploadedPaystub ? 'border-emerald-300 bg-emerald-50/30 hover:border-primary-400' : 'border-slate-300 hover:border-primary-400 hover:bg-slate-50'}`}>
+
+          <input
+            type="file"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
             accept="image/*,application/pdf"
-            onChange={handleFileUpload} 
-            disabled={isAnalizing || isManualMode}
+            onChange={handleFileUpload}
+            disabled={isAnalizing}
           />
 
           <div className="p-10 flex flex-col items-center justify-center text-center relative z-10">
@@ -234,20 +292,34 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                       </svg>
                     </div>
                  </div>
-                 <h4 className="mt-4 text-primary-900 font-bold text-lg">Procesando a Alta Velocidad...</h4>
-                 <p className="text-primary-600 text-sm">Optimizando imagen y extrayendo datos.</p>
+                 <h4 className="mt-4 text-primary-900 font-bold text-lg">{LOADING_STAGES[loadingStage]}</h4>
+                 <div className="flex gap-1 mt-3">
+                   {LOADING_STAGES.map((_, i) => (
+                     <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i === loadingStage ? 'bg-primary-600 scale-125' : i < loadingStage ? 'bg-primary-300' : 'bg-slate-200'}`} />
+                   ))}
+                 </div>
               </div>
             ) : (
               <>
-                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md">
-                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-primary-600">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                <div className={`w-16 h-16 rounded-2xl shadow-sm border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md ${hasUploadedPaystub ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
+                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-8 h-8 ${hasUploadedPaystub ? 'text-emerald-500' : 'text-primary-600'}`}>
+                      {hasUploadedPaystub ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      )}
                    </svg>
                 </div>
-                <h4 className="text-lg font-bold text-slate-700 group-hover:text-primary-700 transition-colors">Arrastre su Desprendible aquí</h4>
+                <h4 className="text-lg font-bold text-slate-700 group-hover:text-primary-700 transition-colors">
+                  {hasUploadedPaystub ? 'Subir otro desprendible' : 'Arrastre su Desprendible aqui'}
+                </h4>
                 <p className="text-sm text-slate-400 mt-2 max-w-sm">
-                  O haga clic para explorar. Soporta imágenes y PDF.
-                  <span className="block mt-1 text-xs font-semibold text-primary-500 bg-primary-50 py-1 px-2 rounded-full inline-block">También puede usar Ctrl + V</span>
+                  {hasUploadedPaystub
+                    ? 'Puede subir otro archivo para reanalizar.'
+                    : <>O haga clic para explorar. Soporta imagenes y PDF.
+                        <span className="block mt-1 text-xs font-semibold text-primary-500 bg-primary-50 py-1 px-2 rounded-full inline-block">Tambien puede usar Ctrl + V</span>
+                      </>
+                  }
                 </p>
               </>
             )}
@@ -256,17 +328,26 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
         {error && (
           <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-lg text-sm flex items-center gap-3 animate-fade-in shadow-sm">
-             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
              </svg>
-             {error}
+             <span className="flex-1">{error}</span>
+             {lastFile && !isAnalizing && (
+               <button
+                 type="button"
+                 onClick={handleRetry}
+                 className="ml-2 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-bold rounded-lg transition-colors flex-shrink-0"
+               >
+                 Reintentar
+               </button>
+             )}
           </div>
         )}
 
         <form onSubmit={handleManualSubmit} className="space-y-8">
-          
+
           <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 transition-all duration-300 ${isManualMode ? 'opacity-40 blur-[1px] pointer-events-none' : 'opacity-100'}`}>
-            
+
             {/* Input Card 1: Ingreso */}
             <div className={inputContainerClass}>
               <label className={labelClass}>Ingreso Mensual</label>
@@ -343,8 +424,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                   value={data.embargos || ''}
                   onChange={handleInputChange}
                   className={`block w-full pl-10 pr-4 py-4 rounded-xl border bg-slate-50 placeholder-slate-400 focus:outline-none focus:ring-4 transition-all font-mono font-bold text-xl shadow-sm group-hover:border-slate-300
-                    ${data.embargos > 0 
-                      ? 'border-red-300 text-red-700 bg-red-50 focus:border-red-500 focus:ring-red-500/20' 
+                    ${data.embargos > 0
+                      ? 'border-red-300 text-red-700 bg-red-50 focus:border-red-500 focus:ring-red-500/20'
                       : 'border-slate-200 text-slate-800 focus:bg-white focus:border-red-500 focus:ring-red-500/10'}`}
                   placeholder="0"
                 />
@@ -358,7 +439,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                 <div className="w-full border-t border-slate-200"></div>
               </div>
               <div className="relative flex justify-center">
-                <span className="bg-white px-4 text-xs text-slate-400 font-bold uppercase tracking-widest">Opción Avanzada</span>
+                <span className="bg-white px-4 text-xs text-slate-400 font-bold uppercase tracking-widest">Opcion Avanzada</span>
               </div>
           </div>
 
@@ -377,7 +458,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                     </label>
                     <p className="text-xs text-slate-500 leading-relaxed ml-9">
                       Use esto si ya conoce la capacidad de endeudamiento exacta (Ej: Certificaciones CREMIL). <br/>
-                      <span className="text-primary-600 font-semibold">Nota: Esto anula el cálculo automático.</span>
+                      <span className="text-primary-600 font-semibold">Nota: Esto anula el calculo automatico.</span>
                     </p>
                   </div>
                   <div className="relative w-full md:w-72 group">
@@ -390,8 +471,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                         value={data.manualQuota || ''}
                         onChange={handleInputChange}
                         className={`block w-full pl-10 pr-4 py-4 rounded-xl border focus:outline-none focus:ring-4 transition-all font-mono font-bold text-2xl shadow-sm
-                            ${isManualMode 
-                                ? 'border-primary-300 bg-white text-primary-900 focus:border-primary-500 focus:ring-primary-500/20' 
+                            ${isManualMode
+                                ? 'border-primary-300 bg-white text-primary-900 focus:border-primary-500 focus:ring-primary-500/20'
                                 : 'border-slate-300 bg-white text-slate-400 focus:text-slate-900 focus:border-primary-500 focus:ring-primary-500/10'}`}
                         placeholder="0"
                       />
@@ -403,10 +484,10 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
           <div className="pt-4 flex justify-end">
             <button
               type="submit"
-              disabled={!isManualMode && (!data.monthlyIncome || data.monthlyIncome <= 0)}
+              disabled={isAnalizing}
               className={`
                 px-10 py-4 rounded-xl font-bold shadow-xl transition-all flex items-center gap-3 text-sm uppercase tracking-wide w-full md:w-auto justify-center
-                ${!isManualMode && (!data.monthlyIncome || data.monthlyIncome <= 0)
+                ${isAnalizing
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-slate-900 text-white hover:bg-slate-800 hover:shadow-2xl hover:-translate-y-1'
                 }

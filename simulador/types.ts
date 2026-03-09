@@ -7,7 +7,7 @@ export enum ProductType {
   COMPRA_CARTERA = 'Compra de Cartera'
 }
 
-export type EntityType = 'GENERAL' | 'CREMIL';
+export type EntityType = 'GENERAL' | 'CREMIL' | 'MIN_DEFENSA' | 'SEGUROS_ALFA';
 
 export interface FinancialEntity {
   id: string;
@@ -21,6 +21,7 @@ export interface FinancialEntity {
   maxCartera?: number; // Máximo de compras de cartera permitidas (null = sin límite)
   pagaduriaMaxCartera?: Record<string, number>; // Override por pagaduría, ej: {"MINDEFENSA": 1}
   commissions?: Record<string, number>; // Comisión (%) por producto, ej: {"Libre Inversión": 3.5, "Compra de Cartera": 2.8}
+  requiresFullForm?: boolean; // Si true, requiere formulario completo (no radicación rápida)
 }
 
 export interface FPMEntry {

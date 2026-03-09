@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { AnalysisResult, SimulationResult, ProductType, LoanConfiguration, PaymentMethod, ClientData } from '../types';
 import { AdBanner } from './AdBanner';
 import { calculateDisbursement } from '../services/calculatorService';
@@ -258,8 +258,29 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  const viableCount = simulations.filter(s => s.isViable).length;
+  // Sort by gestor commission (highest first)
+  const sortedSimulations = useMemo(() =>
+    [...simulations].sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0)),
+    [simulations]
+  );
+  const viableSims = useMemo(() => sortedSimulations.filter(s => s.isViable), [sortedSimulations]);
+  const nonViableSims = useMemo(() => sortedSimulations.filter(s => !s.isViable), [sortedSimulations]);
+  const [showNonViable, setShowNonViable] = useState(false);
+
+  const viableCount = viableSims.length;
   const selectedCount = selectedSimulations.size;
+
+  // Total commission for selected products
+  const totalCommission = useMemo(() => {
+    if (selectedCount === 0) return 0;
+    let total = 0;
+    simulations.forEach((sim, i) => {
+      if (selectedSimulations.has(i) && sim.commissionPct && sim.commissionPct > 0) {
+        total += Math.floor(sim.maxAmount * sim.commissionPct / 100);
+      }
+    });
+    return total;
+  }, [selectedSimulations, simulations]);
 
   return (
     <div className="space-y-8 animate-fade-in-up">
@@ -325,10 +346,12 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
               )}
             </div>
 
+            {/* Viable cards with staggered animation */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {simulations.map((sim, idx) => {
+              {viableSims.map((sim, viableIdx) => {
+                const idx = simulations.indexOf(sim);
                 const styles = getCardStyles(sim.product);
-                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod);
+                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
                 const base = sim.maxAmount - seguroAval;
                 const cuatroXMil = Math.floor(base * 0.004);
@@ -339,11 +362,11 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                   <div
                     key={`${sim.product}-${idx}`}
                     onClick={() => toggleSimulation(idx)}
-                    className={`relative rounded-2xl p-6 ${styles.gradient} ${styles.shadowColor} shadow-2xl border-t ${styles.borderColor} flex flex-col justify-between h-auto transform transition-all duration-300 group overflow-hidden
-                      ${sim.isViable ? 'cursor-pointer' : ''}
+                    className={`relative rounded-2xl p-6 ${styles.gradient} ${styles.shadowColor} shadow-2xl border-t ${styles.borderColor} flex flex-col justify-between h-auto transform transition-all duration-300 group overflow-hidden cursor-pointer
+                      animate-fade-in
                       ${isSelected
                         ? `scale-105 -translate-y-2 ring-4 ring-white ring-offset-2`
-                        : sim.isViable ? 'hover:scale-105 hover:-translate-y-2' : ''
+                        : 'hover:scale-105 hover:-translate-y-2'
                       }`}
                   >
                     {/* Shine */}
@@ -388,7 +411,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                           <span>- {formatCurrency(seguroAval)}</span>
                         </div>
                         <div className={`flex justify-between text-[10px] ${styles.accentColor}`}>
-                          <span>4×1000</span>
+                          <span>4x1000</span>
                           <span>- {formatCurrency(cuatroXMil)}</span>
                         </div>
                         <div className={`flex justify-between text-[10px] ${styles.accentColor}`}>
@@ -416,25 +439,50 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                        </div>
                        {sim.commissionPct != null && sim.commissionPct > 0 && (
                          <div className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
-                           <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comisión Gestor</span>
+                           <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comision Gestor</span>
                            <span className={`font-mono font-bold text-sm ${styles.textColor}`}>
-                             {sim.commissionPct}% = {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.floor(sim.maxAmount * sim.commissionPct / 100))}
+                             {sim.commissionPct}% = {formatCurrency(Math.floor(sim.maxAmount * sim.commissionPct / 100))}
                            </span>
                          </div>
                        )}
                     </div>
-
-                    {!sim.isViable && (
-                       <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-20 flex items-center justify-center">
-                          <div className="bg-red-500/20 border border-red-500 text-red-100 px-4 py-2 rounded-lg font-bold backdrop-blur-md">
-                             Monto Insuficiente
-                          </div>
-                       </div>
-                    )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Non-viable summary */}
+            {nonViableSims.length > 0 && (
+              <div className="mt-6">
+                <button
+                  onClick={() => setShowNonViable(!showNonViable)}
+                  className="w-full flex items-center justify-between px-5 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-bold text-slate-500 transition-colors"
+                >
+                  <span>{nonViableSims.length} producto{nonViableSims.length > 1 ? 's' : ''} no viable{nonViableSims.length > 1 ? 's' : ''}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-4 h-4 transition-transform ${showNonViable ? 'rotate-180' : ''}`}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {showNonViable && (
+                  <div className="mt-3 space-y-2">
+                    {nonViableSims.map((sim, i) => (
+                      <div key={i} className="flex items-center justify-between px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                        <span className="font-bold text-slate-500">{sim.product}</span>
+                        <span className="text-red-500 font-mono font-bold text-xs">Monto Insuficiente</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Total commission row */}
+            {totalCommission > 0 && selectedCount > 1 && (
+              <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4">
+                <span className="text-sm font-bold text-emerald-800">Comision Total ({selectedCount} productos)</span>
+                <span className="text-xl font-mono font-extrabold text-emerald-700">{formatCurrency(totalCommission)}</span>
+              </div>
+            )}
           </>
         ) : (
           <div className="text-center p-16 bg-white rounded-3xl border-2 border-dashed border-slate-200">
