@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Loader2, CheckCircle2, UserPlus, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { Loader2, CheckCircle2, UserPlus, Eye, EyeOff, Copy, Check, Camera } from 'lucide-react';
 
 /**
  * Genera el código de supervisor: iniciales + últimos 3 dígitos de cédula
@@ -13,6 +13,8 @@ const generateSupervisorCode = (name: string, lastName: string, cedula: string):
   const last3 = (cedula || '').trim().slice(-3);
   return `${initial1}${initial2}-${last3}`;
 };
+
+type DocEntry = { name: string; url: string; type: string };
 
 export const SupervisorRegistration: React.FC = () => {
   const [nombre, setNombre] = useState('');
@@ -27,8 +29,39 @@ export const SupervisorRegistration: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [supervisorCode, setSupervisorCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [docs, setDocs] = useState<DocEntry[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false);
 
   const code = generateSupervisorCode(nombre, apellido, cedula);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingDoc(type);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const filePath = `registration/${Date.now()}_${type}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+
+      setDocs(prev => [
+        ...prev.filter(d => d.type !== type),
+        { name: file.name, url: urlData.publicUrl, type }
+      ]);
+    } catch (err: any) {
+      setError(`Error al subir ${type.replace(/_/g, ' ')}: ${err.message}`);
+    } finally {
+      setUploadingDoc(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +72,20 @@ export const SupervisorRegistration: React.FC = () => {
     if (!cedula.trim() || !/^\d{6,12}$/.test(cedula.trim())) { setError('Cedula invalida (solo numeros, 6-12 digitos)'); return; }
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Correo invalido'); return; }
     if (!password || password.length < 6) { setError('La contrasena debe tener minimo 6 caracteres'); return; }
+
+    // Validar documentos obligatorios
+    const requiredDocs = ['CEDULA_FRONTAL', 'CEDULA_POSTERIOR', 'RUT', 'CERTIFICACION_BANCARIA'];
+    const uploadedTypes = docs.map(d => d.type);
+    const missingDocs = requiredDocs.filter(doc => !uploadedTypes.includes(doc));
+    if (missingDocs.length > 0) {
+      setError(`Faltan documentos: ${missingDocs.map(d => d.replace(/_/g, ' ')).join(', ')}`);
+      return;
+    }
+
+    if (!acceptedPolicy) {
+      setError('Debes aceptar la politica de tratamiento de datos');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -78,13 +125,14 @@ export const SupervisorRegistration: React.FC = () => {
         console.warn('Error creando zona:', zoneError);
       }
 
-      // 4. Actualizar el perfil con el rol, estado activo y zona asignada
+      // 4. Actualizar el perfil con el rol, estado activo, zona y documentos
       const profileUpdate: any = {
         role: 'SUPERVISOR_ASIGNADO',
         status: 'ACTIVE',
         full_name: fullName,
         phone: phone.trim(),
         cedula: cedula.trim(),
+        registration_docs: docs,
       };
       if (zoneData?.id) {
         profileUpdate.zone_id = zoneData.id;
@@ -199,7 +247,7 @@ export const SupervisorRegistration: React.FC = () => {
           <p className="text-sm opacity-80 mt-1">Crea tu cuenta y obtendras tu codigo de supervisor</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
           {/* Preview del código */}
           {nombre && apellido && cedula.length >= 3 && (
             <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-4 text-center animate-fade-in">
@@ -289,6 +337,62 @@ export const SupervisorRegistration: React.FC = () => {
             </div>
           </div>
 
+          {/* Documentos */}
+          <div className="pt-4 border-t border-slate-100">
+            <h4 className="font-black text-slate-400 text-[9px] uppercase tracking-widest mb-2">Documentos (Obligatorio)</h4>
+            <p className="text-[10px] text-red-600 font-bold mb-4">* Debes subir los 4 documentos para completar tu registro</p>
+            <div className="grid grid-cols-2 gap-3">
+              {['CEDULA_FRONTAL', 'CEDULA_POSTERIOR', 'RUT', 'CERTIFICACION_BANCARIA'].map(type => (
+                <div
+                  key={type}
+                  className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center gap-2 transition-all ${
+                    docs.find(d => d.type === type)
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  {uploadingDoc === type ? (
+                    <Loader2 size={20} className="animate-spin text-orange-500" />
+                  ) : (
+                    <Camera size={20} className={docs.find(d => d.type === type) ? 'text-green-500' : 'text-slate-400'} />
+                  )}
+                  <p className="text-[8px] font-black text-center uppercase leading-tight text-slate-500">
+                    {type.replace(/_/g, ' ')}
+                  </p>
+                  <label className="text-[9px] bg-white border-2 px-3 py-1.5 rounded-xl cursor-pointer font-black shadow-sm hover:shadow-md transition-all">
+                    {docs.find(d => d.type === type) ? 'CAMBIAR' : 'SUBIR'}
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*,.pdf"
+                      onChange={e => handleFileUpload(e, type)}
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Política de datos */}
+          <div className="pt-4 border-t border-slate-100">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={acceptedPolicy}
+                onChange={e => setAcceptedPolicy(e.target.checked)}
+                className="mt-0.5 w-5 h-5 rounded border-2 border-slate-300 text-orange-500 focus:ring-orange-500 accent-orange-500 flex-shrink-0"
+                required
+              />
+              <span className="text-xs text-slate-600 leading-relaxed">
+                He leido y acepto la{' '}
+                <a href="/?pagina=politicas" target="_blank" className="text-orange-500 font-bold hover:underline">
+                  Politica de Tratamiento de Datos Personales
+                </a>{' '}
+                y autorizo a SKALA para el tratamiento de mis datos conforme a la Ley 1581 de 2012.
+              </span>
+            </label>
+          </div>
+
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 font-bold">
               {error}
@@ -297,7 +401,7 @@ export const SupervisorRegistration: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || uploadingDoc !== null}
             className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white font-black text-sm uppercase tracking-wide rounded-xl transition-all shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (

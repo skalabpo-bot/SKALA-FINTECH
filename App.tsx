@@ -20,6 +20,7 @@ import { supabase } from './services/supabaseClient';
 import { subscribeToPush, registerServiceWorker } from './services/pushNotificationService';
 import { cleanupAllSubscriptions } from './services/realtimeService';
 import { SupervisorRegistration } from './components/SupervisorRegistration';
+import { PoliticaDatos } from './components/PoliticaDatos';
 import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -33,10 +34,13 @@ interface Toast {
 }
 
 const App = () => {
-  // Ruta oculta: ?registro=supervisor muestra formulario de registro de supervisor
+  // Rutas especiales por query params
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('registro') === 'supervisor') {
     return <SupervisorRegistration />;
+  }
+  if (urlParams.get('pagina') === 'politicas') {
+    return <PoliticaDatos />;
   }
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -60,7 +64,8 @@ const App = () => {
     name: '', email: '', phone: '', password: '', cedula: '', city: '',
     zonaId: '',
     banco: '', tipoCuenta: 'AHORROS', numeroCuenta: '',
-    registration_docs: [] as { name: string, url: string, type: string }[]
+    registration_docs: [] as { name: string, url: string, type: string }[],
+    acceptedPolicy: false
   });
   const [regCities, setRegCities] = useState<string[]>([]);
   const [regBanks, setRegBanks] = useState<string[]>([]);
@@ -626,6 +631,25 @@ const App = () => {
                             </div>
                         ))}
                     </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={regData.acceptedPolicy || false}
+                        onChange={e => setRegData({...regData, acceptedPolicy: e.target.checked})}
+                        className="mt-0.5 w-5 h-5 rounded border-2 border-slate-300 text-orange-500 focus:ring-orange-500 accent-orange-500 flex-shrink-0"
+                        required
+                      />
+                      <span className="text-xs text-slate-600 leading-relaxed">
+                        He leído y acepto la{' '}
+                        <a href="/?pagina=politicas" target="_blank" className="text-orange-500 font-bold hover:underline">
+                          Política de Tratamiento de Datos Personales
+                        </a>{' '}
+                        y autorizo a SKALA para el tratamiento de mis datos conforme a la Ley 1581 de 2012.
+                      </span>
+                    </label>
                   </div>
 
                   <button type="submit" disabled={isBusy || uploadingDoc !== null} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] mt-6 shadow-2xl disabled:opacity-50 uppercase tracking-widest text-xs">
