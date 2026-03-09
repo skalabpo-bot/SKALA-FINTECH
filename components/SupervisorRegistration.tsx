@@ -5,7 +5,7 @@ import { Loader2, CheckCircle2, UserPlus, Eye, EyeOff, Copy, Check, Camera, Cloc
 
 /**
  * Genera el código de supervisor: iniciales + últimos 3 dígitos de cédula
- * Ejemplo: CAMILO MONCADA CC 1031168620 → CM-620
+ * Ejemplo: JUAN PÉREZ CC 1012345678 → JP-678
  */
 const generateSupervisorCode = (name: string, lastName: string, cedula: string): string => {
   const initial1 = (name || '').trim().charAt(0).toUpperCase();
@@ -248,7 +248,7 @@ export const SupervisorRegistration: React.FC = () => {
                 type="text"
                 value={nombre}
                 onChange={e => setNombre(e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''))}
-                placeholder="Camilo"
+                placeholder="Juan"
                 className={inputCls}
                 required
               />
@@ -259,7 +259,7 @@ export const SupervisorRegistration: React.FC = () => {
                 type="text"
                 value={apellido}
                 onChange={e => setApellido(e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''))}
-                placeholder="Moncada"
+                placeholder="Pérez"
                 className={inputCls}
                 required
               />
@@ -272,7 +272,7 @@ export const SupervisorRegistration: React.FC = () => {
               type="text"
               value={cedula}
               onChange={e => setCedula(e.target.value.replace(/\D/g, '').slice(0, 12))}
-              placeholder="1031168620"
+              placeholder="1012345678"
               className={inputCls}
               required
             />
