@@ -19,6 +19,7 @@ import { MockService } from './services/mockService';
 import { supabase } from './services/supabaseClient';
 import { subscribeToPush, registerServiceWorker } from './services/pushNotificationService';
 import { cleanupAllSubscriptions } from './services/realtimeService';
+import { SupervisorRegistration } from './components/SupervisorRegistration';
 import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -32,6 +33,12 @@ interface Toast {
 }
 
 const App = () => {
+  // Ruta oculta: ?registro=supervisor muestra formulario de registro de supervisor
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('registro') === 'supervisor') {
+    return <SupervisorRegistration />;
+  }
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');

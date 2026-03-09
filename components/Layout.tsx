@@ -51,9 +51,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
     const isiOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIOS(isiOS);
 
-    // Mostrar banner si no está instalada y no lo descartó antes en esta sesión
+    // Solo mostrar banner en móvil (no en desktop)
+    const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)
+      || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
     const dismissed = sessionStorage.getItem('install-banner-dismissed');
-    if (!dismissed) {
+    if (!dismissed && isMobile) {
       setShowInstallBanner(true);
     }
 
