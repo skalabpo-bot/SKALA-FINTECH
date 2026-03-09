@@ -187,7 +187,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
           <NavItem view="notifications" icon={Bell} label="Notificaciones" badge={unreadCount} />
           {MockService.hasPermission(currentUser, 'CREATE_CREDIT') && <NavItem view="simulator" icon={PlusCircle} label="Nuevo Crédito" />}
           <NavItem view="credits" icon={FileText} label="Bandeja" />
-          {currentUser.role === 'SUPERVISOR_ASIGNADO' && <NavItem view="team" icon={Users} label="Mi Equipo" />}
+          {(currentUser.role === 'SUPERVISOR_ASIGNADO' || currentUser.role === 'ADMIN') && <NavItem view="team" icon={Users} label={currentUser.role === 'ADMIN' ? 'Equipos' : 'Mi Equipo'} />}
           
           {MockService.hasPermission(currentUser, 'MANAGE_NEWS') && <NavItem view="news" icon={Megaphone} label="Novedades" />}
           {MockService.hasPermission(currentUser, 'MANAGE_AUTOMATIONS') && <NavItem view="automations" icon={Workflow} label="Automatizaciones" />}
