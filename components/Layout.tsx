@@ -1,7 +1,8 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { User, Notification } from '../types';
 import { MockService } from '../services/mockService';
+import { subscribeToNotifications } from '../services/realtimeService';
 import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone } from 'lucide-react';
 
 interface Toast {
@@ -96,8 +97,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
     // Ejecutar inmediatamente
     fetchCounts();
 
-    // Luego cada 15 segundos
-    let interval = setInterval(fetchCounts, 15000);
+    // Realtime: suscribirse a nuevas notificaciones (reemplaza polling de 15s)
+    const unsubscribeRealtime = subscribeToNotifications(currentUser.id, (notif) => {
+      setUnreadCount(prev => prev + 1);
+      showToast(notif.title || 'Nueva notificacion', 'info');
+    });
+
+    // Polling reducido a 60s (solo para pendientes de admin, realtime cubre notificaciones)
+    let interval = setInterval(fetchCounts, 60000);
 
     // Actualizar badge inmediatamente cuando se marcan notificaciones
     const handleNotifUpdated = () => fetchCounts();
@@ -107,6 +114,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         window.removeEventListener('app-alert', handleAlert);
         window.removeEventListener('billetera-changed', handleBilleteraChanged);
         window.removeEventListener('notifications-updated', handleNotifUpdated);
+        unsubscribeRealtime();
         clearInterval(interval);
     };
   }, [currentUser]);

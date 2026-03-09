@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Credit, User, CreditState, UserRole } from '../types';
 import { MockService } from '../services/mockService';
+import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
     RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload
@@ -70,6 +71,48 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
       if (lines && lines.length > 0) setCreditLines(lines);
     };
     loadExtras();
+
+    // Realtime: nuevos comentarios en el chat aparecen al instante
+    const unsubComments = subscribeToComments(creditId, async (newComment) => {
+      // Solo actualizar si el comentario no es del usuario actual (evitar duplicado)
+      if (newComment.userId !== currentUser.id) {
+        // Obtener el nombre del autor
+        const profiles = await MockService.getUsers?.().catch(() => []);
+        const author = (profiles || []).find((u: any) => u.id === newComment.userId);
+        setCredit(prev => {
+          if (!prev) return prev;
+          const exists = prev.comments?.some(c => c.id === newComment.id);
+          if (exists) return prev;
+          return {
+            ...prev,
+            comments: [...(prev.comments || []), {
+              ...newComment,
+              userName: author?.name || 'Usuario',
+              userRole: author?.role || 'GESTOR',
+              timestamp: newComment.createdAt,
+            }]
+          };
+        });
+      }
+    });
+
+    // Realtime: historial de cambios en vivo
+    const unsubHistory = subscribeToCreditHistory(creditId, (entry) => {
+      setCredit(prev => {
+        if (!prev) return prev;
+        const exists = prev.history?.some(h => h.id === entry.id);
+        if (exists) return prev;
+        return {
+          ...prev,
+          history: [entry, ...(prev.history || [])]
+        };
+      });
+    });
+
+    return () => {
+      unsubComments();
+      unsubHistory();
+    };
   }, [creditId]);
 
   // Cargar acciones del estado actual cuando cambia el crédito/estado

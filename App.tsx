@@ -18,6 +18,7 @@ import { User, Credit, UserDocument, Zone, UserRole } from './types';
 import { MockService } from './services/mockService';
 import { supabase } from './services/supabaseClient';
 import { subscribeToPush, registerServiceWorker } from './services/pushNotificationService';
+import { cleanupAllSubscriptions } from './services/realtimeService';
 import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -640,7 +641,7 @@ const App = () => {
   }
 
   return (
-    <Layout currentUser={currentUser} onLogout={() => { setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
+    <Layout currentUser={currentUser} onLogout={() => { cleanupAllSubscriptions(); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
       {currentView === 'dashboard' && <Dashboard currentUser={currentUser} onNavigate={setCurrentView} />}
       {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}

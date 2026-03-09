@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { User, Notification } from '../types';
 import { MockService } from '../services/mockService';
+import { subscribeToNotifications } from '../services/realtimeService';
 import { Bell, Check, Info, AlertTriangle, CheckCircle, Clock, Loader2 } from 'lucide-react';
 
 interface NotificationsViewProps {
@@ -27,6 +28,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ currentUse
             }
         };
         fetchNotifications();
+
+        // Realtime: nuevas notificaciones aparecen al instante
+        const unsubscribe = subscribeToNotifications(currentUser.id, (notif) => {
+            setNotifications(prev => [notif, ...prev]);
+        });
+
+        return () => unsubscribe();
     }, [currentUser]);
 
     const handleMarkRead = async (id: string) => {

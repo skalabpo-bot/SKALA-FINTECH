@@ -338,14 +338,35 @@ export const ProductionService = {
             updated_at: new Date().toISOString()
         };
 
+        // Obtener datos anteriores para registrar cambios en el audit log
+        let previousData: any = {};
+        try {
+            const { data: prev } = await supabase.from('credits').select('amount, term, entity_name, interest_rate, disbursement_amount, client_data').eq('id', creditId).single();
+            previousData = prev || {};
+        } catch { /* continuar sin datos previos */ }
+
         const { error } = await supabase.from('credits').update(updatePayload).eq('id', creditId);
         if (error) throw error;
+
+        // Audit log detallado: registrar qué campos cambiaron
+        const changes: string[] = [];
+        if (previousData.amount !== (Number(monto) || 0)) changes.push(`Monto: $${previousData.amount?.toLocaleString() || 0} → $${(Number(monto) || 0).toLocaleString()}`);
+        if (previousData.term !== (Number(plazo) || 0)) changes.push(`Plazo: ${previousData.term || 0} → ${plazo} meses`);
+        if (previousData.entity_name !== (entidadAliada || '')) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entidadAliada}`);
+        if (previousData.interest_rate !== (Number(tasa) || 0)) changes.push(`Tasa: ${previousData.interest_rate || 0}% → ${tasa}%`);
+        const prevClient = previousData.client_data || {};
+        const editableClientFields = ['nombres', 'apellidos', 'correo', 'telefonoCelular', 'direccionCompleta', 'barrio', 'ciudadResidencia', 'estadoCivil', 'pagaduria', 'banco', 'tipoCuenta', 'numeroCuenta'];
+        for (const field of editableClientFields) {
+            if (prevClient[field] !== clientFields[field] && (prevClient[field] || clientFields[field])) {
+                changes.push(`${field}: ${prevClient[field] || '-'} → ${clientFields[field] || '-'}`);
+            }
+        }
 
         await supabase.from('credit_history').insert({
             credit_id: creditId,
             user_id: userId,
             action: 'EDICIÓN',
-            description: 'Actualización de campos maestros del expediente.'
+            description: changes.length > 0 ? `Campos editados:\n${changes.join('\n')}` : 'Actualización de campos maestros del expediente.'
         });
 
         // Webhook: crédito editado
@@ -892,6 +913,24 @@ export const ProductionService = {
             analista: analystInfo,
             cliente: clienteInfo
         });
+
+        // Notificación in-app + push al otro usuario del chat (gestor ↔ analista)
+        const clienteName = clienteInfo?.nombre || 'cliente';
+        const notifRecipients: string[] = [];
+        if (gestorInfo?.id && gestorInfo.id !== user.id) notifRecipients.push(gestorInfo.id);
+        if (analystInfo?.id && analystInfo.id !== user.id) notifRecipients.push(analystInfo.id);
+
+        if (notifRecipients.length > 0) {
+            const notifications = notifRecipients.map(recipientId => ({
+                user_id: recipientId,
+                title: `Nuevo mensaje de ${user.name}`,
+                message: file ? `${user.name} envio un archivo en el credito de ${clienteName}` : `${user.name}: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`,
+                type: 'info',
+                is_read: false,
+                credit_id: creditId
+            }));
+            await supabase.from('notifications').insert(notifications).catch(() => {});
+        }
     },
 
     uploadImage: async (file: File) => {
