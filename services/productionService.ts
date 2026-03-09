@@ -280,6 +280,30 @@ export const ProductionService = {
             credit_id: data.id
         });
 
+        // Notificar al supervisor de la zona del gestor
+        if (currentUser.zoneId) {
+            try {
+                const { data: supervisors } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('zone_id', currentUser.zoneId)
+                    .eq('role', 'SUPERVISOR_ASIGNADO')
+                    .eq('status', 'ACTIVE');
+                if (supervisors && supervisors.length > 0) {
+                    await supabase.from('notifications').insert(
+                        supervisors.map((s: any) => ({
+                            user_id: s.id,
+                            title: 'Nuevo crédito radicado en tu zona',
+                            message: `${currentUser.name} radicó un crédito para ${rest.nombres} ${rest.apellidos}.`,
+                            type: 'info',
+                            is_read: false,
+                            credit_id: data.id,
+                        }))
+                    );
+                }
+            } catch (e) { console.warn('No se pudo notificar al supervisor:', e); }
+        }
+
         // --- DISPARAR WEBHOOKS ---
         ProductionService.triggerWebhooks('credit_created', {
             credit_id: data.id,
@@ -575,6 +599,8 @@ export const ProductionService = {
                     } else {
                         return [];
                     }
+                } else if (user.role === 'ANALISTA') {
+                    fallbackQuery = fallbackQuery.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
                 } else if (user.role === 'ANALISTA_ENTIDAD') {
                     if (user.assignedEntities && user.assignedEntities.length > 0) {
                         fallbackQuery = fallbackQuery.in('entity_name', user.assignedEntities);
@@ -740,6 +766,36 @@ export const ProductionService = {
                     credit_id: creditId
                 });
             } catch (e) { console.warn('No se pudo notificar al analista:', e); }
+        }
+
+        // Notificar al supervisor de la zona del gestor
+        if (credit?.assigned_gestor_id) {
+            try {
+                const { data: gestorProfile2 } = await supabase.from('profiles').select('zone_id').eq('id', credit.assigned_gestor_id).single();
+                if (gestorProfile2?.zone_id) {
+                    const { data: supervisors } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('zone_id', gestorProfile2.zone_id)
+                        .eq('role', 'SUPERVISOR_ASIGNADO')
+                        .eq('status', 'ACTIVE');
+                    if (supervisors && supervisors.length > 0) {
+                        const supervisorNotifs = supervisors
+                            .filter((s: any) => s.id !== user.id)
+                            .map((s: any) => ({
+                                user_id: s.id,
+                                title: 'Actualización en tu zona',
+                                message: `El crédito de ${clientName} fue actualizado a: ${stateName}.`,
+                                type: 'info' as const,
+                                is_read: false,
+                                credit_id: creditId,
+                            }));
+                        if (supervisorNotifs.length > 0) {
+                            await supabase.from('notifications').insert(supervisorNotifs);
+                        }
+                    }
+                }
+            } catch (e) { console.warn('No se pudo notificar al supervisor:', e); }
         }
 
         // --- DISPARAR WEBHOOKS (n8n / Make / WhatsApp) ---
@@ -914,11 +970,24 @@ export const ProductionService = {
             cliente: clienteInfo
         });
 
-        // Notificación in-app + push al otro usuario del chat (gestor ↔ analista)
+        // Notificación in-app + push al otro usuario del chat (gestor ↔ analista ↔ supervisor)
         const clienteName = clienteInfo?.nombre || 'cliente';
         const notifRecipients: string[] = [];
         if (gestorInfo?.id && gestorInfo.id !== user.id) notifRecipients.push(gestorInfo.id);
         if (analystInfo?.id && analystInfo.id !== user.id) notifRecipients.push(analystInfo.id);
+
+        // Incluir supervisor de la zona del gestor
+        if (gestorInfo?.id) {
+            try {
+                const { data: gestorP } = await supabase.from('profiles').select('zone_id').eq('id', gestorInfo.id).single();
+                if (gestorP?.zone_id) {
+                    const { data: supervisors } = await supabase.from('profiles').select('id').eq('zone_id', gestorP.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                    (supervisors || []).forEach((s: any) => {
+                        if (s.id !== user.id && !notifRecipients.includes(s.id)) notifRecipients.push(s.id);
+                    });
+                }
+            } catch (e) { /* silently continue */ }
+        }
 
         if (notifRecipients.length > 0) {
             const notifications = notifRecipients.map(recipientId => ({
@@ -1296,6 +1365,38 @@ export const ProductionService = {
             }
         }
 
+        // Notificar al usuario aprobado
+        await supabase.from('notifications').insert({
+            user_id: id,
+            title: 'Solicitud Aprobada',
+            message: `Tu solicitud como ${(profile?.role || '').replace(/_/g, ' ')} ha sido aprobada. Ya puedes usar la plataforma.`,
+            type: 'success',
+            is_read: false,
+            credit_id: null,
+        }).catch(() => {});
+
+        // Si es gestor, notificar al supervisor de su zona
+        if (profile?.role === 'GESTOR' || profile?.role === 'ANALISTA') {
+            try {
+                const { data: updatedProfile } = await supabase.from('profiles').select('zone_id').eq('id', id).single();
+                if (updatedProfile?.zone_id) {
+                    const { data: supervisors } = await supabase.from('profiles').select('id').eq('zone_id', updatedProfile.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                    if (supervisors && supervisors.length > 0) {
+                        await supabase.from('notifications').insert(
+                            supervisors.map((s: any) => ({
+                                user_id: s.id,
+                                title: 'Nuevo miembro en tu zona',
+                                message: `${profile?.full_name || 'Un usuario'} fue aprobado como ${(profile?.role || '').replace(/_/g, ' ')} en tu zona.`,
+                                type: 'info',
+                                is_read: false,
+                                credit_id: null,
+                            }))
+                        );
+                    }
+                }
+            } catch (e) { /* silently continue */ }
+        }
+
         ProductionService.triggerWebhooks('user_approved', {
             usuario: { id, nombre: profile?.full_name || '', email: profile?.email || '', telefono: profile?.phone || '', rol: profile?.role || '' }
         });
@@ -1303,6 +1404,17 @@ export const ProductionService = {
     rejectUser: async (id: string) => {
         const { data: profile } = await supabase.from('profiles').select('full_name, email, phone, role').eq('id', id).single();
         await supabase.from('profiles').update({ status: 'REJECTED' }).eq('id', id);
+
+        // Notificar al usuario rechazado
+        await supabase.from('notifications').insert({
+            user_id: id,
+            title: 'Solicitud Rechazada',
+            message: `Tu solicitud como ${(profile?.role || '').replace(/_/g, ' ')} no fue aprobada. Contacta al administrador para más información.`,
+            type: 'warning',
+            is_read: false,
+            credit_id: null,
+        }).catch(() => {});
+
         ProductionService.triggerWebhooks('user_rejected', {
             usuario: { id, nombre: profile?.full_name || '', email: profile?.email || '', telefono: profile?.phone || '', rol: profile?.role || '' }
         });
