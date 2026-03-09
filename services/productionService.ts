@@ -1280,7 +1280,7 @@ export const ProductionService = {
                 const initial2 = (nameParts[nameParts.length > 1 ? 1 : 0] || '').charAt(0).toUpperCase();
                 const last3 = (profile.cedula || '').slice(-3);
                 const supervisorCode = `${initial1}${initial2}-${last3}`;
-                const zoneName = `${profile.full_name} (${supervisorCode})`;
+                const zoneName = supervisorCode;
 
                 const { data: zoneData } = await supabase
                     .from('zones')
