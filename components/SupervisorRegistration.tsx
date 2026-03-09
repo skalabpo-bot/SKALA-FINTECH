@@ -45,12 +45,12 @@ export const SupervisorRegistration: React.FC = () => {
       const filePath = `registration/${Date.now()}_${type}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('documents')
+        .from('skala-bucket')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+      const { data: urlData } = supabase.storage.from('skala-bucket').getPublicUrl(filePath);
 
       setDocs(prev => [
         ...prev.filter(d => d.type !== type),
