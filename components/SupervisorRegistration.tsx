@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Loader2, CheckCircle2, UserPlus, Eye, EyeOff, Copy, Check, Camera } from 'lucide-react';
+import { Loader2, CheckCircle2, UserPlus, Eye, EyeOff, Copy, Check, Camera, Clock } from 'lucide-react';
 
 /**
  * Genera el código de supervisor: iniciales + últimos 3 dígitos de cédula
@@ -92,7 +92,7 @@ export const SupervisorRegistration: React.FC = () => {
       const fullName = `${nombre.trim()} ${apellido.trim()}`;
       const finalCode = generateSupervisorCode(nombre, apellido, cedula);
 
-      // 1. Crear usuario en Auth
+      // 1. Crear usuario en Auth con estado PENDING
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -102,7 +102,7 @@ export const SupervisorRegistration: React.FC = () => {
             phone: phone.trim(),
             cedula: cedula.trim(),
             role: 'SUPERVISOR_ASIGNADO',
-            status: 'ACTIVE'
+            status: 'PENDING'
           }
         }
       });
@@ -113,37 +113,20 @@ export const SupervisorRegistration: React.FC = () => {
       // 2. Esperar a que el trigger cree el perfil
       await new Promise(r => setTimeout(r, 1500));
 
-      // 3. Crear la zona del supervisor con su código
-      const zoneName = `${fullName} (${finalCode})`;
-      const { data: zoneData, error: zoneError } = await supabase
-        .from('zones')
-        .insert({ name: zoneName, cities: [] })
-        .select()
-        .single();
-
-      if (zoneError) {
-        console.warn('Error creando zona:', zoneError);
-      }
-
-      // 4. Actualizar el perfil con el rol, estado activo, zona y documentos
-      const profileUpdate: any = {
-        role: 'SUPERVISOR_ASIGNADO',
-        status: 'ACTIVE',
-        full_name: fullName,
-        phone: phone.trim(),
-        cedula: cedula.trim(),
-        registration_docs: docs,
-      };
-      if (zoneData?.id) {
-        profileUpdate.zone_id = zoneData.id;
-      }
-
+      // 3. Actualizar el perfil con rol PENDING y documentos (zona se crea al aprobar)
       await supabase
         .from('profiles')
-        .update(profileUpdate)
+        .update({
+          role: 'SUPERVISOR_ASIGNADO',
+          status: 'PENDING',
+          full_name: fullName,
+          phone: phone.trim(),
+          cedula: cedula.trim(),
+          registration_docs: docs,
+        })
         .eq('id', authData.user.id);
 
-      // 5. Notificar admins
+      // 4. Notificar admins
       try {
         const { data: admins } = await supabase
           .from('profiles')
@@ -153,9 +136,9 @@ export const SupervisorRegistration: React.FC = () => {
         if (admins && admins.length > 0) {
           const notifications = admins.map((admin: any) => ({
             user_id: admin.id,
-            title: 'Nuevo Supervisor Registrado',
-            message: `${fullName} (${finalCode}) se ha registrado como supervisor.`,
-            type: 'info',
+            title: 'Nueva Solicitud de Supervisor',
+            message: `${fullName} (${finalCode}) solicita ser supervisor. Revisa sus documentos.`,
+            type: 'warning',
             is_read: false,
           }));
           await supabase.from('notifications').insert(notifications);
@@ -189,20 +172,20 @@ export const SupervisorRegistration: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center space-y-6 animate-fade-in">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-            <CheckCircle2 size={40} className="text-green-600" />
+          <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
+            <Clock size={40} className="text-orange-600" />
           </div>
 
           <div>
-            <h2 className="text-2xl font-black text-slate-800">Registro Exitoso</h2>
+            <h2 className="text-2xl font-black text-slate-800">Solicitud Enviada</h2>
             <p className="text-sm text-slate-500 mt-2">
-              Bienvenido <strong>{nombre} {apellido}</strong>, ya puedes iniciar sesion.
+              <strong>{nombre} {apellido}</strong>, tu solicitud esta siendo revisada por el equipo de SKALA.
             </p>
           </div>
 
-          {/* Código de supervisor */}
+          {/* Código de supervisor (preview) */}
           <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-6 text-white space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Tu codigo de supervisor</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Tu codigo de supervisor sera</p>
             <div className="flex items-center justify-center gap-3">
               <span className="text-4xl font-mono font-black tracking-wider">{supervisorCode}</span>
               <button
@@ -213,16 +196,16 @@ export const SupervisorRegistration: React.FC = () => {
               </button>
             </div>
             <p className="text-xs opacity-80 leading-relaxed">
-              Comparte este codigo con tus gestores para que al registrarse queden bajo tu supervision.
+              Este codigo se activara cuando tu solicitud sea aprobada.
             </p>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
-            <p className="text-xs font-bold text-amber-800">Importante:</p>
+            <p className="text-xs font-bold text-amber-800">Proceso de aprobacion:</p>
             <ul className="text-xs text-amber-700 mt-1 space-y-1 list-disc list-inside">
-              <li>Guarda este codigo, lo necesitaras para tus gestores</li>
-              <li>Cada gestor debe seleccionar tu zona al registrarse</li>
-              <li>Podras ver todos los creditos de tus gestores</li>
+              <li>Revisaremos tus documentos (cedula, RUT, cert. bancario)</li>
+              <li>Una vez aprobado, podras iniciar sesion y se creara tu zona</li>
+              <li>Compartiras tu codigo con tus gestores</li>
             </ul>
           </div>
 

@@ -1269,8 +1269,33 @@ export const ProductionService = {
         return { ...d, id };
     },
     approveUser: async (id: string) => {
-        const { data: profile } = await supabase.from('profiles').select('full_name, email, phone, role').eq('id', id).single();
+        const { data: profile } = await supabase.from('profiles').select('full_name, email, phone, role, cedula').eq('id', id).single();
         await supabase.from('profiles').update({ status: 'ACTIVE' }).eq('id', id);
+
+        // Si es supervisor, crear zona automáticamente al aprobar
+        if (profile?.role === 'SUPERVISOR_ASIGNADO' && profile?.full_name) {
+            try {
+                const nameParts = profile.full_name.trim().split(/\s+/);
+                const initial1 = (nameParts[0] || '').charAt(0).toUpperCase();
+                const initial2 = (nameParts[nameParts.length > 1 ? 1 : 0] || '').charAt(0).toUpperCase();
+                const last3 = (profile.cedula || '').slice(-3);
+                const supervisorCode = `${initial1}${initial2}-${last3}`;
+                const zoneName = `${profile.full_name} (${supervisorCode})`;
+
+                const { data: zoneData } = await supabase
+                    .from('zones')
+                    .insert({ name: zoneName, cities: [] })
+                    .select()
+                    .single();
+
+                if (zoneData?.id) {
+                    await supabase.from('profiles').update({ zone_id: zoneData.id }).eq('id', id);
+                }
+            } catch (err) {
+                console.warn('Error creando zona para supervisor:', err);
+            }
+        }
+
         ProductionService.triggerWebhooks('user_approved', {
             usuario: { id, nombre: profile?.full_name || '', email: profile?.email || '', telefono: profile?.phone || '', rol: profile?.role || '' }
         });

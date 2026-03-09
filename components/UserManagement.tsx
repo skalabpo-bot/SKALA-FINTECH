@@ -363,7 +363,7 @@ export const UserManagement = () => {
                                 <div>
                                     <h3 className="font-bold text-lg text-slate-800">{u.name}</h3>
                                     <p className="text-sm text-slate-500">{u.email}</p>
-                                    <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded border border-orange-100 font-bold mt-1 inline-block">SOLICITUD GESTOR</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded border font-bold mt-1 inline-block ${u.role === 'SUPERVISOR_ASIGNADO' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>{u.role === 'SUPERVISOR_ASIGNADO' ? 'SOLICITUD SUPERVISOR' : 'SOLICITUD GESTOR'}</span>
                                 </div>
                             </div>
                             <button onClick={() => setViewDetailUser(u)} className="text-slate-400 hover:text-primary p-2 bg-slate-50 rounded-lg"><Eye size={20}/></button>
