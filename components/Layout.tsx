@@ -172,22 +172,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         </nav>
 
         <div className="p-4 border-t space-y-2">
-          {/* Botón instalar app */}
-          {installPrompt && !isAppInstalled && (
-            <button
-              onClick={handleInstallClick}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 text-sm font-bold text-white bg-primary rounded-xl hover:bg-orange-600 transition-all shadow-md shadow-primary/20 animate-fade-in"
-            >
-              <Download size={16} />
-              <span>Instalar App</span>
-            </button>
-          )}
-          {isAppInstalled && (
-            <div className="flex items-center justify-center space-x-2 px-4 py-2 text-[10px] font-bold text-green-600 bg-green-50 rounded-lg">
-              <Smartphone size={14} />
-              <span>App instalada</span>
-            </div>
-          )}
 
           <button onClick={() => onChangeView('profile')} className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-white transition-colors text-left">
             <img src={currentUser.avatar} className="w-8 h-8 rounded-full border object-cover" />
@@ -209,6 +193,33 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         </div>
         {children}
       </main>
+
+      {/* Banner flotante: Instalar App — visible y fijo en la parte inferior */}
+      {installPrompt && !isAppInstalled && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 md:left-64 animate-fade-in">
+          <div className="mx-4 mb-4 bg-gradient-to-r from-primary to-orange-500 rounded-2xl shadow-2xl shadow-primary/30 p-4 flex items-center gap-4">
+            <div className="bg-white rounded-xl p-1.5 shrink-0 shadow-md">
+              <img src="/skala.png" alt="Skala" className="w-10 h-10 rounded-lg" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-white">Instala Skala en tu telefono</p>
+              <p className="text-[10px] text-white/70 mt-0.5">Acceso rapido, notificaciones y funciona sin internet</p>
+            </div>
+            <button
+              onClick={handleInstallClick}
+              className="shrink-0 bg-white text-primary font-black text-sm px-5 py-2.5 rounded-xl hover:bg-orange-50 transition-all shadow-lg"
+            >
+              Instalar
+            </button>
+            <button
+              onClick={() => setInstallPrompt(null)}
+              className="shrink-0 text-white/60 hover:text-white transition-colors p-1"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
