@@ -14,6 +14,7 @@ import { ProfileView } from './components/ProfileView';
 import { UserManagement } from './components/UserManagement';
 import { WalletView } from './components/WalletView';
 import { WithdrawalPanel } from './components/WithdrawalPanel';
+import { TeamView } from './components/TeamView';
 import { User, Credit, UserDocument, Zone, UserRole } from './types';
 import { MockService } from './services/mockService';
 import { supabase } from './services/supabaseClient';
@@ -707,6 +708,7 @@ const App = () => {
       {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
       {currentView === 'news' && <NewsPanel />}
       {currentView === 'automations' && <AutomationsPanel />}
+      {currentView === 'team' && <TeamView currentUser={currentUser} />}
       {currentView === 'notifications' && <NotificationsView currentUser={currentUser} onViewCredit={(id) => { setSelectedCreditId(id); setCurrentView('detail'); }} />}
       {currentView === 'profile' && <ProfileView currentUser={currentUser} onUpdate={setCurrentUser} />}
       {currentView === 'detail' && selectedCreditId && <CreditDetail creditId={selectedCreditId} currentUser={currentUser} onBack={() => { setSelectedCreditId(null); setCurrentView('credits'); }} />}
