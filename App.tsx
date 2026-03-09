@@ -73,11 +73,15 @@ const App = () => {
 
   useEffect(() => {
     const loadLists = async () => {
-      const [c, b, z] = await Promise.all([MockService.getCities(), MockService.getBanks(), MockService.getZones()]);
-      setRegCities(c); setRegBanks(b); setRegZones(z);
+      try {
+        const [c, b, z] = await Promise.all([MockService.getCities(), MockService.getBanks(), MockService.getZones()]);
+        setRegCities(c); setRegBanks(b); setRegZones(z);
+      } catch (err) {
+        console.warn('Error cargando listas de registro:', err);
+      }
     };
     loadLists();
-  }, []);
+  }, [authView]);
 
   // Restaurar sesión activa al refrescar la página
   useEffect(() => {
