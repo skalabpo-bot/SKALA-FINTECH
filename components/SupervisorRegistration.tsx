@@ -92,7 +92,7 @@ export const SupervisorRegistration: React.FC = () => {
       const fullName = `${nombre.trim()} ${apellido.trim()}`;
       const finalCode = generateSupervisorCode(nombre, apellido, cedula);
 
-      // 1. Crear usuario en Auth con estado PENDING
+      // 1. Crear usuario en Auth con estado PENDING (todos los datos en metadata para que el trigger los copie)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -102,7 +102,8 @@ export const SupervisorRegistration: React.FC = () => {
             phone: phone.trim(),
             cedula: cedula.trim(),
             role: 'SUPERVISOR_ASIGNADO',
-            status: 'PENDING'
+            status: 'PENDING',
+            registration_docs: docs,
           }
         }
       });
@@ -110,23 +111,24 @@ export const SupervisorRegistration: React.FC = () => {
       if (authError) throw authError;
       if (!authData.user) throw new Error('No se pudo crear el usuario');
 
-      // 2. Esperar a que el trigger cree el perfil
+      // 2. Esperar a que el trigger cree el perfil, luego respaldo manual
       await new Promise(r => setTimeout(r, 1500));
 
-      // 3. Actualizar el perfil con rol PENDING y documentos (zona se crea al aprobar)
-      await supabase
-        .from('profiles')
-        .update({
+      const { data: existing } = await supabase.from('profiles').select('id').eq('id', authData.user.id).single();
+      if (!existing) {
+        await supabase.from('profiles').insert({
+          id: authData.user.id,
+          full_name: fullName,
+          email: email.trim(),
           role: 'SUPERVISOR_ASIGNADO',
           status: 'PENDING',
-          full_name: fullName,
           phone: phone.trim(),
           cedula: cedula.trim(),
           registration_docs: docs,
-        })
-        .eq('id', authData.user.id);
+        }).then(({ error }) => { if (error) console.warn('Insert manual perfil falló (RLS):', error); });
+      }
 
-      // 4. Notificar admins
+      // 3. Notificar admins
       try {
         const { data: admins } = await supabase
           .from('profiles')
