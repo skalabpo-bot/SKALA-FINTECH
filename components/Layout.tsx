@@ -27,6 +27,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
   const [billeteraEnabled, setBilleteraEnabled] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = Math.random().toString(36).substr(2, 9);
@@ -36,19 +38,35 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
 
   // PWA Install prompt
   useEffect(() => {
-    // Detectar si ya está instalada
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    // Detectar si ya está instalada (modo standalone = abierta desde PWA)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone === true;
+    if (isStandalone) {
       setIsAppInstalled(true);
+      return;
+    }
+
+    // Detectar iOS
+    const ua = navigator.userAgent;
+    const isiOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    setIsIOS(isiOS);
+
+    // Mostrar banner si no está instalada y no lo descartó antes en esta sesión
+    const dismissed = sessionStorage.getItem('install-banner-dismissed');
+    if (!dismissed) {
+      setShowInstallBanner(true);
     }
 
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
+      setShowInstallBanner(true);
     };
 
     const handleAppInstalled = () => {
       setIsAppInstalled(true);
       setInstallPrompt(null);
+      setShowInstallBanner(false);
       showToast('App instalada correctamente', 'success');
     };
 
@@ -62,12 +80,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
   }, []);
 
   const handleInstallClick = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setInstallPrompt(null);
+        setShowInstallBanner(false);
+      }
     }
+  };
+
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    sessionStorage.setItem('install-banner-dismissed', 'true');
   };
 
   useEffect(() => {
@@ -194,25 +219,39 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         {children}
       </main>
 
-      {/* Banner flotante: Instalar App — visible y fijo en la parte inferior */}
-      {installPrompt && !isAppInstalled && (
+      {/* Banner flotante: Instalar App */}
+      {showInstallBanner && !isAppInstalled && (
         <div className="fixed bottom-0 left-0 right-0 z-50 md:left-64 animate-fade-in">
-          <div className="mx-4 mb-4 bg-gradient-to-r from-primary to-orange-500 rounded-2xl shadow-2xl shadow-primary/30 p-4 flex items-center gap-4">
+          <div className="mx-4 mb-4 bg-gradient-to-r from-primary to-orange-500 rounded-2xl shadow-2xl shadow-primary/30 p-4 flex items-center gap-3">
             <div className="bg-white rounded-xl p-1.5 shrink-0 shadow-md">
               <img src="/skala.png" alt="Skala" className="w-10 h-10 rounded-lg" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-black text-white">Instala Skala en tu telefono</p>
-              <p className="text-[10px] text-white/70 mt-0.5">Acceso rapido, notificaciones y funciona sin internet</p>
+              {isIOS ? (
+                <p className="text-[10px] text-white/80 mt-0.5">
+                  Toca <span className="inline-block align-middle mx-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 inline"><path d="M11.47 1.72a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1-1.06 1.06l-1.72-1.72V15a.75.75 0 0 1-1.5 0V4.06L9.53 5.78a.75.75 0 0 1-1.06-1.06l3-3ZM4.5 9.75a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 0 .75.75h12a.75.75 0 0 0 .75-.75v-7.5a.75.75 0 0 1 1.5 0v7.5a2.25 2.25 0 0 1-2.25 2.25h-12A2.25 2.25 0 0 1 3.75 18v-7.5a.75.75 0 0 1 .75-.75Z" /></svg>
+                  </span> Compartir y luego <strong>"Agregar a inicio"</strong>
+                </p>
+              ) : (
+                <p className="text-[10px] text-white/80 mt-0.5">Acceso rapido y notificaciones push</p>
+              )}
             </div>
+            {!isIOS && installPrompt ? (
+              <button
+                onClick={handleInstallClick}
+                className="shrink-0 bg-white text-primary font-black text-sm px-5 py-2.5 rounded-xl hover:bg-orange-50 transition-all shadow-lg"
+              >
+                Instalar
+              </button>
+            ) : !isIOS ? (
+              <p className="shrink-0 text-[9px] text-white/70 font-bold max-w-[80px] text-center leading-tight">
+                Menu del navegador &gt; Instalar app
+              </p>
+            ) : null}
             <button
-              onClick={handleInstallClick}
-              className="shrink-0 bg-white text-primary font-black text-sm px-5 py-2.5 rounded-xl hover:bg-orange-50 transition-all shadow-lg"
-            >
-              Instalar
-            </button>
-            <button
-              onClick={() => setInstallPrompt(null)}
+              onClick={dismissInstallBanner}
               className="shrink-0 text-white/60 hover:text-white transition-colors p-1"
             >
               <X size={18} />
