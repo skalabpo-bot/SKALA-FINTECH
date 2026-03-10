@@ -250,7 +250,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           lineaCredito: lineaCredito || sim.product,
         }
       : loanConfig
-      ? { plazo: loanConfig.termMonths, entidadAliada: loanConfig.entityName, lineaCredito }
+      ? {
+          monto: simulations[0]?.maxAmount || 0,
+          montoDesembolso: simulations[0] ? calculateDisbursement(simulations[0].maxAmount, simulations[0].discountPct, paymentMethod) : 0,
+          plazo: loanConfig.termMonths,
+          tasa: simulations[0]?.rate || 0,
+          entidadAliada: loanConfig.entityName,
+          lineaCredito: lineaCredito || simulations[0]?.product,
+        }
       : { lineaCredito };
 
     const fromContact: Record<string, any> = {

@@ -356,31 +356,37 @@ export const ProductionService = {
             ...clientFields
         } = newData;
 
-        // Recalcular comisión basada en entidad y tasa
-        const entities = await ProductionService.getEntities();
-        const entity = entities.find((e: any) => e.name === entidadAliada);
-        const rateConfig = entity?.rates?.find((r: any) => r.rate === Number(tasa));
-        const commPercent = rateConfig?.commission || 5;
-        const commEst = (Number(monto) * commPercent) / 100;
-
-        const updatePayload: any = {
-            amount: Number(monto) || 0,
-            term: Number(plazo) || 0,
-            entity_name: entidadAliada || '',
-            interest_rate: Number(tasa) || 0,
-            disbursement_amount: Number(montoDesembolso) || 0,
-            commission_percent: commPercent,
-            commission_est: commEst,
-            client_data: { ...clientFields, nombreCompleto: `${clientFields.nombres || ''} ${clientFields.apellidos || ''}`.trim() },
-            updated_at: new Date().toISOString()
-        };
-
-        // Obtener datos anteriores para registrar cambios en el audit log
+        // Obtener datos anteriores PRIMERO (para fallback y audit log)
         let previousData: any = {};
         try {
             const { data: prev } = await supabase.from('credits').select('amount, term, entity_name, interest_rate, disbursement_amount, client_data').eq('id', creditId).single();
             previousData = prev || {};
         } catch { /* continuar sin datos previos */ }
+
+        // Resolver valores con fallback a datos anteriores
+        const finalMonto = monto != null && String(monto).trim() !== '' ? Number(monto) : (previousData.amount ?? 0);
+        const finalPlazo = plazo != null && String(plazo).trim() !== '' ? Number(plazo) : (previousData.term ?? 0);
+        const finalTasa = tasa != null && String(tasa).trim() !== '' ? Number(tasa) : (previousData.interest_rate ?? 0);
+        const finalDesembolso = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
+
+        // Recalcular comisión basada en entidad y tasa
+        const entities = await ProductionService.getEntities();
+        const entity = entities.find((e: any) => e.name === (entidadAliada || previousData.entity_name));
+        const rateConfig = entity?.rates?.find((r: any) => r.rate === finalTasa);
+        const commPercent = rateConfig?.commission || 5;
+        const commEst = (finalMonto * commPercent) / 100;
+
+        const updatePayload: any = {
+            amount: finalMonto,
+            term: finalPlazo,
+            entity_name: entidadAliada || previousData.entity_name || '',
+            interest_rate: finalTasa,
+            disbursement_amount: finalDesembolso,
+            commission_percent: commPercent,
+            commission_est: commEst,
+            client_data: { ...clientFields, nombreCompleto: `${clientFields.nombres || ''} ${clientFields.apellidos || ''}`.trim() },
+            updated_at: new Date().toISOString()
+        };
 
         const { error } = await supabase.from('credits').update(updatePayload).eq('id', creditId);
         if (error) throw error;
