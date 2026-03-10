@@ -138,6 +138,18 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     }
   }, [credit?.statusId]);
 
+  // Cargar estado de autorización siempre al abrir el crédito
+  useEffect(() => {
+    if (credit?.id) {
+        ProductionService.getAuthorizationStatus(credit.id)
+            .then((auth: any) => {
+                setAuthStatus(auth);
+                setAuthValUrl(auth?.validation_url || '');
+            })
+            .catch(() => setAuthStatus(null));
+    }
+  }, [credit?.id]);
+
   useEffect(() => {
     if (activeTab === 'CHAT') {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -148,15 +160,6 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
             .then((docs: any[]) => setLegalDocs(docs))
             .catch(() => setLegalDocs([]))
             .finally(() => setLegalDocsLoading(false));
-        // Cargar estado de autorización de centrales
-        setAuthLoading(true);
-        ProductionService.getAuthorizationStatus(credit.id)
-            .then((auth: any) => {
-                setAuthStatus(auth);
-                setAuthValUrl(auth?.validation_url || '');
-            })
-            .catch(() => setAuthStatus(null))
-            .finally(() => setAuthLoading(false));
         // Cargar observaciones internas
         setLegalNotesLoading(true);
         ProductionService.getLegalNotes(credit.id)
@@ -391,11 +394,17 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                  </div>
              )}
              {/* ACCIONES RÁPIDAS DEL ESTADO */}
-             {stateActions.length > 0 && stateActions.map(action => (
+             {stateActions.length > 0 && stateActions.map(action => {
+                const labelLower = action.label.toLowerCase();
+                const requiresAuth = labelLower.includes('validaci') || labelLower.includes('autorizaci');
+                const authBlocked = requiresAuth && authStatus?.status !== 'signed';
+                return (
                 <button
                     key={action.id}
-                    disabled={executingActionId === action.id}
+                    disabled={executingActionId === action.id || authBlocked}
+                    title={authBlocked ? 'El cliente debe firmar la autorización de consulta y validación de identidad antes de ejecutar esta acción' : ''}
                     onClick={async () => {
+                        if (authBlocked) return;
                         setExecutingActionId(action.id);
                         try {
                             await MockService.logStateAction?.(credit.id, action.label, currentUser);
@@ -414,15 +423,21 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error al registrar acción', type: 'error' } }));
                         } finally { setExecutingActionId(null); }
                     }}
-                    className="flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 disabled:cursor-wait"
+                    className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg ${
+                        authBlocked
+                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                            : 'bg-amber-500 hover:bg-amber-600 text-white'
+                    } disabled:opacity-50 disabled:cursor-wait`}
                 >
                     {executingActionId === action.id
                         ? <Loader2 size={13} className="animate-spin"/>
                         : <Check size={13}/>
                     }
                     {action.label}
+                    {authBlocked && <span className="text-[8px] normal-case tracking-normal ml-1">(Pendiente autorización)</span>}
                 </button>
-             ))}
+                );
+             })}
 
              {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && (
                 <select
