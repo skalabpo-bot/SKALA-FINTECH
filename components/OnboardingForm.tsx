@@ -58,6 +58,7 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [calculatedAge, setCalculatedAge] = useState<number | string>('');
+  const [gestorConfirm, setGestorConfirm] = useState(false);
 
   const [formData, setFormData] = useState<any>({
     nombres: '', apellidos: '', tipoDocumento: 'CEDULA', numeroDocumento: '',
@@ -170,10 +171,14 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     if(!formData.monto || !formData.plazo || !formData.numeroDocumento) {
         return dispatchAlert("Monto, Plazo y Cédula son obligatorios.", "error");
     }
+    if (!gestorConfirm) {
+        return dispatchAlert("Debes confirmar que los datos del cliente son verídicos para radicar.", "error");
+    }
     setIsSubmitting(true);
     try {
       await MockService.createCredit(formData, currentUser);
       dispatchAlert("Crédito radicado exitosamente.", "success");
+      setTimeout(() => dispatchAlert("Se envió la autorización de consulta y validación de identidad al cliente.", "info"), 1500);
       onSuccess();
     } catch (err: any) { dispatchAlert(err.message, "error"); } finally { setIsSubmitting(false); }
   };
@@ -436,15 +441,30 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
                 Siguiente Paso <ArrowRight size={18}/>
             </button>
           ) : (
-            <button 
-                onClick={handleRadicar} 
-                disabled={isSubmitting} 
-                className="ml-auto w-full md:w-auto px-20 py-5 bg-primary text-white rounded-[1.8rem] font-black flex items-center justify-center gap-4 shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:bg-orange-600 disabled:opacity-50 transition-all uppercase tracking-widest"
-            >
-              {isSubmitting ? <Loader2 className="animate-spin"/> : (
-                  <>RADICAR CRÉDITO <ArrowRight size={22}/></>
-              )}
-            </button>
+            <div className="ml-auto flex flex-col items-end gap-4 w-full md:w-auto">
+              <label className="flex items-start gap-3 cursor-pointer select-none max-w-xl">
+                <input
+                  type="checkbox"
+                  checked={gestorConfirm}
+                  onChange={(e) => setGestorConfirm(e.target.checked)}
+                  className="mt-1 w-5 h-5 rounded border-2 border-slate-300 text-orange-500 focus:ring-orange-400 accent-orange-500 shrink-0"
+                />
+                <span className="text-xs text-slate-500 leading-relaxed">
+                  Declaro que los datos aquí consignados fueron suministrados directamente por el cliente,
+                  que he verificado su veracidad en la medida de mis posibilidades, y que el cliente ha sido informado
+                  de que se solicitará su autorización de consulta y validación de identidad.
+                </span>
+              </label>
+              <button
+                  onClick={handleRadicar}
+                  disabled={isSubmitting || !gestorConfirm}
+                  className="w-full md:w-auto px-20 py-5 bg-primary text-white rounded-[1.8rem] font-black flex items-center justify-center gap-4 shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:bg-orange-600 disabled:opacity-50 transition-all uppercase tracking-widest"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin"/> : (
+                    <>RADICAR CRÉDITO <ArrowRight size={22}/></>
+                )}
+              </button>
+            </div>
           )}
       </div>
     </div>

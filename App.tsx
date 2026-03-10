@@ -22,6 +22,7 @@ import { subscribeToPush, registerServiceWorker } from './services/pushNotificat
 import { cleanupAllSubscriptions } from './services/realtimeService';
 import { SupervisorRegistration } from './components/SupervisorRegistration';
 import { PoliticaDatos } from './components/PoliticaDatos';
+import { AutorizacionCentrales } from './components/AutorizacionCentrales';
 import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -34,8 +35,8 @@ interface Toast {
   type: 'success' | 'error' | 'info';
 }
 
-const App = () => {
-  // Rutas especiales por query params
+// Rutas públicas (sin hooks, fuera del componente principal)
+const PublicRoute = () => {
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('registro') === 'supervisor') {
     return <SupervisorRegistration />;
@@ -43,6 +44,15 @@ const App = () => {
   if (urlParams.get('pagina') === 'politicas') {
     return <PoliticaDatos />;
   }
+  if (urlParams.get('autorizacion')) {
+    return <AutorizacionCentrales token={urlParams.get('autorizacion')!} />;
+  }
+  return null;
+};
+
+const App = () => {
+  const publicPage = PublicRoute();
+  if (publicPage) return publicPage;
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);

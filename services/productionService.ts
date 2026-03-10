@@ -329,6 +329,19 @@ export const ProductionService = {
             }
         });
 
+        // --- AUTO-ENVIAR AUTORIZACIÓN DE CONSULTA Y VALIDACIÓN DE IDENTIDAD ---
+        try {
+            await ProductionService.createAuthorizationToken(data.id, currentUser.id);
+            await supabase.from('notifications').insert({
+                user_id: currentUser.id,
+                title: 'Autorización enviada',
+                message: `Se envió la autorización de consulta y validación de identidad a ${rest.nombres} ${rest.apellidos} (${rest.telefonoCelular}).`,
+                type: 'info',
+                is_read: false,
+                credit_id: data.id,
+            });
+        } catch (e) { console.warn('No se pudo crear autorización automática:', e); }
+
         return data;
     },
 
@@ -2311,5 +2324,307 @@ export const ProductionService = {
             const { data } = await supabase.from('credit_reads').select('user_id, user_name, last_read_at').eq('credit_id', creditId);
             return (data || []).map((r: any) => ({ userId: r.user_id, userName: r.user_name || 'Usuario', lastReadAt: new Date(r.last_read_at) }));
         } catch { return []; }
+    },
+
+    // =============================================
+    // OBSERVACIONES INTERNAS (DOCS LEGALES)
+    // =============================================
+
+    getLegalNotes: async (creditId: string) => {
+        try {
+            const { data } = await supabase
+                .from('legal_notes')
+                .select('*')
+                .eq('credit_id', creditId)
+                .order('created_at', { ascending: false });
+            return (data || []).map((n: any) => ({
+                id: n.id,
+                text: n.text,
+                userName: n.user_name,
+                userRole: n.user_role,
+                createdAt: n.created_at,
+            }));
+        } catch { return []; }
+    },
+
+    addLegalNote: async (creditId: string, text: string, userId: string, userName: string, userRole: string) => {
+        const { data, error } = await supabase.from('legal_notes').insert({
+            credit_id: creditId,
+            text,
+            user_id: userId,
+            user_name: userName,
+            user_role: userRole,
+        }).select().single();
+        if (error) throw error;
+        return {
+            id: data.id,
+            text: data.text,
+            userName: data.user_name,
+            userRole: data.user_role,
+            createdAt: data.created_at,
+        };
+    },
+
+    // =============================================
+    // AUTORIZACIÓN DE CONSULTA Y VALIDACIÓN DE IDENTIDAD
+    // =============================================
+
+    createAuthorizationToken: async (creditId: string, createdBy: string) => {
+        // Obtener datos del crédito y cliente
+        const { data: credit } = await supabase.from('credits')
+            .select('id, client_data, entity_name')
+            .eq('id', creditId)
+            .single();
+        if (!credit) throw new Error('Crédito no encontrado');
+
+        const cd = credit.client_data || {};
+        const clientName = cd.nombreCompleto || `${cd.nombres || ''} ${cd.apellidos || ''}`.trim();
+        const clientDoc = cd.numeroDocumento || '';
+        const clientPhone = cd.telefonoCelular || '';
+        const clientEmail = cd.correo || '';
+
+        if (!clientName || !clientDoc) throw new Error('Datos del cliente incompletos para generar autorización');
+
+        // Generar token único
+        const token = crypto.randomUUID().replace(/-/g, '') + Date.now().toString(36);
+
+        // Buscar validation_url de la entidad directamente en financial_entities
+        let validationUrl = '';
+        try {
+            if (credit.entity_name) {
+                const { data: entity } = await supabase
+                    .from('financial_entities')
+                    .select('validation_url')
+                    .eq('name', credit.entity_name)
+                    .single();
+                if (entity?.validation_url) validationUrl = entity.validation_url;
+            }
+        } catch { /* entidad sin validation_url configurada */ }
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
+        const { data: authToken, error } = await supabase.from('authorization_tokens').insert({
+            credit_id: creditId,
+            token,
+            status: 'pending',
+            expires_at: expiresAt.toISOString(),
+            client_name: clientName,
+            client_document: clientDoc,
+            client_phone: clientPhone,
+            client_email: clientEmail,
+            validation_url: validationUrl || null,
+            created_by: createdBy,
+        }).select().single();
+
+        if (error) throw error;
+
+        // Disparar webhook para que n8n envíe el link al cliente
+        const appUrl = 'https://skalapp.co';
+        ProductionService.triggerWebhooks('authorization_request_sent', {
+            credit_id: creditId,
+            token,
+            authorization_url: `${appUrl}/?autorizacion=${token}`,
+            cliente: {
+                nombre: clientName,
+                documento: clientDoc,
+                celular: clientPhone,
+                correo: clientEmail,
+            },
+        });
+
+        return authToken;
+    },
+
+    getAuthorizationByToken: async (token: string) => {
+        const { data, error } = await supabase
+            .from('authorization_tokens')
+            .select('*')
+            .eq('token', token)
+            .single();
+        if (error || !data) return null;
+
+        // Verificar si expiró
+        if (data.status === 'pending' && new Date(data.expires_at) < new Date()) {
+            await supabase.from('authorization_tokens').update({ status: 'expired' }).eq('id', data.id);
+            return { ...data, status: 'expired' };
+        }
+        return data;
+    },
+
+    requestAuthorizationOtp: async (token: string, channel: 'whatsapp' | 'email' = 'whatsapp') => {
+        const { data: auth } = await supabase
+            .from('authorization_tokens')
+            .select('*')
+            .eq('token', token)
+            .single();
+        if (!auth) throw new Error('Token no encontrado');
+        if (auth.status !== 'pending') throw new Error('Esta autorización ya fue procesada');
+        if (new Date(auth.expires_at) < new Date()) throw new Error('Esta autorización ha expirado');
+
+        // Generar OTP de 6 dígitos
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const otpExpires = new Date();
+        otpExpires.setMinutes(otpExpires.getMinutes() + 10);
+
+        await supabase.from('authorization_tokens').update({
+            otp_code: otp,
+            otp_expires_at: otpExpires.toISOString(),
+        }).eq('id', auth.id);
+
+        // Disparar webhook para que n8n envíe el OTP por el canal elegido
+        ProductionService.triggerWebhooks('authorization_otp_requested', {
+            credit_id: auth.credit_id,
+            otp_code: otp,
+            canal: channel,
+            cliente: {
+                nombre: auth.client_name,
+                documento: auth.client_document,
+                celular: auth.client_phone,
+                correo: auth.client_email,
+            },
+        });
+
+        const hint = channel === 'whatsapp'
+            ? auth.client_phone.slice(-4)
+            : auth.client_email ? auth.client_email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '';
+        return { sent: true, phone_hint: hint, channel };
+    },
+
+    verifyAndSignAuthorization: async (token: string, otp: string, clientIp?: string) => {
+        const { data: auth } = await supabase
+            .from('authorization_tokens')
+            .select('*')
+            .eq('token', token)
+            .single();
+        if (!auth) throw new Error('Token no encontrado');
+        if (auth.status !== 'pending') throw new Error('Esta autorización ya fue procesada');
+        if (new Date(auth.expires_at) < new Date()) throw new Error('Esta autorización ha expirado');
+        if (!auth.otp_code) throw new Error('Primero debes solicitar un código');
+        if (auth.otp_expires_at && new Date(auth.otp_expires_at) < new Date()) throw new Error('El código ha expirado. Solicita uno nuevo.');
+        if (auth.otp_code !== otp) throw new Error('Código incorrecto');
+
+        const signedAt = new Date().toISOString();
+
+        // Marcar como firmado
+        await supabase.from('authorization_tokens').update({
+            status: 'signed',
+            signed_at: signedAt,
+            client_ip: clientIp || null,
+            otp_code: null, // limpiar OTP
+        }).eq('id', auth.id);
+
+        // Disparar webhook de firma
+        ProductionService.triggerWebhooks('authorization_signed', {
+            credit_id: auth.credit_id,
+            cliente: {
+                nombre: auth.client_name,
+                documento: auth.client_document,
+                celular: auth.client_phone,
+            },
+            signed_at: signedAt,
+        });
+
+        // Notificar al gestor del crédito
+        try {
+            const { data: credit } = await supabase.from('credits').select('assigned_gestor_id').eq('id', auth.credit_id).single();
+            if (credit?.assigned_gestor_id) {
+                await supabase.from('notifications').insert({
+                    user_id: credit.assigned_gestor_id,
+                    title: 'Autorización firmada',
+                    message: `${auth.client_name} (CC: ${auth.client_document}) firmó la autorización de consulta y validación de identidad.`,
+                    type: 'success',
+                    is_read: false,
+                    credit_id: auth.credit_id,
+                });
+            }
+        } catch { /* silenciar error de notificación */ }
+
+        // Construir URL de validación con parámetros del cliente
+        let redirectUrl = '';
+        if (auth.validation_url) {
+            const baseUrl = auth.validation_url;
+            const separator = baseUrl.includes('?') ? '&' : '?';
+            const params = new URLSearchParams({
+                nombre: auth.client_name,
+                documento: auth.client_document,
+                telefono: auth.client_phone,
+                ...(auth.client_email ? { correo: auth.client_email } : {}),
+            });
+            redirectUrl = `${baseUrl}${separator}${params.toString()}`;
+        }
+
+        return { signed: true, validation_url: redirectUrl || null, auth_id: auth.id, signed_at: signedAt };
+    },
+
+    uploadAuthorizationPdf: async (authId: string, creditId: string, pdfBlob: Blob, clientName: string, clientDocument: string) => {
+        const fileName = `autorizacion_centrales_${clientDocument}_${Date.now()}.pdf`;
+        const { error: uploadError } = await supabase.storage.from('skala-bucket').upload(fileName, pdfBlob, {
+            contentType: 'application/pdf',
+        });
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage.from('skala-bucket').getPublicUrl(fileName);
+
+        // Guardar URL del PDF en authorization_tokens
+        await supabase.from('authorization_tokens').update({ pdf_url: publicUrl }).eq('id', authId);
+
+        // Registrar en documents del crédito
+        await supabase.from('documents').insert({
+            credit_id: creditId,
+            name: `Autorización Consulta y Validación - ${clientName}`,
+            url: publicUrl,
+            type: 'LEGAL:AUTORIZACION_CENTRALES',
+            uploaded_at: new Date().toISOString(),
+        });
+
+        return publicUrl;
+    },
+
+    getAuthorizationStatus: async (creditId: string) => {
+        const { data } = await supabase
+            .from('authorization_tokens')
+            .select('*')
+            .eq('credit_id', creditId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        return data?.[0] || null;
+    },
+
+    resendAuthorization: async (creditId: string, createdBy: string) => {
+        // Verificar si existe una autorización vigente
+        const existing = await ProductionService.getAuthorizationStatus(creditId);
+
+        if (existing && existing.status === 'signed') {
+            throw new Error('Esta autorización ya fue firmada');
+        }
+
+        // Si existe y está pendiente, reenviar el mismo token
+        if (existing && existing.status === 'pending' && new Date(existing.expires_at) > new Date()) {
+            const appUrl = 'https://skalapp.co';
+            ProductionService.triggerWebhooks('authorization_request_sent', {
+                credit_id: creditId,
+                token: existing.token,
+                authorization_url: `${appUrl}/?autorizacion=${existing.token}`,
+                cliente: {
+                    nombre: existing.client_name,
+                    documento: existing.client_document,
+                    celular: existing.client_phone,
+                    correo: existing.client_email,
+                },
+            });
+            return existing;
+        }
+
+        // Si expiró o no existe, crear nuevo token
+        return ProductionService.createAuthorizationToken(creditId, createdBy);
+    },
+
+    updateAuthorizationValidationUrl: async (authId: string, validationUrl: string) => {
+        const { error } = await supabase
+            .from('authorization_tokens')
+            .update({ validation_url: validationUrl })
+            .eq('id', authId);
+        if (error) throw error;
     },
 };

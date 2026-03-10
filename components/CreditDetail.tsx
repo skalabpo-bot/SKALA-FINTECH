@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Credit, User, CreditState, UserRole } from '../types';
+import { Credit, User, CreditState, UserRole, AuthorizationToken } from '../types';
 import { MockService } from '../services/mockService';
+import { ProductionService } from '../services/productionService';
 import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
-    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload
+    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw
 } from 'lucide-react';
 
 export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBack: () => void }> = ({ creditId, currentUser, onBack }) => {
@@ -17,6 +18,15 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [uploadingLegal, setUploadingLegal] = useState(false);
   const [legalDocType, setLegalDocType] = useState('Pagaré');
   const [deletingLegalId, setDeletingLegalId] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthorizationToken | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authResending, setAuthResending] = useState(false);
+  const [authValUrl, setAuthValUrl] = useState('');
+  const [authValEditing, setAuthValEditing] = useState(false);
+  const [legalNotes, setLegalNotes] = useState<{id: string; text: string; userName: string; userRole: string; createdAt: string}[]>([]);
+  const [legalNotesLoading, setLegalNotesLoading] = useState(false);
+  const [newLegalNote, setNewLegalNote] = useState('');
+  const [sendingLegalNote, setSendingLegalNote] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [sendingComment, setSendingComment] = useState(false);
@@ -138,6 +148,21 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
             .then((docs: any[]) => setLegalDocs(docs))
             .catch(() => setLegalDocs([]))
             .finally(() => setLegalDocsLoading(false));
+        // Cargar estado de autorización de centrales
+        setAuthLoading(true);
+        ProductionService.getAuthorizationStatus(credit.id)
+            .then((auth: any) => {
+                setAuthStatus(auth);
+                setAuthValUrl(auth?.validation_url || '');
+            })
+            .catch(() => setAuthStatus(null))
+            .finally(() => setAuthLoading(false));
+        // Cargar observaciones internas
+        setLegalNotesLoading(true);
+        ProductionService.getLegalNotes(credit.id)
+            .then((notes: any[]) => setLegalNotes(notes))
+            .catch(() => setLegalNotes([]))
+            .finally(() => setLegalNotesLoading(false));
     }
   }, [activeTab, credit?.comments, credit?.id]);
 
@@ -216,6 +241,20 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
               window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: "Error al cambiar el estado", type: 'error' } }));
           }
       }
+  };
+
+  const handleAddLegalNote = async () => {
+    if (!newLegalNote.trim() || !credit || sendingLegalNote) return;
+    setSendingLegalNote(true);
+    try {
+        const note = await ProductionService.addLegalNote(credit.id, newLegalNote.trim(), currentUser.id, currentUser.name, currentUser.role);
+        setLegalNotes(prev => [note, ...prev]);
+        setNewLegalNote('');
+    } catch (err: any) {
+        alert('Error: ' + err.message);
+    } finally {
+        setSendingLegalNote(false);
+    }
   };
 
   const handleSendComment = async (e: React.FormEvent) => {
@@ -478,7 +517,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           <TabButton active={activeTab==='DOCUMENTS'} onClick={()=>setActiveTab('DOCUMENTS')} label="Documentos" />
           <TabButton active={activeTab==='HISTORY'} onClick={()=>setActiveTab('HISTORY')} label="Trazabilidad" />
           <TabButton active={activeTab==='CHAT'} onClick={()=>setActiveTab('CHAT')} label="Chat Operativo" />
-          {[UserRole.ADMIN, UserRole.ANALISTA, UserRole.ASISTENTE_OPERATIVO].includes(currentUser.role as any) && (
+          {[UserRole.ADMIN, UserRole.ANALISTA, UserRole.ASISTENTE_OPERATIVO, UserRole.ANALISTA_ENTIDAD].includes(currentUser.role as any) && (
               <TabButton active={activeTab==='LEGAL_DOCS'} onClick={()=>setActiveTab('LEGAL_DOCS')} label="📁 Docs. Legales" />
           )}
       </div>
@@ -810,6 +849,144 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                     </div>
 
+                    {/* Autorización de Consulta y Validación de Identidad */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Shield size={18} className="text-indigo-500" />
+                                <h4 className="font-bold text-sm text-slate-800">Autorización de Consulta y Validación de Identidad</h4>
+                            </div>
+                            {authLoading ? (
+                                <Loader2 size={14} className="animate-spin text-slate-300" />
+                            ) : authStatus?.status === 'signed' ? (
+                                <span className="text-[10px] px-2 py-1 bg-green-100 text-green-700 rounded-lg font-bold">FIRMADA</span>
+                            ) : authStatus?.status === 'pending' ? (
+                                <span className="text-[10px] px-2 py-1 bg-orange-100 text-orange-600 rounded-lg font-bold">PENDIENTE</span>
+                            ) : authStatus?.status === 'expired' ? (
+                                <span className="text-[10px] px-2 py-1 bg-red-100 text-red-600 rounded-lg font-bold">EXPIRADA</span>
+                            ) : (
+                                <span className="text-[10px] px-2 py-1 bg-slate-100 text-slate-500 rounded-lg font-bold">NO ENVIADA</span>
+                            )}
+                        </div>
+
+                        {authStatus?.status === 'signed' && (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-3 space-y-1">
+                                <p className="text-xs text-green-700">
+                                    Firmada el {authStatus.signed_at ? new Date(authStatus.signed_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                                </p>
+                                {authStatus.pdf_url && (
+                                    <a href={authStatus.pdf_url} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 hover:underline">
+                                        <Download size={12} /> Ver PDF
+                                    </a>
+                                )}
+                            </div>
+                        )}
+
+                        {authStatus && authStatus.status !== 'signed' && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={async () => {
+                                        if (!credit) return;
+                                        setAuthResending(true);
+                                        try {
+                                            const result = await ProductionService.resendAuthorization(credit.id, currentUser.id);
+                                            setAuthStatus(result as AuthorizationToken);
+                                            alert('Autorización reenviada exitosamente.');
+                                        } catch (err: any) {
+                                            alert('Error: ' + err.message);
+                                        } finally {
+                                            setAuthResending(false);
+                                        }
+                                    }}
+                                    disabled={authResending}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                                >
+                                    {authResending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                    {authStatus.status === 'expired' ? 'Generar nueva' : 'Reenviar'}
+                                </button>
+                                {authStatus.token && (
+                                    <button
+                                        onClick={() => {
+                                            const url = `${window.location.origin}/?autorizacion=${authStatus.token}`;
+                                            navigator.clipboard.writeText(url);
+                                            alert('Link copiado al portapapeles');
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-colors"
+                                    >
+                                        <ExternalLink size={12} /> Copiar link
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {!authStatus && !authLoading && (
+                            <button
+                                onClick={async () => {
+                                    if (!credit) return;
+                                    setAuthResending(true);
+                                    try {
+                                        const result = await ProductionService.createAuthorizationToken(credit.id, currentUser.id);
+                                        setAuthStatus(result as AuthorizationToken);
+                                        alert('Autorización creada y enviada.');
+                                    } catch (err: any) {
+                                        alert('Error: ' + err.message);
+                                    } finally {
+                                        setAuthResending(false);
+                                    }
+                                }}
+                                disabled={authResending}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                            >
+                                {authResending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                Enviar Autorización
+                            </button>
+                        )}
+
+                        {/* Editar URL de validación — siempre visible */}
+                        <div className="border-t border-slate-100 pt-3 mt-2">
+                            <div className="flex items-center gap-2 mb-1">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase">Link de validación de identidad</p>
+                                {!authValEditing && (
+                                    <button onClick={() => setAuthValEditing(true)} className="text-[10px] text-indigo-500 hover:underline font-bold">
+                                        Editar
+                                    </button>
+                                )}
+                            </div>
+                            {authValEditing ? (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="url"
+                                        value={authValUrl}
+                                        onChange={e => setAuthValUrl(e.target.value)}
+                                        placeholder="https://validacion.ejemplo.com/..."
+                                        className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                                    />
+                                    <button
+                                        onClick={async () => {
+                                            if (authStatus) {
+                                                try {
+                                                    await ProductionService.updateAuthorizationValidationUrl(authStatus.id, authValUrl);
+                                                    setAuthStatus({ ...authStatus, validation_url: authValUrl });
+                                                } catch (err: any) {
+                                                    alert('Error: ' + err.message);
+                                                }
+                                            }
+                                            setAuthValEditing(false);
+                                        }}
+                                        className="px-3 py-1.5 bg-indigo-500 text-white text-xs font-bold rounded-lg hover:bg-indigo-600"
+                                    >
+                                        Guardar
+                                    </button>
+                                    <button onClick={() => { setAuthValEditing(false); setAuthValUrl(authStatus?.validation_url || ''); }} className="px-3 py-1.5 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-200">
+                                        Cancelar
+                                    </button>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-slate-500 truncate">{authStatus?.validation_url || authValUrl || <span className="italic text-slate-300">No configurado — se usará la URL de la entidad</span>}</p>
+                            )}
+                        </div>
+                    </div>
+
                     {/* Upload row */}
                     <div className="flex gap-2 items-center">
                         <input
@@ -880,6 +1057,65 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             ))}
                         </div>
                     )}
+
+                    {/* Observaciones internas */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <ClipboardList size={18} className="text-amber-600" />
+                            <h4 className="font-bold text-sm text-slate-800">Observaciones Internas</h4>
+                            <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-600 rounded-lg font-bold">SOLO INTERNO</span>
+                        </div>
+
+                        {/* Input nueva observación */}
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={newLegalNote}
+                                onChange={e => setNewLegalNote(e.target.value)}
+                                placeholder="Escribir observación interna..."
+                                className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && newLegalNote.trim() && !sendingLegalNote) {
+                                        e.preventDefault();
+                                        handleAddLegalNote();
+                                    }
+                                }}
+                            />
+                            <button
+                                onClick={handleAddLegalNote}
+                                disabled={sendingLegalNote || !newLegalNote.trim()}
+                                className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap"
+                            >
+                                {sendingLegalNote ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                Agregar
+                            </button>
+                        </div>
+
+                        {/* Lista de observaciones */}
+                        {legalNotesLoading ? (
+                            <div className="flex justify-center py-6"><Loader2 className="animate-spin text-amber-400" size={20} /></div>
+                        ) : legalNotes.length === 0 ? (
+                            <p className="text-center text-xs text-slate-300 italic py-4">Sin observaciones internas aún.</p>
+                        ) : (
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {legalNotes.map(note => (
+                                    <div key={note.id} className="bg-amber-50/50 border border-amber-100 rounded-xl p-3 flex gap-3">
+                                        <div className="w-7 h-7 bg-amber-200 rounded-lg flex items-center justify-center text-amber-800 font-bold text-[10px] shrink-0">
+                                            {note.userName?.charAt(0) || '?'}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-xs font-bold text-slate-700">{note.userName}</span>
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded font-bold">{note.userRole?.replace(/_/g, ' ')}</span>
+                                                <span className="text-[9px] text-slate-400 ml-auto shrink-0">{new Date(note.createdAt).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-600 leading-relaxed">{note.text}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 

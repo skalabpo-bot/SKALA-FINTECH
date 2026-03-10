@@ -669,6 +669,20 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           </div>
 
+                          {/* URL de Validación de Identidad */}
+                          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                            <h5 className="text-xs font-bold text-indigo-800 uppercase tracking-wide mb-2">Consulta y Validación de Identidad</h5>
+                            <p className="text-[10px] text-indigo-600 mb-3">URL a la que se redirige al cliente después de firmar la autorización de consulta y validación de identidad.</p>
+                            <input
+                              type="url"
+                              className={inputClass}
+                              value={editingEntity.validationUrl ?? ''}
+                              onChange={e => setEditingEntity({...editingEntity, validationUrl: e.target.value || undefined})}
+                              placeholder="https://validacion.ejemplo.com/verificar"
+                            />
+                            <p className="text-[10px] text-indigo-500 mt-1.5">Se agregarán automáticamente los parámetros: ?nombre=...&documento=...&telefono=...</p>
+                          </div>
+
                           <div className="pt-2">
                              <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 shadow-lg transition-all hover:-translate-y-0.5">Guardar Marca</button>
                           </div>

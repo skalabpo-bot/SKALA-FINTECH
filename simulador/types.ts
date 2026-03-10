@@ -22,6 +22,7 @@ export interface FinancialEntity {
   pagaduriaMaxCartera?: Record<string, number>; // Override por pagaduría, ej: {"MINDEFENSA": 1}
   commissions?: Record<string, number>; // Comisión (%) por producto, ej: {"Libre Inversión": 3.5, "Compra de Cartera": 2.8}
   requiresFullForm?: boolean; // Si true, requiere formulario completo (no radicación rápida)
+  validationUrl?: string; // URL de validación de identidad del cliente (centrales de riesgo)
 }
 
 export interface FPMEntry {

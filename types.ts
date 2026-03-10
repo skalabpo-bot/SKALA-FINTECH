@@ -274,6 +274,26 @@ export interface ReportFilters {
   comisionPagada: '' | 'pagada' | 'pendiente';
 }
 
+export interface AuthorizationToken {
+  id: string;
+  credit_id: string;
+  token: string;
+  otp_code?: string;
+  otp_expires_at?: string;
+  status: 'pending' | 'signed' | 'expired';
+  expires_at: string;
+  client_name: string;
+  client_document: string;
+  client_phone: string;
+  client_email?: string;
+  client_ip?: string;
+  validation_url?: string;
+  signed_at?: string;
+  pdf_url?: string;
+  created_at: string;
+  created_by?: string;
+}
+
 export type AutomationEvent =
     | 'credit_status_change'
     | 'credit_created'
@@ -289,6 +309,9 @@ export type AutomationEvent =
     | 'withdrawal_requested'
     | 'user_batch_imported'
     | 'state_action_executed'
+    | 'authorization_request_sent'
+    | 'authorization_otp_requested'
+    | 'authorization_signed'
     | 'all';
 
 export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; description: string; category: string }[] = [
@@ -309,6 +332,10 @@ export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; descrip
     { value: 'withdrawal_requested', label: 'Solicitud de retiro de fondos', description: 'Gestor, monto total, créditos incluidos', category: 'Comisiones' },
     { value: 'user_batch_imported', label: 'Usuario creado por importación masiva', description: 'Nombre, email, cédula, teléfono, ciudad, rol, contraseña temporal', category: 'Usuarios' },
     { value: 'state_action_executed', label: 'Acción rápida ejecutada', description: 'Nombre de la acción, gestor, cliente y datos del crédito', category: 'Créditos' },
+    // Autorización de consulta y validación de identidad
+    { value: 'authorization_request_sent', label: 'Autorización de consulta y validación enviada', description: 'Link de autorización, datos del cliente, crédito asociado', category: 'Legal' },
+    { value: 'authorization_otp_requested', label: 'OTP de autorización solicitado', description: 'Código OTP, teléfono del cliente, crédito asociado', category: 'Legal' },
+    { value: 'authorization_signed', label: 'Autorización de consulta y validación firmada', description: 'Datos del cliente, crédito, fecha de firma, PDF generado', category: 'Legal' },
 ];
 
 export type AutomationType = 'webhook' | 'whatsapp' | 'email' | 'notificacion';
