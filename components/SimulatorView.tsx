@@ -273,6 +273,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       tipoDesembolso: mapPaymentMethod(paymentMethod),
       ...(employerName ? { pagaduria: employerName } : {}),
       ...(analysisResult ? { cuotaDisponible: analysisResult.availableQuota + (loanConfig?.buyoutQuota || 0) } : {}),
+      ...(loanConfig?.customQuota != null ? { cuotaUtilizar: loanConfig.customQuota } : {}),
       ...(tipoPension ? { tipoPension } : {}),
       ...(loanConfig?.carteraItems && loanConfig.carteraItems.length > 0 ? { carteraItems: loanConfig.carteraItems } : {}),
     };
