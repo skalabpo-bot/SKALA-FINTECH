@@ -118,40 +118,52 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
   trackUsage();
 
   const prompt = `
-    Analiza este desprendible de nómina (Libranza Colombia).
-    Extrae valores numéricos exactos y LISTA los descuentos.
+    Eres un extractor de datos de desprendibles de nómina colombianos. Tu única tarea es leer cifras del documento y devolverlas en JSON. NO apliques reglas de ley ni interpretes normativa.
 
-    PASO 1 - DETECCIÓN DE ENTIDAD:
-    Determina el tipo de entidad según el membrete del desprendible. Evalúa EN ORDEN:
+    CAMPO 1 — employerName
+    Copia EXACTAMENTE el nombre de la empresa o entidad que aparece en el membrete o encabezado del documento.
+    Ejemplos válidos: "Policía Nacional", "Alcaldía de Medellín", "CREMIL", "Seguros Alfa S.A.", "Universidad de Antioquia".
 
-    a) CREMIL (Caja de Retiro de las Fuerzas Militares):
-       Indicadores: "CREMIL", "Fuerzas Militares", "Ejército", "Armada", "Fuerza Aérea", "CASUR", "FOPEP", membrete militar.
-       → entityType: "CREMIL"
+    CAMPO 2 — monthlyIncome
+    El TOTAL DEVENGADO: suma de todos los ingresos fijos del periodo (salario básico, asignación básica, mesada pensional, haber de retiro, incremento, y cualquier otro ingreso fijo recurrente).
+    Busca etiquetas como: "Total Devengado", "Total Ingresos", "Mesada Pensional", "Haber Mensual", "Básico", "Asignación Básica", "Incremento".
+    IMPORTANTE: Si existe una línea llamada "Incremento", INCLÚYELA en el total devengado si no está ya sumada en "Total Devengado" o "Total Ingresos".
+    EXCLUYE SOLO: bonificaciones variables ocasionales, viáticos, horas extra, gastos de representación no fijos.
+    Si hay una línea de "Total Devengado" o "Total Ingresos", usa ese valor directamente (ya debe incluir el incremento).
 
-    b) MIN_DEFENSA (Ministerio de Defensa / Policía Nacional):
-       Indicadores: "Ministerio de Defensa", "Min Defensa", "MINDEFENSA", "Policía Nacional", "PONAL", "DGSM".
-       → entityType: "MIN_DEFENSA"
+    CAMPO 3 — mandatoryDeductions
+    SUMA ÚNICAMENTE los descuentos de Salud y Pensión (aportes obligatorios de ley).
+    Busca etiquetas como: "Salud", "Aporte Salud", "EPS", "Pensión", "Aporte Pensión", "AFP", "Fondo de Pensiones".
+    NO incluyas nada más aquí.
 
-    c) SEGUROS_ALFA:
-       Indicadores: "Seguros Alfa", "ALFA", "Seguros de Vida Alfa".
-       → entityType: "SEGUROS_ALFA"
+    CAMPO 4 — embargos
+    SOLO retenciones judiciales. Busca: "Embargo", "Retención Judicial", "Cuota Alimentaria".
+    Si no hay, pon 0.
 
-    d) Si no coincide con ninguno de los anteriores:
-       → entityType: "GENERAL"
+    CAMPO 5 — otherDeductions
+    Suma de TODOS los descuentos que NO sean salud, pensión ni embargos.
+    Incluye: libranzas, préstamos, créditos, cuotas de cooperativa, seguros de vida (si aparecen como descuento fijo), aportes voluntarios, descuentos varios.
+    EXCLUYE: salud, pensión, embargos (ya están en sus propios campos).
 
-    PASO 2 - EXTRACCIÓN DE CAMPOS:
-    1. entityType: "CREMIL" o "GENERAL" según el paso anterior.
-    2. employerName: Nombre de la empresa o pagaduría que expide el desprendible (ej: "Policía Nacional", "Seguros Alfa", "Alcaldía de Bogotá"). Extrae exactamente el nombre que aparece en el membrete.
-    3. monthlyIncome: Suma salarial fija (Básico, Sueldo, Asignación, Mesada).
-    4. mandatoryDeductions:
-       - Si es GENERAL o SEGUROS_ALFA: SUMA SOLO Salud y Pensión (Fondos de Ley obligatorios).
-       - Si es CREMIL o MIN_DEFENSA: Pon 0 (la ley aplica sobre el salario bruto directamente).
-    5. embargos: Valor de embargos judiciales.
-    6. otherDeductions: Suma de TODO lo demás (Libranzas, Préstamos, Seguros, Aportes, etc). EXCLUYE Salud/Pensión/Embargos.
-    7. detailedDeductions: Lista detallada de CADA item incluido en 'otherDeductions'.
-       - IMPORTANTE: No incluyas salud, pensión ni embargos aquí.
+    CAMPO 6 — detailedDeductions
+    Lista cada ítem incluido en otherDeductions con su nombre exacto del documento y su valor.
+    REGLA CRÍTICA: la suma de todos los amounts de esta lista debe ser IGUAL a otherDeductions.
+    NO incluyas salud, pensión ni embargos en esta lista.
 
-    Retorna SOLO JSON. Sin markdown.
+    CAMPO 7 — entityType
+    Detecta solo para referencia interna:
+    - "CREMIL" si el membrete dice exactamente "CREMIL"
+    - "MIN_DEFENSA" si dice "Ministerio de Defensa", "MINDEFENSA" o "Pensionado MinDefensa"
+    - "SEGUROS_ALFA" si dice "Seguros Alfa" o "ALFA"
+    - "GENERAL" en cualquier otro caso
+
+    CAMPO 8 — manualQuota
+    SOLO aplicable si entityType es "CREMIL".
+    Los desprendibles de CREMIL frecuentemente muestran el CUPO DISPONIBLE directamente, que es el valor que el pensionado tiene libre para endeudarse.
+    Busca etiquetas como: "Cupo Disponible", "Cupo Libre", "Cupo Autorizado", "Cupo para Libranza", "Disponible Libranza", "Saldo Cupo".
+    Si encuentras este valor en un desprendible CREMIL, ponlo aquí. De lo contrario (o si no es CREMIL), pon 0.
+
+    Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
   const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash"];
@@ -193,9 +205,10 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
                       amount: { type: Type.NUMBER }
                     }
                   }
-                }
+                },
+                manualQuota: { type: Type.NUMBER }
               },
-              required: ["entityType", "employerName", "monthlyIncome", "mandatoryDeductions", "otherDeductions", "embargos"]
+              required: ["entityType", "employerName", "monthlyIncome", "mandatoryDeductions", "otherDeductions", "embargos", "manualQuota"]
             }
           }
         });
@@ -210,7 +223,8 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
             embargos: data.embargos || 0,
             detailedDeductions: data.detailedDeductions || [],
             entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
-            employerName: data.employerName || ''
+            employerName: data.employerName || '',
+            manualQuota: data.manualQuota || 0
           };
         }
       } catch (error: any) {

@@ -48,27 +48,32 @@ const calculateCremil: CalculationMethod = (data) => {
   };
 };
 
-/** Min Defensa — Ley 50 (50% bruto) + restricción SMMLV para salarios ≤ 2 SMMLV */
+/** Min Defensa:
+ *  > 2 SMLV → Ley 1527: (devengado - descuentos ley) / 2 - otros descuentos
+ *  ≤ 2 SMLV → devengado - 1 SMLV - todos los descuentos
+ */
 const calculateMinDefensa: CalculationMethod = (data, smmlv) => {
-  const legalCapacity50 = Math.floor(data.monthlyIncome * 0.5);
-
   let legalCapacity: number;
-  if (data.monthlyIncome <= smmlv * 2) {
-    // Si gana ≤ 2 SMMLV: capacidad = bruto - 1 SMMLV (respetar 1 salario mínimo)
-    legalCapacity = Math.max(0, Math.floor(data.monthlyIncome - smmlv));
+  let netIncome: number;
+
+  if (data.monthlyIncome > smmlv * 2) {
+    // > 2 SMLV: Ley 1527 sobre neto
+    netIncome = data.monthlyIncome - data.mandatoryDeductions;
+    legalCapacity = Math.floor(netIncome * 0.5);
   } else {
-    // Si gana > 2 SMMLV: capacidad completa 50%
-    legalCapacity = legalCapacity50;
+    // ≤ 2 SMLV: devengado - 1 SMLV (proteger salario mínimo)
+    netIncome = data.monthlyIncome;
+    legalCapacity = Math.max(0, Math.floor(data.monthlyIncome - smmlv));
   }
 
   const availableQuota = legalCapacity - data.otherDeductions - data.embargos;
   return {
     entityType: 'MIN_DEFENSA',
     rawIncome: data.monthlyIncome,
-    mandatory: 0,
+    mandatory: data.mandatoryDeductions,
     others: data.otherDeductions,
     embargos: data.embargos,
-    netIncome: data.monthlyIncome,
+    netIncome,
     legalCapacity,
     availableQuota: Math.max(0, availableQuota),
     detailedDeductions: data.detailedDeductions || [],
@@ -76,10 +81,10 @@ const calculateMinDefensa: CalculationMethod = (data, smmlv) => {
   };
 };
 
-/** Seguros Alfa — Ley 1527 pero al 52% (en vez de 50%) */
+/** Seguros Alfa — (Total Devengado - Descuentos de Ley) × 48% */
 const calculateSegurosAlfa: CalculationMethod = (data) => {
   const netIncome = data.monthlyIncome - data.mandatoryDeductions;
-  const legalCapacity = Math.floor(netIncome * 0.52);
+  const legalCapacity = Math.floor(netIncome * 0.48);
   const availableQuota = legalCapacity - data.otherDeductions - data.embargos;
 
   return {

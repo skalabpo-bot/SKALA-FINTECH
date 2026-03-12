@@ -227,13 +227,25 @@ export const ProductionService = {
 
             if (existingCredits && existingCredits.length > 0) {
                 const finalStateIds = states.filter(s => s.isFinal).map(s => s.id);
-                const activeCredit = existingCredits.find((c: any) => !finalStateIds.includes(c.status_id));
-                if (activeCredit) {
-                    const activeStateName = states.find(s => s.id === activeCredit.status_id)?.name || 'en trámite';
-                    throw new Error(
-                        `Ya existe un crédito activo para la cédula ${cedula} (estado: ${activeStateName}). ` +
-                        `Debes finalizar ese trámite antes de radicar uno nuevo.`
-                    );
+                const activeCredits = existingCredits.filter((c: any) => !finalStateIds.includes(c.status_id));
+                if (activeCredits.length > 0) {
+                    const newPagaduria = (rest.pagaduria || '').toString().trim().toUpperCase();
+                    // Permitir si la pagaduría es diferente a TODOS los créditos activos
+                    const conflictCredit = activeCredits.find((c: any) => {
+                        const existingPagaduria = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
+                        // Bloquear si misma pagaduría, o si alguno no tiene pagaduría registrada
+                        return !existingPagaduria || !newPagaduria || existingPagaduria === newPagaduria;
+                    });
+                    if (conflictCredit) {
+                        const activeStateName = states.find(s => s.id === conflictCredit.status_id)?.name || 'en trámite';
+                        const existingPag = (conflictCredit.client_data?.pagaduria || '');
+                        throw new Error(
+                            `Ya existe un crédito activo para la cédula ${cedula}` +
+                            (existingPag ? ` con pagaduría ${existingPag}` : '') +
+                            ` (estado: ${activeStateName}). ` +
+                            `Solo puedes radicar otro crédito si es con una pagaduría diferente.`
+                        );
+                    }
                 }
             }
         }

@@ -452,6 +452,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
             onAnalysisComplete={handleAnalysisComplete}
             onPaystubFile={(file) => setPaystubFile(file)}
             onEmployerName={(name) => setEmployerName(name)}
+            pagaduria={selectedPagaduria}
           />
 
           {/* Notas informativas del simulador */}

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { FinancialData, AnalysisResult } from '../types';
+import { FinancialData, AnalysisResult, EntityType } from '../types';
 import { calculateCapacity } from '../services/calculatorService';
 import { analyzePaystubDocument } from '../services/geminiService';
 import { useSimulator } from '../context/SimulatorContext';
@@ -10,7 +10,17 @@ interface FinancialFormProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
   onPaystubFile?: (file: File) => void;
   onEmployerName?: (name: string) => void;
+  pagaduria?: string; // Pagaduría seleccionada por el usuario — determina la fórmula de cálculo
 }
+
+/** Mapea nombre de pagaduría → EntityType para el cálculo de ley */
+const inferEntityType = (name: string): EntityType => {
+  const n = name.toUpperCase();
+  if (/\bCREMIL\b/.test(n)) return 'CREMIL';
+  if (/MIN.*DEFENSA|MINDEFENSA|PENSIONADO.*MINDEFENSA/.test(n)) return 'MIN_DEFENSA';
+  if (/SEGUROS ALFA|ALFA/.test(n)) return 'SEGUROS_ALFA';
+  return 'GENERAL';
+};
 
 // Loading stage messages
 const LOADING_STAGES = [
@@ -55,12 +65,13 @@ const compressImage = (file: File): Promise<string> => {
 
 // Entity type badge config
 const ENTITY_BADGES: Record<string, { label: string; color: string }> = {
-  CREMIL: { label: 'CREMIL Detectado — Ley 50 sobre salario bruto (50%)', color: 'green' },
-  MIN_DEFENSA: { label: 'Min Defensa Detectado — Ley 50 + restriccion SMMLV', color: 'blue' },
-  SEGUROS_ALFA: { label: 'Seguros Alfa Detectado — Ley 1527 al 52%', color: 'purple' },
+  GENERAL: { label: 'Ley 1527 — 50% sobre ingreso neto (devengado - salud - pensión)', color: 'gray' },
+  CREMIL: { label: 'CREMIL — Ley 50: 50% sobre salario bruto', color: 'green' },
+  MIN_DEFENSA: { label: 'Min Defensa — Ley 1527 (>2 SMMLV) / protección SMMLV (≤2 SMMLV)', color: 'blue' },
+  SEGUROS_ALFA: { label: 'Seguros Alfa — Ley 1527 al 48%', color: 'purple' },
 };
 
-export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAnalysisComplete, onPaystubFile, onEmployerName }) => {
+export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAnalysisComplete, onPaystubFile, onEmployerName, pagaduria }) => {
   const { state: { smmlv } } = useSimulator();
 
   const onPaystubFileRef = useRef(onPaystubFile);
@@ -107,7 +118,11 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
   };
 
   const handleCalculate = (currentData: FinancialData) => {
-    const result = calculateCapacity(currentData, smmlv);
+    // Si hay pagaduría seleccionada, su entityType tiene prioridad sobre lo que leyó Gemini
+    const dataToUse = pagaduria
+      ? { ...currentData, entityType: inferEntityType(pagaduria) }
+      : currentData;
+    const result = calculateCapacity(dataToUse, smmlv);
     onAnalysisComplete(result);
   };
 
@@ -172,7 +187,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
       setData(prev => ({
         ...extractedData,
-        manualQuota: prev.manualQuota,
+        // Si Gemini detectó cupo disponible (CREMIL), usarlo; sino, conservar el que el usuario ingresó
+        manualQuota: extractedData.manualQuota || prev.manualQuota,
       }));
 
       setHasUploadedPaystub(true);
@@ -225,9 +241,11 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
   const inputClass = "block w-full pl-10 pr-4 py-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all font-mono font-bold text-xl shadow-sm group-hover:border-slate-300";
   const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-primary-500 transition-colors";
 
-  // Entity badge
-  const badge = ENTITY_BADGES[data.entityType];
+  // Entity badge — usar entityType de pagaduría si está disponible, sino el de Gemini
+  const effectiveEntityType = pagaduria ? inferEntityType(pagaduria) : data.entityType;
+  const badge = ENTITY_BADGES[effectiveEntityType];
   const badgeColors: Record<string, string> = {
+    gray: 'bg-slate-100 text-slate-700 border-slate-300',
     green: 'bg-green-100 text-green-800 border-green-300',
     blue: 'bg-blue-100 text-blue-800 border-blue-300',
     purple: 'bg-purple-100 text-purple-800 border-purple-300',
