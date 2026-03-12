@@ -373,6 +373,12 @@ export const UserManagement = () => {
                             <div><span className="font-bold block text-slate-400 uppercase text-[9px]">Ciudad</span>{u.city}</div>
                             <div><span className="font-bold block text-slate-400 uppercase text-[9px]">Banco</span>{u.banco}</div>
                             <div><span className="font-bold block text-slate-400 uppercase text-[9px]">Celular</span>{u.phone}</div>
+                            {u.zoneId && (
+                                <div className="col-span-2">
+                                    <span className="font-bold block text-slate-400 uppercase text-[9px]">Zona / Equipo solicitado</span>
+                                    <span className="font-bold text-orange-600">{zones.find(z => z.id === u.zoneId)?.name || u.zoneId}</span>
+                                </div>
+                            )}
                         </div>
                          <div className="flex gap-3 mt-4 border-t border-slate-100 pt-4">
                             <button onClick={() => handleReject(u.id)} className="flex-1 py-2 rounded-lg border border-red-200 text-red-600 font-bold text-xs hover:bg-red-50 flex items-center justify-center gap-2"><XCircle size={16}/> Rechazar</button>

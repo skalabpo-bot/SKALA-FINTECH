@@ -45,6 +45,7 @@ const mapCreditFromDB = (c: any): Credit => {
         updatedAt: new Date(c.updated_at),
         assignedGestorId: c.assigned_gestor_id,
         gestorName: c.gestor_profile?.full_name || c.profiles?.full_name || 'Sin asignar',
+        gestorZoneName: c.gestor_profile?.zones?.name || undefined,
         assignedAnalystId: c.assigned_analyst_id || undefined,
         analystName: c.analyst_profile?.full_name || undefined,
         statusId: c.status_id,
@@ -587,7 +588,7 @@ export const ProductionService = {
         // Verificar y archivar créditos DEVUELTO vencidos (fire & forget)
         ProductionService.autoArchiveExpiredDevuelto().catch(() => {});
         // Intentar con join de analista; si la columna no existe, fallback sin ella
-        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone)';
+        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zones(name)), analyst_profile:assigned_analyst_id(full_name, phone)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
