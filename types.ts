@@ -235,6 +235,7 @@ export interface Credit {
   comisionPagada?: boolean;
   fechaPagoComision?: string;
   observaciones?: string;
+  recomendado?: boolean;
 
   comments: Comment[];
   documents: CreditDocument[];

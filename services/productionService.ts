@@ -2078,6 +2078,22 @@ export const ProductionService = {
         });
     },
 
+    toggleRecommendCredit: async (creditId: string, recommend: boolean, user: User) => {
+        // Read current client_data, set recomendado flag
+        const { data: existing } = await supabase.from('credits').select('client_data').eq('id', creditId).single();
+        const clientData = existing?.client_data || {};
+        clientData.recomendado = recommend;
+        const { error } = await supabase.from('credits').update({ client_data: clientData, updated_at: new Date().toISOString() }).eq('id', creditId);
+        if (error) throw error;
+        await supabase.from('credit_history').insert({
+            credit_id: creditId,
+            user_id: user.id,
+            user_name: user.name,
+            action: recommend ? 'CRÉDITO RECOMENDADO' : 'RECOMENDACIÓN REMOVIDA',
+            description: recommend ? `${user.name} marcó este crédito como recomendado.` : `${user.name} removió la recomendación de este crédito.`,
+        }).catch(() => {});
+    },
+
     getWithdrawalRequests: async (user: User): Promise<WithdrawalRequest[]> => {
         let query = supabase.from('withdrawal_requests')
             .select('*, gestor:gestor_id(full_name, phone)')

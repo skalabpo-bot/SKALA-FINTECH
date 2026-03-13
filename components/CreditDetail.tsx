@@ -6,7 +6,7 @@ import { ProductionService } from '../services/productionService';
 import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
-    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw
+    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw, Star
 } from 'lucide-react';
 
 export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBack: () => void }> = ({ creditId, currentUser, onBack }) => {
@@ -388,6 +388,24 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                    >
                        {credit.assignedAnalystId ? 'Cambiar Analista' : 'Asignar Analista'}
                    </button>
+               )}
+               {currentUser.role === 'ADMIN' && (
+                   <button
+                       onClick={async () => {
+                           const newVal = !credit.recomendado;
+                           await MockService.toggleRecommendCredit(credit.id, newVal, currentUser);
+                           await refreshData();
+                           window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: newVal ? 'Crédito marcado como recomendado' : 'Recomendación removida', type: 'success' } }));
+                       }}
+                       className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-wider transition-all flex items-center gap-1 ${credit.recomendado ? 'text-yellow-700 bg-yellow-100 hover:bg-yellow-200' : 'text-slate-400 bg-slate-50 hover:bg-slate-100'}`}
+                   >
+                       <Star size={10} fill={credit.recomendado ? 'currentColor' : 'none'} /> {credit.recomendado ? 'Recomendado' : 'Recomendar'}
+                   </button>
+               )}
+               {credit.recomendado && currentUser.role !== 'ADMIN' && currentUser.role !== 'GESTOR' && (
+                   <span className="text-[9px] font-black text-yellow-700 bg-yellow-100 px-3 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1">
+                       <Star size={10} fill="currentColor" /> Recomendado
+                   </span>
                )}
            </div>
         </div>

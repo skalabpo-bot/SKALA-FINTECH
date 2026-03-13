@@ -23,7 +23,7 @@ import { cleanupAllSubscriptions } from './services/realtimeService';
 import { SupervisorRegistration } from './components/SupervisorRegistration';
 import { PoliticaDatos } from './components/PoliticaDatos';
 import { AutorizacionCentrales } from './components/AutorizacionCentrales';
-import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound } from 'lucide-react';
+import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound, Star } from 'lucide-react';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     window.dispatchEvent(new CustomEvent('app-alert', { detail: { message, type } }));
@@ -426,6 +426,11 @@ const App = () => {
                         <div className="flex items-center gap-2">
                             <p className="text-2xl font-black text-primary">{c.solicitudNumber || 'N/A'}</p>
                             {hasUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-300 flex-shrink-0" title="Actividad no leída"/>}
+                            {c.recomendado && currentUser!.role !== 'GESTOR' && (
+                                <span className="flex items-center gap-0.5 text-[8px] font-black text-yellow-700 bg-yellow-100 border border-yellow-200 px-1.5 py-0.5 rounded-full uppercase" title="Crédito recomendado">
+                                    <Star size={9} fill="currentColor" /> Recomendado
+                                </span>
+                            )}
                         </div>
                     </td>
                     <td className="px-8 py-6">
