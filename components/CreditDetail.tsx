@@ -671,6 +671,25 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         )}
                     </div>
 
+                    {/* OBSERVACIONES */}
+                    <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-6">
+                        <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] mb-4 flex items-center gap-3"><MessageSquare size={16} className="text-amber-500"/> OBSERVACIONES DEL GESTOR</h4>
+                        {isEditing ? (
+                            <textarea
+                                name="observaciones"
+                                value={editFormData.observaciones || ''}
+                                onChange={e=>setEditFormData({...editFormData, observaciones: e.target.value})}
+                                placeholder="Observaciones adicionales sobre el crédito..."
+                                rows={4}
+                                className="w-full px-5 py-4 bg-white text-slate-800 border-2 border-slate-100 rounded-2xl focus:border-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all text-sm font-bold placeholder:text-slate-300 hover:border-slate-200 shadow-sm resize-none"
+                            />
+                        ) : (
+                            <p className="text-sm text-amber-900 font-medium leading-relaxed whitespace-pre-wrap">
+                                {credit.observaciones || 'Sin observaciones'}
+                            </p>
+                        )}
+                    </div>
+
                     {/* DATOS PERSONALES */}
                     <div>
                         <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] mb-6 flex items-center gap-3"><UserIcon size={16} className="text-primary"/> DATOS PERSONALES</h4>
@@ -814,26 +833,6 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                     </div>
 
-                    {/* OBSERVACIONES */}
-                    <div className="pt-8 border-t border-slate-50">
-                        <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] mb-6 flex items-center gap-3"><MessageSquare size={16} className="text-primary"/> OBSERVACIONES</h4>
-                        {isEditing ? (
-                            <textarea
-                                name="observaciones"
-                                value={editFormData.observaciones || ''}
-                                onChange={e=>setEditFormData({...editFormData, observaciones: e.target.value})}
-                                placeholder="Observaciones adicionales sobre el crédito..."
-                                rows={4}
-                                className="w-full px-5 py-4 bg-white text-slate-800 border-2 border-slate-100 rounded-2xl focus:border-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all text-sm font-bold placeholder:text-slate-300 hover:border-slate-200 shadow-sm resize-none"
-                            />
-                        ) : (
-                            <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                <p className="text-sm text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">
-                                    {credit.observaciones || 'Sin observaciones'}
-                                </p>
-                            </div>
-                        )}
-                    </div>
                 </div>
             )}
 
