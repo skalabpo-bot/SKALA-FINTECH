@@ -267,12 +267,10 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     setSendingComment(true);
     try {
         await MockService.addComment(credit!.id, commentText, currentUser, attachedFile || undefined);
-        setCommentText(''); setAttachedFile(null);
-        await refreshData();
-        // Actualizar lecturas y marcar propio mensaje como leído
-        MockService.markCreditAsRead(creditId, currentUser.id, currentUser.name);
-        MockService.getCreditReadsByCredit(creditId).then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads));
-        if (attachedFile) {
+        const hadFile = !!attachedFile;
+        setCommentText('');
+        setAttachedFile(null);
+        if (hadFile) {
             window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: "Documento subido correctamente", type: 'success' } }));
         }
     } catch (err) {
@@ -281,6 +279,12 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     } finally {
         setSendingComment(false);
     }
+    // Post-procesamiento fuera del try-catch — no afectan el éxito del envío
+    refreshData().catch(() => {});
+    MockService.markCreditAsRead(creditId, currentUser.id, currentUser.name);
+    MockService.getCreditReadsByCredit(creditId)
+        .then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads))
+        .catch(() => {});
   };
 
   const addDevolucionTask = () => {
