@@ -358,7 +358,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const currentStateObj = states.find(s => s.id === credit.statusId);
   const isDevuelto = currentStateObj?.name?.toUpperCase().includes('DEVUELTO') ?? false;
   const isAplazado = currentStateObj?.name?.toUpperCase().includes('APLAZADO') ?? false;
-  const isEditableState = isDevuelto || isAplazado;
+  const hasTasksEnabled = currentStateObj?.enableTasks ?? false;
+  const isEditableState = isDevuelto || isAplazado || hasTasksEnabled;
   const canEditAsGestor = currentUser.role === 'GESTOR' && isEditableState && !!credit.subsanacionHabilitada;
   const effectiveCanEdit = canEdit || canEditAsGestor;
 
@@ -449,7 +450,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     onChange={e => {
                         const targetState = states.find(s => s.id === e.target.value);
                         setPendingStatus(e.target.value);
-                        if (targetState?.name?.toUpperCase().includes('DEVUELTO')) {
+                        if (targetState?.enableTasks) {
                             setDevolucionComment('');
                             setDevolucionTasks([]);
                             setNewTaskTitle('');

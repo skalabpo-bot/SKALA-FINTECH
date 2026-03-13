@@ -97,6 +97,7 @@ export interface CreditState {
   order: number;
   roleResponsible: UserRole;
   isFinal?: boolean;
+  enableTasks?: boolean;
 }
 
 export interface Comment {

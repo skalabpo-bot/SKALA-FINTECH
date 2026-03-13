@@ -1553,7 +1553,8 @@ export const ProductionService = {
                     color: s.color || 'bg-gray-500',
                     order: s.order_index,
                     roleResponsible: s.role_responsible as UserRole,
-                    isFinal: s.is_final || false
+                    isFinal: s.is_final || false,
+                    enableTasks: s.enable_tasks || false
                 }));
             }
         } catch (e) { /* fallback */ }

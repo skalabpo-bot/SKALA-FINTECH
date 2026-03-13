@@ -117,7 +117,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     // --- State Edit ---
     const startEditState = async (s: CreditState) => {
         setEditingStateId(s.id);
-        setEditStateData({ name: s.name, color: s.color, role_responsible: s.roleResponsible, is_final: s.isFinal || false });
+        setEditStateData({ name: s.name, color: s.color, role_responsible: s.roleResponsible, is_final: s.isFinal || false, enable_tasks: s.enableTasks || false });
         setNewActionLabel(''); setNewActionRole(''); setNewActionResultAction('none'); setNewActionResultStateId('');
         const actions = await MockService.getStateActions?.(s.id) ?? [];
         setEditingStateActions(actions);
@@ -217,10 +217,14 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                         {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
                                                     </select>
                                                 </div>
-                                                <div className="flex items-end pb-1">
+                                                <div className="flex items-end pb-1 gap-4">
                                                     <label className="flex items-center gap-2 cursor-pointer">
                                                         <input type="checkbox" checked={editStateData.is_final} onChange={e => setEditStateData({...editStateData, is_final: e.target.checked})} className="rounded"/>
                                                         <span className="text-xs font-bold text-slate-600">Estado Final</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input type="checkbox" checked={editStateData.enable_tasks} onChange={e => setEditStateData({...editStateData, enable_tasks: e.target.checked})} className="rounded"/>
+                                                        <span className="text-xs font-bold text-slate-600">Habilitar Tareas</span>
                                                     </label>
                                                 </div>
                                             </div>
@@ -319,6 +323,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                 <div className="flex items-center gap-2">
                                                     <p className="text-sm font-bold text-slate-800 leading-tight truncate">{s.name}</p>
                                                     {s.isFinal && <span className="text-[8px] px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded font-bold">FINAL</span>}
+                                                    {s.enableTasks && <span className="text-[8px] px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded font-bold">TAREAS</span>}
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 font-medium mt-0.5 uppercase tracking-wide">Resp: {s.roleResponsible.replace(/_/g, ' ')}</p>
                                             </div>
