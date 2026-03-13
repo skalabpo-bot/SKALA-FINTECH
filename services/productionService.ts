@@ -1896,7 +1896,7 @@ export const ProductionService = {
         const nextOrder = (existing?.[0]?.order_index || 0) + 1;
         await supabase.from('credit_states_config').insert({ name, role_responsible: role, color: 'bg-gray-500', order_index: nextOrder, is_final: false });
     },
-    updateState: async (id: string, updates: { name?: string; color?: string; role_responsible?: string; is_final?: boolean }) => {
+    updateState: async (id: string, updates: { name?: string; color?: string; role_responsible?: string; is_final?: boolean; enable_tasks?: boolean }) => {
         const { error } = await supabase.from('credit_states_config').update(updates).eq('id', id);
         if (error) throw error;
     },
