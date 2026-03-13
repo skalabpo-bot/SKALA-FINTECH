@@ -601,11 +601,32 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                                     </div>
                                                 )}
                                             </div>
-                                            {/* Ver adjunto (completada) */}
-                                            {task.completed && task.docUrl && (
-                                                <a href={task.docUrl} target="_blank" className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-bold text-green-700 bg-green-100 hover:bg-green-200 transition-all shrink-0">
-                                                    <Download size={10}/> Ver
-                                                </a>
+                                            {/* Ver adjunto + Rehacer (completada) */}
+                                            {task.completed && (
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {task.docUrl && (
+                                                        <a href={task.docUrl} target="_blank" className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-bold text-green-700 bg-green-100 hover:bg-green-200 transition-all">
+                                                            <Download size={10}/> Ver
+                                                        </a>
+                                                    )}
+                                                    {currentUser.role === 'GESTOR' && isEditableState && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!confirm('¿Rehacer esta tarea? Se eliminará la respuesta actual.')) return;
+                                                                try {
+                                                                    await MockService.resetDevolucionTask(credit!.id, task.id, currentUser);
+                                                                    await refreshData();
+                                                                    window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Tarea reiniciada — puedes volver a completarla', type: 'success' } }));
+                                                                } catch {
+                                                                    window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error al reiniciar la tarea', type: 'error' } }));
+                                                                }
+                                                            }}
+                                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 transition-all"
+                                                        >
+                                                            <RotateCcw size={10}/> Rehacer
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
                                             {/* Badge pendiente para no-gestores */}
                                             {!task.completed && currentUser.role !== 'GESTOR' && (

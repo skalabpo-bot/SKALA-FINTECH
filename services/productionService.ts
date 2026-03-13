@@ -540,6 +540,35 @@ export const ProductionService = {
         } catch { /* ignorar si falla el log */ }
     },
 
+    resetDevolucionTask: async (creditId: string, taskId: string, user: User) => {
+        const { data: row, error: readErr } = await supabase.from('credits').select('client_data').eq('id', creditId).single();
+        if (readErr) throw readErr;
+
+        const clientData = row?.client_data || {};
+        const tasks: any[] = clientData.devolucionTasks || [];
+        const task = tasks.find((t: any) => t.id === taskId);
+        if (!task) throw new Error('Tarea no encontrada');
+
+        const updatedTasks = tasks.map((t: any) =>
+            t.id === taskId
+                ? { id: t.id, title: t.title, requiresDoc: t.requiresDoc, completed: false }
+                : t
+        );
+        const { error } = await supabase.from('credits')
+            .update({ client_data: { ...clientData, devolucionTasks: updatedTasks }, updated_at: new Date().toISOString() })
+            .eq('id', creditId);
+        if (error) throw error;
+
+        try {
+            await supabase.from('credit_history').insert({
+                credit_id: creditId,
+                user_id: user.id,
+                action: 'TAREA REINICIADA',
+                description: `${user.name} reinició la tarea: "${task.title}" para corregirla.`
+            });
+        } catch { /* ignorar si falla el log */ }
+    },
+
     autoArchiveExpiredDevuelto: async () => {
         try {
             const states = await ProductionService.getStates();
