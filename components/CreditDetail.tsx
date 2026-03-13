@@ -612,7 +612,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                                     {currentUser.role === 'GESTOR' && isEditableState && (
                                                         <button
                                                             onClick={async () => {
-                                                                if (!confirm('¿Rehacer esta tarea? Se eliminará la respuesta actual.')) return;
+                                                                if (!confirm('¿Cambiar documento? Se eliminará el actual y podrás subir uno nuevo.')) return;
                                                                 try {
                                                                     await MockService.resetDevolucionTask(credit!.id, task.id, currentUser);
                                                                     await refreshData();
@@ -623,7 +623,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                                             }}
                                                             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 transition-all"
                                                         >
-                                                            <RotateCcw size={10}/> Rehacer
+                                                            <RotateCcw size={10}/> Cambiar
                                                         </button>
                                                     )}
                                                 </div>
@@ -866,7 +866,25 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 animate-fade-in">
                     {credit.documents.length === 0 && <div className="col-span-full text-center py-16 text-slate-300 font-bold italic text-sm">No hay archivos vinculados a este expediente.</div>}
                     {credit.documents.map(d => (
-                        <div key={d.id} className="group p-4 bg-white rounded-xl border border-slate-100 flex flex-col items-center text-center gap-3 hover:border-primary/30 hover:shadow-md transition-all duration-300">
+                        <div key={d.id} className="group p-4 bg-white rounded-xl border border-slate-100 flex flex-col items-center text-center gap-3 hover:border-primary/30 hover:shadow-md transition-all duration-300 relative">
+                            {(effectiveCanEdit || currentUser.role === 'ADMIN') && (
+                                <button
+                                    onClick={async () => {
+                                        if (!confirm(`¿Eliminar el documento "${d.name}"?`)) return;
+                                        try {
+                                            await MockService.deleteLegalDocument(d.id);
+                                            await refreshData();
+                                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Documento eliminado', type: 'success' } }));
+                                        } catch {
+                                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error al eliminar documento', type: 'error' } }));
+                                        }
+                                    }}
+                                    className="absolute top-2 right-2 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                    title="Eliminar documento"
+                                >
+                                    <Trash size={12}/>
+                                </button>
+                            )}
                             <div className="p-3 bg-primary/5 rounded-lg text-primary transition-transform group-hover:scale-105"><FileText size={24}/></div>
                             <div className="w-full">
                                 <p className="text-[9px] font-bold text-slate-700 uppercase tracking-wide truncate" title={d.type}>{d.type.replace(/_/g, ' ')}</p>
