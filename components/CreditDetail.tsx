@@ -393,9 +393,11 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                    <button
                        onClick={async () => {
                            const newVal = !credit.recomendado;
-                           await MockService.toggleRecommendCredit(credit.id, newVal, currentUser);
-                           await refreshData();
-                           window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: newVal ? 'Crédito marcado como recomendado' : 'Recomendación removida', type: 'success' } }));
+                           setCredit(prev => prev ? { ...prev, recomendado: newVal } : prev);
+                           try {
+                               await MockService.toggleRecommendCredit(credit.id, newVal, currentUser);
+                               window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: newVal ? 'Crédito marcado como recomendado' : 'Recomendación removida', type: 'success' } }));
+                           } catch { setCredit(prev => prev ? { ...prev, recomendado: !newVal } : prev); }
                        }}
                        className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-wider transition-all flex items-center gap-1 ${credit.recomendado ? 'text-yellow-700 bg-yellow-100 hover:bg-yellow-200' : 'text-slate-400 bg-slate-50 hover:bg-slate-100'}`}
                    >
