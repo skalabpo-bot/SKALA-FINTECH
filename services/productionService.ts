@@ -404,6 +404,17 @@ export const ProductionService = {
         const { error } = await supabase.from('credits').update(updatePayload).eq('id', creditId);
         if (error) throw error;
 
+        // Sincronizar datos del cliente en authorization_tokens pendientes
+        const newName = `${clientFields.nombres || ''} ${clientFields.apellidos || ''}`.trim();
+        const syncAuth: any = {};
+        if (clientFields.correo) syncAuth.client_email = clientFields.correo;
+        if (newName) syncAuth.client_name = newName;
+        if (clientFields.telefonoCelular) syncAuth.client_phone = clientFields.telefonoCelular;
+        if (clientFields.numeroDocumento) syncAuth.client_document = clientFields.numeroDocumento;
+        if (Object.keys(syncAuth).length > 0) {
+            await supabase.from('authorization_tokens').update(syncAuth).eq('credit_id', creditId).eq('status', 'pending');
+        }
+
         // Audit log detallado: registrar qué campos cambiaron
         const changes: string[] = [];
         if (previousData.amount !== (Number(monto) || 0)) changes.push(`Monto: $${previousData.amount?.toLocaleString() || 0} → $${(Number(monto) || 0).toLocaleString()}`);
