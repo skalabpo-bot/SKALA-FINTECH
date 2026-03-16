@@ -332,7 +332,12 @@ export const UserManagement = () => {
                                             ? (u.assignedEntities && u.assignedEntities.length > 0
                                                 ? <span className="text-[10px] text-blue-600 font-bold">{u.assignedEntities.join(', ')}</span>
                                                 : <span className="text-[10px] text-slate-400">Todas</span>)
-                                            : (u.city || zones.find(z => z.id === u.zoneId)?.name || '-')}
+                                            : (() => {
+                                                const supervisor = u.zoneId ? users.find(s => s.role === 'SUPERVISOR_ASIGNADO' && s.zoneId === u.zoneId) : null;
+                                                return supervisor
+                                                    ? <span className="text-[10px] font-bold text-indigo-600">{supervisor.name}</span>
+                                                    : <span className="text-[10px] text-slate-400">Sin supervisor</span>;
+                                            })()}
                                     </td>
                                     <td className="p-4 text-right">
                                         <div className="flex justify-end gap-2">
