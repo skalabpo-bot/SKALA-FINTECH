@@ -98,6 +98,7 @@ export interface CreditState {
   roleResponsible: UserRole;
   isFinal?: boolean;
   enableTasks?: boolean;
+  enableEdit?: boolean;
 }
 
 export interface Comment {

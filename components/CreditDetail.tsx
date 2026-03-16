@@ -356,10 +356,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const canEdit = MockService.hasPermission(currentUser, 'EDIT_CREDIT_INFO');
   // Recalcular el estado actual en cada render para que se actualice inmediatamente
   const currentStateObj = states.find(s => s.id === credit.statusId);
-  const isDevuelto = currentStateObj?.name?.toUpperCase().includes('DEVUELTO') ?? false;
-  const isAplazado = currentStateObj?.name?.toUpperCase().includes('APLAZADO') ?? false;
   const hasTasksEnabled = currentStateObj?.enableTasks ?? false;
-  const isEditableState = isDevuelto || isAplazado || hasTasksEnabled;
+  const hasEditEnabled = currentStateObj?.enableEdit ?? false;
+  const isEditableState = hasTasksEnabled || hasEditEnabled;
   const canEditAsGestor = currentUser.role === 'GESTOR' && isEditableState && !!credit.subsanacionHabilitada;
   const effectiveCanEdit = canEdit || canEditAsGestor;
 
