@@ -1611,11 +1611,14 @@ export const ProductionService = {
     getCities: async () => {
         try {
             const { data, error } = await supabase.from('cities').select('name').order('name');
-            if (!error && data && data.length > 0) {
-                const dbCities = data.map((c: any) => c.name as string);
-                const merged = Array.from(new Set([...COLOMBIAN_CITIES, ...dbCities])).sort();
-                return merged;
+            if (error) return [...COLOMBIAN_CITIES];
+            if (!data || data.length === 0) {
+                // Primera vez: sembrar BD con todas las ciudades
+                const rows = COLOMBIAN_CITIES.map(name => ({ name }));
+                await supabase.from('cities').insert(rows);
+                return [...COLOMBIAN_CITIES];
             }
+            return data.map((c: any) => c.name as string);
         } catch (e) { /* fallback */ }
         return [...COLOMBIAN_CITIES];
     },
