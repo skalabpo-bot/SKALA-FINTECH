@@ -1611,7 +1611,11 @@ export const ProductionService = {
     getCities: async () => {
         try {
             const { data, error } = await supabase.from('cities').select('name').order('name');
-            if (!error && data && data.length > 0) return data.map((c: any) => c.name);
+            if (!error && data && data.length > 0) {
+                const dbCities = data.map((c: any) => c.name as string);
+                const merged = Array.from(new Set([...COLOMBIAN_CITIES, ...dbCities])).sort();
+                return merged;
+            }
         } catch (e) { /* fallback */ }
         return [...COLOMBIAN_CITIES];
     },
