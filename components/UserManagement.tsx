@@ -659,6 +659,14 @@ export const UserManagement = () => {
                         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p><p className="font-medium text-slate-800">{viewDetailUser.phone || 'N/A'}</p></div>
                         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Cédula</p><p className="font-medium text-slate-800">{viewDetailUser.cedula || 'N/A'}</p></div>
                         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Ciudad</p><p className="font-medium text-slate-800">{viewDetailUser.city || 'N/A'}</p></div>
+                        {viewDetailUser.zoneId && (
+                            <div className="col-span-2">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase">Supervisor Asignado</p>
+                                <p className="font-bold text-indigo-600">
+                                    {users.find(s => s.role === 'SUPERVISOR_ASIGNADO' && s.zoneId === viewDetailUser.zoneId)?.name || 'Sin supervisor'}
+                                </p>
+                            </div>
+                        )}
                         
                         <div className="col-span-2 pt-4 border-t border-slate-100">
                             <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2"><CreditCard size={16}/> Información Bancaria</h4>
