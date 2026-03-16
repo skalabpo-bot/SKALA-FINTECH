@@ -1996,17 +1996,40 @@ export const ProductionService = {
             ProductionService.getZones().catch(() => [])
         ]);
 
-        // Obtener zona de cada gestor
+        // Obtener zona, cédula, email y supervisor de cada gestor
         let gestorZoneMap: Record<string, string> = {};
-        if (selectedColumns.includes('zona')) {
+        let gestorCedulaMap: Record<string, string> = {};
+        let gestorEmailMap: Record<string, string> = {};
+        let gestorCityMap: Record<string, string> = {};
+        let gestorSupervisorMap: Record<string, string> = {};
+        let gestorSupervisorPhoneMap: Record<string, string> = {};
+
+        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono'].includes(c));
+        if (needsGestorData) {
             const gestorIds = [...new Set(credits.map(c => c.assignedGestorId).filter(Boolean))];
             if (gestorIds.length > 0) {
-                const { data: gestorProfiles } = await supabase.from('profiles').select('id, zone_id').in('id', gestorIds);
+                const { data: gestorProfiles } = await supabase.from('profiles').select('id, zone_id, cedula, email, city').in('id', gestorIds);
                 if (gestorProfiles) {
+                    // Obtener todos los supervisores de una vez
+                    const zoneIds = [...new Set(gestorProfiles.map((gp: any) => gp.zone_id).filter(Boolean))];
+                    let supervisorMap: Record<string, { name: string; phone: string }> = {};
+                    if (zoneIds.length > 0) {
+                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, zone_id').eq('role', 'SUPERVISOR_ASIGNADO').in('zone_id', zoneIds);
+                        if (supervisors) {
+                            for (const s of supervisors) {
+                                if (s.zone_id) supervisorMap[s.zone_id] = { name: s.full_name || '', phone: s.phone || '' };
+                            }
+                        }
+                    }
                     for (const gp of gestorProfiles) {
+                        gestorCedulaMap[gp.id] = gp.cedula || '';
+                        gestorEmailMap[gp.id] = gp.email || '';
+                        gestorCityMap[gp.id] = gp.city || '';
                         if (gp.zone_id) {
                             const zone = zones.find((z: any) => z.id === gp.zone_id);
                             gestorZoneMap[gp.id] = zone?.name || '';
+                            gestorSupervisorMap[gp.id] = supervisorMap[gp.zone_id]?.name || '';
+                            gestorSupervisorPhoneMap[gp.id] = supervisorMap[gp.zone_id]?.phone || '';
                         }
                     }
                 }
@@ -2066,6 +2089,11 @@ export const ProductionService = {
             'solicitud_numero': c => String(c.solicitudNumber || ''),
             'fecha_actualizacion': c => c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '',
             'zona': c => gestorZoneMap[c.assignedGestorId] || 'Sin zona',
+            'gestor_cedula': c => gestorCedulaMap[c.assignedGestorId] || '',
+            'gestor_email': c => gestorEmailMap[c.assignedGestorId] || '',
+            'gestor_ciudad': c => gestorCityMap[c.assignedGestorId] || '',
+            'supervisor_nombre': c => gestorSupervisorMap[c.assignedGestorId] || '',
+            'supervisor_telefono': c => gestorSupervisorPhoneMap[c.assignedGestorId] || '',
         };
 
         const headers = selectedColumns.map(c => c.replace(/_/g, ' ').toUpperCase());

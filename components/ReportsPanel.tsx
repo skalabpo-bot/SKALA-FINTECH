@@ -5,7 +5,9 @@ import { MockService } from '../services/mockService';
 import { Download, Filter, CheckSquare, Square, Loader2, Calendar, FileText, Smartphone, CreditCard } from 'lucide-react';
 
 const ALL_AVAILABLE_COLUMNS = [
-    'fecha_creacion', 'solicitud_numero', 'gestor_nombre', 'gestor_id', 'gestor_telefono',
+    'fecha_creacion', 'solicitud_numero',
+    'gestor_nombre', 'gestor_id', 'gestor_telefono', 'gestor_cedula', 'gestor_email', 'gestor_ciudad',
+    'supervisor_nombre', 'supervisor_telefono', 'zona',
     'cliente_nombre', 'cliente_documento', 'tipo_documento', 'cliente_celular', 'correo_cliente',
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',
     'pagaduria', 'clave_pagaduria',
@@ -14,7 +16,7 @@ const ALL_AVAILABLE_COLUMNS = [
     'gastos_mensuales', 'activos', 'pasivos', 'patrimonio',
     'tipo_desembolso', 'banco_cliente', 'tipo_cuenta', 'numero_cuenta',
     'ref1_nombre', 'ref1_telefono', 'ref2_nombre', 'ref2_telefono',
-    'estado', 'fecha_actualizacion' , 'zona'
+    'estado', 'fecha_actualizacion'
 ];
 
 const DEFAULT_COLUMNS = [
