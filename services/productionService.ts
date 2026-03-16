@@ -1613,9 +1613,9 @@ export const ProductionService = {
             const { data, error } = await supabase.from('cities').select('name').order('name');
             if (error) return [...COLOMBIAN_CITIES];
             if (!data || data.length === 0) {
-                // Primera vez: sembrar BD con todas las ciudades
+                // Primera vez: sembrar BD con todas las ciudades (sin duplicados)
                 const rows = COLOMBIAN_CITIES.map(name => ({ name }));
-                await supabase.from('cities').insert(rows);
+                await supabase.from('cities').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
                 return [...COLOMBIAN_CITIES];
             }
             return data.map((c: any) => c.name as string);
@@ -1630,7 +1630,7 @@ export const ProductionService = {
         return [...COLOMBIAN_BANKS];
     },
     addCity: async (name: string) => {
-        const { error } = await supabase.from('cities').insert({ name: name.toUpperCase().trim() });
+        const { error } = await supabase.from('cities').upsert({ name: name.toUpperCase().trim() }, { onConflict: 'name', ignoreDuplicates: true });
         if (error) throw error;
     },
     deleteCity: async (name: string) => {
