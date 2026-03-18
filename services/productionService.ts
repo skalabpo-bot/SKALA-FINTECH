@@ -2307,15 +2307,23 @@ export const ProductionService = {
             }
 
             try {
+                let uid: string;
                 const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
                     email: emailNorm,
                     password: row.password.trim(),
                     email_confirm: true,
                 });
-                if (authError) throw authError;
+                if (authError) {
+                    // Si el usuario ya existe en Auth, buscar su ID
+                    const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+                    const existingAuth = listData?.users?.find((u: any) => u.email === emailNorm);
+                    if (!existingAuth) throw authError;
+                    uid = existingAuth.id;
+                } else {
+                    uid = authData.user.id;
+                }
 
-                const uid = authData.user.id;
-                const { error: profileError } = await supabase.from('profiles').insert({
+                const { error: profileError } = await supabase.from('profiles').upsert({
                     id: uid,
                     full_name: row.nombre.trim(),
                     email: emailNorm,
@@ -2324,12 +2332,8 @@ export const ProductionService = {
                     status: 'ACTIVE',
                     phone: row.telefono?.trim() || null,
                     city: row.ciudad?.trim() || null,
-                });
-                if (profileError) {
-                    // Si falla el perfil, eliminar el usuario de auth para no dejar huérfanos
-                    await supabaseAdmin.auth.admin.deleteUser(uid);
-                    throw profileError;
-                }
+                }, { onConflict: 'id' });
+                if (profileError) throw profileError;
 
                 existingCedulas.add(cedulaNorm);
                 existingEmails.add(emailNorm);
