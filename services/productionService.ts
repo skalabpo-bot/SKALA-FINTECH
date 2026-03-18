@@ -2282,10 +2282,9 @@ export const ProductionService = {
     batchCreateUsers: async (rows: { nombre: string; email: string; cedula: string; rol: string; password: string; telefono?: string; ciudad?: string }[]) => {
         if (!supabaseAdmin) throw new Error('Configura VITE_SUPABASE_SERVICE_KEY en las variables de entorno para importar usuarios.');
 
-        // Traer cédulas y emails ya existentes
-        const { data: existing } = await supabase.from('profiles').select('cedula, email');
+        // Traer cédulas ya existentes en profiles (única validación de duplicado)
+        const { data: existing } = await supabase.from('profiles').select('cedula');
         const existingCedulas = new Set((existing || []).map((u: any) => String(u.cedula || '').trim()));
-        const existingEmails  = new Set((existing || []).map((u: any) => String(u.email  || '').trim().toLowerCase()));
 
         const results: { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string }[] = [];
 
@@ -2297,10 +2296,6 @@ export const ProductionService = {
                 results.push({ ...row, status: 'omitido', motivo: 'Cédula ya existe' });
                 continue;
             }
-            if (existingEmails.has(emailNorm)) {
-                results.push({ ...row, status: 'omitido', motivo: 'Email ya existe' });
-                continue;
-            }
             if (!row.password || row.password.trim().length < 6) {
                 results.push({ ...row, status: 'error', motivo: 'Contraseña muy corta (mín. 6 caracteres)' });
                 continue;
@@ -2308,22 +2303,29 @@ export const ProductionService = {
 
             try {
                 let uid: string;
+
+                // Intentar crear en Auth
                 const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
                     email: emailNorm,
                     password: row.password.trim(),
                     email_confirm: true,
                 });
+
                 if (authError) {
-                    // Si el usuario ya existe en Auth, buscar su ID
-                    const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-                    const existingAuth = listData?.users?.find((u: any) => u.email === emailNorm);
+                    // Si ya existe en Auth (por intento previo), buscar su ID
+                    const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ filter: emailNorm });
+                    const existingAuth = users?.find((u: any) => u.email === emailNorm);
                     if (!existingAuth) throw authError;
                     uid = existingAuth.id;
                 } else {
                     uid = authData.user.id;
                 }
 
-                const { error: profileError } = await supabase.from('profiles').upsert({
+                // Esperar un momento para que el trigger de Auth termine
+                await new Promise(r => setTimeout(r, 500));
+
+                // Upsert del perfil (sobrescribe lo que haya creado el trigger)
+                const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
                     id: uid,
                     full_name: row.nombre.trim(),
                     email: emailNorm,
