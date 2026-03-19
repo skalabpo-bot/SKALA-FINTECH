@@ -237,10 +237,19 @@ export interface Credit {
   fechaPagoComision?: string;
   observaciones?: string;
   recomendado?: boolean;
+  legalAnalysis?: PolicyAnalysis;
 
   comments: Comment[];
   documents: CreditDocument[];
   history: CreditHistoryItem[];
+}
+
+export interface PolicyAnalysis {
+  status: 'verde' | 'amarillo' | 'rojo';
+  resumen: string;
+  hallazgos: { tipo: string; descripcion: string; severidad: 'alto' | 'medio' | 'bajo' }[];
+  analyzedAt: string;
+  entityName: string;
 }
 
 export interface WithdrawalRequest {

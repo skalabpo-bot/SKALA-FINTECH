@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { MockService } from '../services/mockService';
 import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '../types';
-import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap } from 'lucide-react';
+import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap, FileText, Save } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
 import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
 import { getRadicacionAbierta, updateRadicacionAbierta } from '../simulador/services/settingsService';
@@ -599,6 +599,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                 />
 
             </div>
+
         </div>
     );
 };

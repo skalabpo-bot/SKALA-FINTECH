@@ -2,7 +2,7 @@ import { supabase, supabaseAdmin } from './supabaseClient';
 import {
     Credit, User, UserRole, AlliedEntity, Notification, Permission, Comment,
     CreditDocument, CreditState, Zone, DashboardStats, ReportFilters, NewsItem, CreditHistoryItem,
-    WithdrawalRequest
+    WithdrawalRequest, PolicyAnalysis
 } from '../types';
 
 // Ciudades y Bancos de Colombia (datos semilla / fallback si las tablas no existen)
@@ -2279,14 +2279,22 @@ export const ProductionService = {
 
     // ─── IMPORTACIÓN / EXPORTACIÓN MASIVA DE USUARIOS ──────────────────────────
 
-    batchCreateUsers: async (rows: { nombre: string; email: string; cedula: string; rol: string; password: string; telefono?: string; ciudad?: string }[]) => {
+    batchCreateUsers: async (rows: { nombre: string; email: string; cedula: string; rol: string; password: string; telefono?: string; ciudad?: string; supervisor?: string }[]) => {
         if (!supabaseAdmin) throw new Error('Configura VITE_SUPABASE_SERVICE_KEY en las variables de entorno para importar usuarios.');
 
         // Traer cédulas ya existentes en profiles (única validación de duplicado)
         const { data: existing } = await supabase.from('profiles').select('cedula');
         const existingCedulas = new Set((existing || []).map((u: any) => String(u.cedula || '').trim()));
 
+        // Mapear código de supervisor (nombre de zona) a zone_id
+        const { data: zonesData } = await supabase.from('zones').select('id, name');
+        const zoneMap = new Map<string, string>();
+        (zonesData || []).forEach((z: any) => {
+            if (z.name && z.id) zoneMap.set(z.name.trim().toUpperCase(), z.id);
+        });
+
         const results: { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string }[] = [];
+        const existingEmails = new Set<string>();
 
         for (const row of rows) {
             const emailNorm  = row.email.trim().toLowerCase();
@@ -2324,6 +2332,12 @@ export const ProductionService = {
                 // Esperar un momento para que el trigger de Auth termine
                 await new Promise(r => setTimeout(r, 500));
 
+                // Resolver zone_id por código de zona/supervisor
+                let zoneId: string | null = null;
+                if (row.supervisor?.trim()) {
+                    zoneId = zoneMap.get(row.supervisor.trim().toUpperCase()) || null;
+                }
+
                 // Upsert del perfil (sobrescribe lo que haya creado el trigger)
                 const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
                     id: uid,
@@ -2334,6 +2348,7 @@ export const ProductionService = {
                     status: 'ACTIVE',
                     phone: row.telefono?.trim() || null,
                     city: row.ciudad?.trim() || null,
+                    ...(zoneId ? { zone_id: zoneId } : {}),
                 }, { onConflict: 'id' });
                 if (profileError) throw profileError;
 
@@ -2744,5 +2759,242 @@ export const ProductionService = {
             .update({ validation_url: validationUrl })
             .eq('id', authId);
         if (error) throw error;
+    },
+
+    // ─── POLÍTICAS POR ENTIDAD ───────────────────────────────────────────────
+
+    getEntityPolicy: async (entityName: string): Promise<{ policy_text: string; file_url?: string; file_name?: string } | null> => {
+        const { data } = await supabase.from('entity_policies').select('policy_text, file_url, file_name').eq('entity_name', entityName).single();
+        return data || null;
+    },
+
+    getEntityPolicies: async (): Promise<{ entity_name: string; policy_text: string; file_url?: string; file_name?: string }[]> => {
+        const { data } = await supabase.from('entity_policies').select('entity_name, policy_text, file_url, file_name').order('entity_name');
+        return data || [];
+    },
+
+    saveEntityPolicy: async (entityName: string, policyText: string, newFiles?: File[], existingFiles?: { name: string; url: string }[]) => {
+        // Subir archivos nuevos
+        const uploadedFiles: { name: string; url: string }[] = [...(existingFiles || [])];
+
+        if (newFiles && newFiles.length > 0) {
+            for (const file of newFiles) {
+                const ext = file.name.split('.').pop() || 'pdf';
+                const path = `policies/${entityName}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+                const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+                if (upErr) throw upErr;
+                const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);
+                uploadedFiles.push({ name: file.name, url: urlData.publicUrl });
+            }
+        }
+
+        const upsertData: any = {
+            entity_name: entityName,
+            policy_text: policyText,
+            updated_at: new Date().toISOString(),
+            file_url: JSON.stringify(uploadedFiles),
+            file_name: uploadedFiles.map(f => f.name).join(', ') || null,
+        };
+
+        const { error } = await supabase.from('entity_policies').upsert(upsertData, { onConflict: 'entity_name' });
+        if (error) throw error;
+    },
+
+    // ─── ANÁLISIS DE DOCUMENTOS LEGALES CON IA ──────────────────────────────
+
+    analyzeDocumentsWithAI: async (creditId: string, user: User, onProgress?: (step: string) => void): Promise<PolicyAnalysis> => {
+        const progress = onProgress || (() => {});
+
+        // 1. Obtener crédito
+        progress('Obteniendo datos del crédito...');
+        const { data: creditData } = await supabase.from('credits').select('entity_name, client_data').eq('id', creditId).single();
+
+        // 2. Obtener política de la entidad del crédito
+        const entityName = creditData?.entity_name;
+        progress(`Cargando política de ${entityName || 'la entidad'}...`);
+        let policyData = entityName ? await ProductionService.getEntityPolicy(entityName) : null;
+        // Fallback a política general si no hay por entidad
+        if (!policyData) policyData = await ProductionService.getEntityPolicy('__GENERAL__');
+        if (!policyData) throw new Error(`No hay política configurada para ${entityName || 'esta entidad'}. Configúrala en la entidad desde el Simulador > Admin.`);
+        const { file_url: policyFilesJson } = policyData;
+        let policyFilesList: { name: string; url: string }[] = [];
+        try { policyFilesList = JSON.parse(policyFilesJson || '[]'); } catch { if (policyFilesJson) policyFilesList = [{ name: 'Política', url: policyFilesJson }]; }
+        if (policyFilesList.length === 0) throw new Error(`No hay archivos de política configurados para ${entityName || 'esta entidad'}. Sube al menos un PDF de política en la entidad desde el Simulador > Admin.`);
+
+        // 3. Obtener documentos legales del crédito
+        progress('Obteniendo documentos legales...');
+        const docs = await ProductionService.getLegalDocuments(creditId);
+        if (!docs || docs.length === 0) throw new Error('No hay documentos legales para analizar');
+
+        // 4. Helper para descargar archivo como base64
+        const fetchAsBase64 = async (url: string): Promise<{ base64: string; mimeType: string } | null> => {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const base64 = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+                    reader.readAsDataURL(blob);
+                });
+                return { base64, mimeType: blob.type };
+            } catch { return null; }
+        };
+
+        // 5. Descargar documentos legales como base64
+        const docContents: { name: string; type: string; base64: string; mimeType: string }[] = [];
+        for (let i = 0; i < docs.length; i++) {
+            const doc = docs[i];
+            progress(`Descargando documento ${i + 1}/${docs.length}: ${doc.name}...`);
+            const result = await fetchAsBase64(doc.url);
+            if (result) docContents.push({ name: doc.name, type: doc.type, ...result });
+        }
+        if (docContents.length === 0) throw new Error('No se pudieron descargar los documentos');
+
+        // 6. Descargar archivos de política
+        const policyFilesData: { name: string; base64: string; mimeType: string }[] = [];
+        for (let i = 0; i < policyFilesList.length; i++) {
+            const pf = policyFilesList[i];
+            progress(`Descargando política ${i + 1}/${policyFilesList.length}: ${pf.name}...`);
+            const result = await fetchAsBase64(pf.url);
+            if (result) policyFilesData.push({ name: pf.name, ...result });
+        }
+
+        // 7. Llamar a Gemini
+        progress('Enviando a Gemini IA para análisis...');
+        const API_KEYS = [
+            import.meta.env.VITE_GEMINI_API_KEY,
+            import.meta.env.VITE_GEMINI_API_KEY_2,
+            import.meta.env.VITE_GEMINI_API_KEY_3,
+        ].filter(Boolean);
+
+        const apiKey = API_KEYS[0];
+        if (!apiKey) throw new Error('No hay API key de Gemini configurada');
+
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey });
+
+        const parts: any[] = [];
+
+        // Agregar archivos de política primero
+        if (policyFilesData.length > 0) {
+            parts.push({ text: `📋 DOCUMENTOS DE POLÍTICA DE CRÉDITO (${policyFilesData.length} documento${policyFilesData.length > 1 ? 's' : ''} de referencia):` });
+            for (const pf of policyFilesData) {
+                parts.push({ text: `📋 Política: ${pf.name}` });
+                parts.push({ inlineData: { data: pf.base64, mimeType: pf.mimeType } });
+            }
+        }
+
+        // Prompt principal
+        parts.push({ text: `Eres un analista de riesgo crediticio EXPERTO en créditos de libranza en Colombia. Tu trabajo es filtrar con MÁXIMA RIGUROSIDAD y reportar ÚNICAMENTE alertas que sean factor decisivo real para negar o condicionar el crédito.
+
+Entidad del crédito: ${creditData?.entity_name || 'No especificada'}
+
+Los documentos de política de la entidad están arriba. Úsalos como la FUENTE DE VERDAD para determinar qué obligaciones chocan con la política, qué se debe comprar o sanear, y qué bloquea el crédito.
+
+═══ REGLAS DE FILTRADO ESTRICTO ═══
+
+1. OBLIGACIONES EN CENTRALES DE RIESGO — REPORTAR INDIVIDUALMENTE:
+   - Listar CADA obligación como un hallazgo SEPARADO (una por una, NO agrupar ni resumir)
+   - Solo incluir obligaciones que:
+     a) Tengan MORAS ACTIVAS (30+ días) en sectores FINANCIERO o REAL (bancos, cooperativas, entidades de crédito)
+     b) El monto en mora sea SIGNIFICATIVO (>$500.000 COP)
+     c) CHOQUEN con la política de la entidad (exceden límites de endeudamiento, superan topes de mora permitidos, etc.)
+     d) Necesiten ser COMPRADAS (compra de cartera) o SANEADAS para viabilizar el crédito
+   - Para cada obligación incluir: entidad acreedora, monto total, monto en mora, días de mora, si se debe comprar o sanear
+   - NO reportar: obligaciones al día con buen comportamiento, cuotas de celular, servicios públicos, telecomunicaciones, suscripciones, seguros al día
+   - NO reportar: sectores que NO afectan libranza (telefonía, servicios públicos, salud prepagada, educación)
+   - NO reportar obligaciones que NO chocan con la política de la entidad
+
+2. PROCESOS JURÍDICOS — Solo reportar si:
+   - Es un PROCESO EJECUTIVO (cobro coactivo/embargo) que afecte capacidad de pago
+   - Es un proceso PENAL con condena o investigación activa relevante
+   - Hay EMBARGOS activos sobre salario o bienes
+   - NO reportar: procesos de familia (divorcios, custodia, alimentos a menos que haya embargo)
+   - NO reportar: procesos civiles menores, tutelas, procesos laborales donde el cliente es demandante
+   - NO reportar: procesos terminados, archivados o con sentencia favorable al cliente
+
+3. LISTAS RESTRICTIVAS — Solo reportar si:
+   - Aparece en listas OFAC, ONU, o listas nacionales de lavado de activos/terrorismo
+   - Tiene reportes en SARLAFT con nivel de riesgo ALTO
+   - NO reportar: PEP (Personas Expuestas Políticamente) a menos que la política lo prohíba explícitamente
+   - NO reportar: coincidencias parciales de nombre o falsos positivos evidentes
+
+4. POLÍTICA DE LA ENTIDAD — Solo reportar si:
+   - Incumple una regla EXPLÍCITA del documento de política
+   - Citar la regla exacta que se incumple y el dato concreto que la viola
+
+═══ REGLAS DE FORMATO ═══
+
+- Si NO hay alertas reales después de aplicar estos filtros → status "verde", hallazgos vacío []
+- OBLIGACIONES: cada obligación problemática es UN hallazgo separado. NO agrupar. Formato de descripción: "Entidad: [nombre] | Monto: $[X] | Mora: $[Y] ([Z] días) | Acción: [comprar/sanear/revisar] — [razón por la que choca con la política]"
+- PROCESOS y LISTAS: reportar individualmente también, con datos concretos
+- NO des resúmenes genéricos. NO repitas información del documento que no sea una alerta.
+- Sin límite de hallazgos si todos son obligaciones reales que chocan con la política. Pero NO inflar con alertas irrelevantes.
+
+RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
+{
+  "status": "verde|amarillo|rojo",
+  "resumen": "1 oración directa: el hallazgo más grave o 'Sin alertas relevantes'",
+  "hallazgos": [
+    { "tipo": "OBLIGACION|PROCESO|LISTA_RESTRICTIVA|POLITICA", "descripcion": "dato concreto individual con montos/entidades y acción requerida", "severidad": "alto|medio|bajo" }
+  ]
+}
+
+- verde: Sin alertas reales, todo limpio para libranza
+- amarillo: Hay obligaciones a comprar/sanear o situaciones a revisar pero el crédito puede ser viable
+- rojo: Hay factores que bloquean o condicionan seriamente el crédito (embargos, listas, mora extrema)` });
+
+        // Agregar documentos del crédito
+        for (const doc of docContents) {
+            parts.push({ text: `📄 Documento: ${doc.name} (${doc.type})` });
+            parts.push({ inlineData: { data: doc.base64, mimeType: doc.mimeType } });
+        }
+
+        let analysis: PolicyAnalysis;
+        const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+        for (const model of models) {
+            try {
+                const response = await ai.models.generateContent({
+                    model,
+                    contents: [{ role: 'user', parts }],
+                });
+                const text = response.text?.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim() || '';
+                const parsed = JSON.parse(text);
+                analysis = {
+                    status: parsed.status || 'amarillo',
+                    resumen: parsed.resumen || 'Sin resumen disponible',
+                    hallazgos: (parsed.hallazgos || []).map((h: any) => ({
+                        tipo: h.tipo || 'RIESGO',
+                        descripcion: h.descripcion || '',
+                        severidad: h.severidad || 'medio',
+                    })),
+                    analyzedAt: new Date().toISOString(),
+                    entityName: creditData?.entity_name || 'General',
+                };
+
+                // 6. Guardar en client_data
+                progress('Guardando resultado del análisis...');
+                const clientData = creditData?.client_data || {};
+                clientData.legalAnalysis = analysis;
+                await supabase.from('credits').update({ client_data: clientData }).eq('id', creditId);
+
+                // 7. Registrar en historial
+                await supabase.from('credit_history').insert({
+                    credit_id: creditId,
+                    action: 'ANÁLISIS IA',
+                    description: `Análisis de documentos legales: ${analysis.status.toUpperCase()} — ${analysis.hallazgos.length} hallazgo(s)`,
+                    user_id: user.id,
+                    user_name: user.name,
+                    user_role: user.role,
+                });
+
+                return analysis;
+            } catch (e) {
+                if (model === models[models.length - 1]) throw new Error('Error al analizar con IA: ' + (e as Error).message);
+            }
+        }
+
+        throw new Error('No se pudo completar el análisis');
     },
 };

@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Credit, User, CreditState, UserRole, AuthorizationToken } from '../types';
+import { Credit, User, CreditState, UserRole, AuthorizationToken, PolicyAnalysis } from '../types';
 import { MockService } from '../services/mockService';
 import { ProductionService } from '../services/productionService';
 import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
-    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw, Star
+    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw, Star, Brain, AlertTriangle, CheckCircle, Info
 } from 'lucide-react';
 
 export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBack: () => void }> = ({ creditId, currentUser, onBack }) => {
@@ -18,6 +18,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [uploadingLegal, setUploadingLegal] = useState(false);
   const [legalDocType, setLegalDocType] = useState('Pagaré');
   const [deletingLegalId, setDeletingLegalId] = useState<string | null>(null);
+  const [analyzingDocs, setAnalyzingDocs] = useState<string | false>(false);
   const [authStatus, setAuthStatus] = useState<AuthorizationToken | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authResending, setAuthResending] = useState(false);
@@ -1132,6 +1133,167 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+
+                    {/* Análisis IA de Documentos */}
+                    {legalDocs.length > 0 && (
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Brain size={18} className="text-blue-600" />
+                                    <h4 className="font-bold text-sm text-slate-800">Análisis IA de Documentos</h4>
+                                    {credit?.legalAnalysis && (
+                                        <span className={`text-[9px] px-2 py-0.5 rounded-lg font-bold ${
+                                            credit.legalAnalysis.status === 'verde' ? 'bg-green-100 text-green-700' :
+                                            credit.legalAnalysis.status === 'amarillo' ? 'bg-yellow-100 text-yellow-700' :
+                                            'bg-red-100 text-red-700'
+                                        }`}>
+                                            {credit.legalAnalysis.status === 'verde' ? 'CUMPLE' : credit.legalAnalysis.status === 'amarillo' ? 'REQUIERE REVISIÓN' : 'INCUMPLIMIENTO'}
+                                        </span>
+                                    )}
+                                </div>
+                                {['ADMIN', 'ANALISTA', 'ANALISTA_ENTIDAD', 'ASISTENTE_OPERATIVO'].includes(currentUser.role) ? (
+                                    <button
+                                        onClick={async () => {
+                                            if (!credit) return;
+                                            setAnalyzingDocs('Cargando política de la entidad...');
+                                            try {
+                                                const result = await MockService.analyzeDocumentsWithAI(credit.id, currentUser, (step: string) => setAnalyzingDocs(step));
+                                                setCredit(prev => prev ? { ...prev, legalAnalysis: result } : prev);
+                                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Análisis completado', type: 'success' } }));
+                                            } catch (e: any) {
+                                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: e.message || 'Error al analizar', type: 'error' } }));
+                                            } finally { setAnalyzingDocs(false); }
+                                        }}
+                                        disabled={!!analyzingDocs}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {analyzingDocs ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>}
+                                        {analyzingDocs ? 'Analizando...' : credit?.legalAnalysis ? 'Re-analizar' : 'Analizar con IA'}
+                                    </button>
+                                ) : null}
+                            </div>
+
+                            {/* Progress indicator */}
+                            {analyzingDocs && (
+                                <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl animate-pulse">
+                                    <Loader2 size={16} className="animate-spin text-blue-600 shrink-0"/>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-bold text-blue-800 truncate">{analyzingDocs}</p>
+                                        <div className="w-full bg-blue-100 rounded-full h-1.5 mt-2">
+                                            <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-700" style={{width: analyzingDocs.includes('Gemini') || analyzingDocs.includes('resultado') ? '90%' : analyzingDocs.includes('Descargando') ? '50%' : analyzingDocs.includes('política') ? '20%' : '10%'}}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {credit?.legalAnalysis && (
+                                <div className="space-y-3">
+                                    {/* Semáforo + Resumen */}
+                                    <div className={`p-4 rounded-xl border ${
+                                        credit.legalAnalysis.status === 'verde' ? 'bg-green-50 border-green-200' :
+                                        credit.legalAnalysis.status === 'amarillo' ? 'bg-yellow-50 border-yellow-200' :
+                                        'bg-red-50 border-red-200'
+                                    }`}>
+                                        <div className="flex items-start gap-3">
+                                            <div className={`p-2 rounded-lg ${
+                                                credit.legalAnalysis.status === 'verde' ? 'bg-green-100' :
+                                                credit.legalAnalysis.status === 'amarillo' ? 'bg-yellow-100' :
+                                                'bg-red-100'
+                                            }`}>
+                                                {credit.legalAnalysis.status === 'verde' ? <CheckCircle size={20} className="text-green-600"/> :
+                                                 credit.legalAnalysis.status === 'amarillo' ? <AlertTriangle size={20} className="text-yellow-600"/> :
+                                                 <X size={20} className="text-red-600"/>}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-800">{credit.legalAnalysis.resumen}</p>
+                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                    Analizado: {new Date(credit.legalAnalysis.analyzedAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                    {credit.legalAnalysis.entityName && ` · Política: ${credit.legalAnalysis.entityName}`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Hallazgos */}
+                                    {credit.legalAnalysis.hallazgos.length > 0 && (
+                                        <div className="space-y-2">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase">Hallazgos ({credit.legalAnalysis.hallazgos.length})</p>
+                                            {credit.legalAnalysis.hallazgos.map((h, i) => (
+                                                <div key={i} className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                                    h.severidad === 'alto' ? 'bg-red-50 border-red-100' :
+                                                    h.severidad === 'medio' ? 'bg-yellow-50 border-yellow-100' :
+                                                    'bg-blue-50 border-blue-100'
+                                                }`}>
+                                                    <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold shrink-0 mt-0.5 ${
+                                                        h.tipo === 'CUMPLE' ? 'bg-green-100 text-green-700' :
+                                                        h.tipo === 'RIESGO' ? 'bg-red-100 text-red-700' :
+                                                        h.tipo === 'FALTANTE' ? 'bg-orange-100 text-orange-700' :
+                                                        'bg-yellow-100 text-yellow-700'
+                                                    }`}>{h.tipo}</span>
+                                                    <p className="text-xs text-slate-700">{h.descripcion}</p>
+                                                    <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold shrink-0 ml-auto ${
+                                                        h.severidad === 'alto' ? 'bg-red-100 text-red-600' :
+                                                        h.severidad === 'medio' ? 'bg-yellow-100 text-yellow-600' :
+                                                        'bg-blue-100 text-blue-600'
+                                                    }`}>{h.severidad.toUpperCase()}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Descargar reporte PDF */}
+                                    <button
+                                        onClick={() => {
+                                            if (!credit?.legalAnalysis) return;
+                                            const a = credit.legalAnalysis;
+                                            const statusLabel = a.status === 'verde' ? 'CUMPLE' : a.status === 'amarillo' ? 'REQUIERE REVISIÓN' : 'INCUMPLIMIENTO';
+                                            const statusColor = a.status === 'verde' ? '#15803d' : a.status === 'amarillo' ? '#a16207' : '#dc2626';
+                                            const statusBg = a.status === 'verde' ? '#f0fdf4' : a.status === 'amarillo' ? '#fefce8' : '#fef2f2';
+                                            const hallazgosHtml = a.hallazgos.map((h, i) => {
+                                                const sevColor = h.severidad === 'alto' ? '#dc2626' : h.severidad === 'medio' ? '#a16207' : '#2563eb';
+                                                const tipColor = h.tipo === 'CUMPLE' ? '#15803d' : h.tipo === 'RIESGO' ? '#dc2626' : h.tipo === 'FALTANTE' ? '#ea580c' : '#a16207';
+                                                return `<div style="display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;background:#fafafa">
+                                                    <span style="background:${tipColor}15;color:${tipColor};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">${h.tipo}</span>
+                                                    <span style="flex:1;font-size:12px;color:#334155">${h.descripcion}</span>
+                                                    <span style="background:${sevColor}15;color:${sevColor};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">${h.severidad.toUpperCase()}</span>
+                                                </div>`;
+                                            }).join('');
+                                            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Análisis IA - SOL ${credit.solicitudNumber}</title>
+                                            <style>@media print{body{margin:0;padding:20px}}.page{font-family:-apple-system,system-ui,sans-serif;max-width:700px;margin:0 auto;color:#1e293b}
+                                            h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:20px 0 8px;color:#64748b;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+                                            .meta{font-size:11px;color:#94a3b8;margin-bottom:16px}.badge{display:inline-block;padding:4px 12px;border-radius:8px;font-weight:700;font-size:13px}
+                                            .resumen{padding:16px;border-radius:12px;margin:12px 0;font-size:13px;line-height:1.5}.footer{margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center}</style></head>
+                                            <body><div class="page">
+                                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                                                <img src="https://skalafintech.netlify.app/skala-logo.png" style="height:36px" onerror="this.style.display='none'"/>
+                                                <div><h1>Análisis IA de Documentos Legales</h1><p style="font-size:11px;color:#94a3b8;margin:0">Generado automáticamente por Skala Fintech</p></div>
+                                            </div>
+                                            <div class="meta">
+                                                <strong>Crédito:</strong> SOL. N° ${credit.solicitudNumber} — ${credit.nombres || ''} ${credit.apellidos || ''}<br/>
+                                                <strong>Cédula:</strong> ${credit.cedula || 'N/A'} &nbsp;|&nbsp; <strong>Entidad:</strong> ${a.entityName || 'N/A'}<br/>
+                                                <strong>Fecha de análisis:</strong> ${new Date(a.analyzedAt).toLocaleString('es-CO')}
+                                            </div>
+                                            <div style="margin-bottom:16px"><span class="badge" style="background:${statusBg};color:${statusColor};border:1px solid ${statusColor}30">Estado: ${statusLabel}</span></div>
+                                            <h2>Resumen</h2>
+                                            <div class="resumen" style="background:${statusBg};border:1px solid ${statusColor}30;color:#334155">${a.resumen}</div>
+                                            ${a.hallazgos.length > 0 ? `<h2>Hallazgos (${a.hallazgos.length})</h2>${hallazgosHtml}` : ''}
+                                            <div class="footer">Skala Fintech — Análisis generado con Inteligencia Artificial (Gemini) · ${new Date().toLocaleDateString('es-CO')}</div>
+                                            </div></body></html>`;
+                                            const w = window.open('', '_blank');
+                                            if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500); }
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-colors w-fit"
+                                    >
+                                        <Download size={12}/> Descargar reporte
+                                    </button>
+                                </div>
+                            )}
+
+                            {!credit?.legalAnalysis && !analyzingDocs && (
+                                <p className="text-center text-xs text-slate-300 italic py-4">Haz clic en "Analizar con IA" para revisar los documentos contra la política de la entidad.</p>
+                            )}
                         </div>
                     )}
 

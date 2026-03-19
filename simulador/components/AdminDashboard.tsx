@@ -4,6 +4,7 @@ import { FPMEntry, ProductType, AdConfig, FinancialEntity } from '../types';
 import { loadFPMData, addFPMEntry, deleteFPMEntry, getFPMsByEntity, importFactorsForEntity, updateEntityNameInFactors } from '../services/fpmService';
 import { getAllAds, saveAd, deleteAd, uploadAdImage } from '../services/adService';
 import { getAllEntities, saveEntity, deleteEntity, uploadLogo } from '../services/entityService';
+import { supabase } from '../../services/supabaseClient';
 
 export const AdminDashboard: React.FC = () => {
   // Data State
@@ -40,6 +41,14 @@ export const AdminDashboard: React.FC = () => {
 
   // --- STATE: CSV UPLOAD ---
   const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // --- STATE: ENTITY POLICIES MAP (for badge display) ---
+  const [entitiesWithPolicy, setEntitiesWithPolicy] = useState<Set<string>>(new Set());
+
+  // --- STATE: POLICY PER ENTITY ---
+  const [entityPolicyFiles, setEntityPolicyFiles] = useState<{ name: string; url: string }[]>([]);
+  const [newEntityPolicyFiles, setNewEntityPolicyFiles] = useState<File[]>([]);
+  const [policySaving, setPolicySaving] = useState(false);
 
   // --- STATE: ADS ---
   const [editingAd, setEditingAd] = useState<Partial<AdConfig>>({
@@ -84,13 +93,15 @@ export const AdminDashboard: React.FC = () => {
   const refreshGlobalData = async () => {
     setIsLoading(true);
     try {
-      const [_, ads, ents] = await Promise.all([
+      const [_, ads, ents, policiesRes] = await Promise.all([
         loadFPMData(), // Pre-fetch FPMs
         getAllAds(),
-        getAllEntities()
+        getAllEntities(),
+        supabase.from('entity_policies').select('entity_name').then(r => r.data || [])
       ]);
       setAdsData(ads);
       setEntitiesData(ents);
+      setEntitiesWithPolicy(new Set(policiesRes.map((p: any) => p.entity_name)));
     } finally {
       setIsLoading(false);
     }
@@ -117,12 +128,62 @@ export const AdminDashboard: React.FC = () => {
     setActiveView('edit_entity');
   };
 
+  const loadEntityPolicy = async (entityName: string) => {
+    try {
+      const { data } = await supabase.from('entity_policies').select('policy_text, file_url, file_name').eq('entity_name', entityName).single();
+      if (data) {
+        let files: { name: string; url: string }[] = [];
+        try { files = JSON.parse(data.file_url || '[]'); } catch { }
+        setEntityPolicyFiles(files);
+      } else {
+        setEntityPolicyFiles([]);
+      }
+    } catch {
+      setEntityPolicyFiles([]);
+    }
+    setNewEntityPolicyFiles([]);
+  };
+
+  const handleSaveEntityPolicy = async () => {
+    if (!editingEntity.name) return showAlert('Guarda la entidad primero.', 'Atención');
+    setPolicySaving(true);
+    try {
+      const uploadedFiles: { name: string; url: string }[] = [...entityPolicyFiles];
+      if (newEntityPolicyFiles.length > 0) {
+        for (const file of newEntityPolicyFiles) {
+          const ext = file.name.split('.').pop() || 'pdf';
+          const path = `policies/${editingEntity.name}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+          const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+          if (upErr) throw upErr;
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);
+          uploadedFiles.push({ name: file.name, url: urlData.publicUrl });
+        }
+      }
+      const upsertData = {
+        entity_name: editingEntity.name,
+        policy_text: '',
+        updated_at: new Date().toISOString(),
+        file_url: JSON.stringify(uploadedFiles),
+        file_name: uploadedFiles.map(f => f.name).join(', ') || null,
+      };
+      const { error } = await supabase.from('entity_policies').upsert(upsertData, { onConflict: 'entity_name' });
+      if (error) throw error;
+      setEntityPolicyFiles(uploadedFiles);
+      setNewEntityPolicyFiles([]);
+      showAlert('Política guardada correctamente.', 'Éxito');
+    } catch (err: any) {
+      showAlert('Error guardando política: ' + (err.message || err), 'Error');
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
   const startEditEntity = async (ent: FinancialEntity) => {
     setEditingEntity({ ...ent });
     setEntityLogoFile(null);
     setOriginalEntityName(ent.name);
     setActiveView('edit_entity');
-    await refreshEntityFactors(ent.name);
+    await Promise.all([refreshEntityFactors(ent.name), loadEntityPolicy(ent.name)]);
   };
 
   const handleSaveEntityBranding = async (e: React.FormEvent) => {
@@ -472,7 +533,10 @@ export const AdminDashboard: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                            <h4 className="font-bold text-slate-800 text-lg mb-1">{ent.name}</h4>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-bold text-slate-800 text-lg">{ent.name}</h4>
+                              {entitiesWithPolicy.has(ent.name) && <span className="text-[8px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded font-bold">IA</span>}
+                            </div>
                             <div className="w-full h-2 rounded-full mb-3 shadow-inner" style={{background: `linear-gradient(to right, ${ent.primaryColor}, ${ent.secondaryColor})`}}></div>
                           </div>
                           <div className="bg-slate-50 p-2 rounded-lg text-center mt-2">
@@ -687,6 +751,64 @@ export const AdminDashboard: React.FC = () => {
                              <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 shadow-lg transition-all hover:-translate-y-0.5">Guardar Marca</button>
                           </div>
                       </form>
+                  </div>
+
+                  {/* POLÍTICA IA POR ENTIDAD */}
+                  <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 shadow-sm">
+                      <h4 className="text-blue-900 font-bold mb-1 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" /></svg>
+                        Política de Análisis IA
+                        {entityPolicyFiles.length > 0 && <span className="text-[9px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold ml-auto">CONFIGURADA</span>}
+                      </h4>
+                      <p className="text-[10px] text-blue-600 mb-4">Documentos de política + instrucciones para el análisis automático con Gemini AI para esta entidad.</p>
+
+                      {/* Archivos ya subidos */}
+                      {entityPolicyFiles.length > 0 && (
+                          <div className="space-y-2 mb-3">
+                              {entityPolicyFiles.map((f, i) => (
+                                  <div key={i} className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-emerald-600 shrink-0"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                                      <p className="text-xs font-bold text-emerald-700 truncate flex-1">{f.name}</p>
+                                      <a href={f.url} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-500 hover:underline shrink-0">Ver</a>
+                                      <button type="button" onClick={() => setEntityPolicyFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 shrink-0 text-sm font-bold">✕</button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+
+                      {/* Archivos nuevos pendientes */}
+                      {newEntityPolicyFiles.length > 0 && (
+                          <div className="space-y-2 mb-3">
+                              {newEntityPolicyFiles.map((f, i) => (
+                                  <div key={i} className="flex items-center gap-2 p-2.5 bg-blue-100 border border-blue-200 rounded-lg">
+                                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-blue-600 shrink-0"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                                      <p className="text-xs font-bold text-blue-700 truncate flex-1">{f.name}</p>
+                                      <span className="text-[9px] text-blue-400 font-bold shrink-0">NUEVO</span>
+                                      <button type="button" onClick={() => setNewEntityPolicyFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 shrink-0 text-sm font-bold">✕</button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+
+                      <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-blue-200 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-100 transition-colors mb-3">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-blue-400"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                          <span className="text-xs font-bold text-blue-400">Agregar documento de política</span>
+                          <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple onChange={e => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length) setNewEntityPolicyFiles(prev => [...prev, ...files]);
+                              e.target.value = '';
+                          }}/>
+                      </label>
+
+                      <button
+                          type="button"
+                          onClick={handleSaveEntityPolicy}
+                          disabled={policySaving || !editingEntity.name}
+                          className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-blue-700 shadow-md transition-all flex items-center justify-center gap-2"
+                      >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+                          {policySaving ? 'Guardando...' : 'Guardar Política IA'}
+                      </button>
                   </div>
 
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
