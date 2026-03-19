@@ -192,7 +192,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           const dataToSave = { ...editFormData };
           // Si el gestor guardó en modo subsanación, quitar el permiso automáticamente
           const currentStateName = states.find(s => s.id === credit?.statusId)?.name?.toUpperCase() ?? '';
-          const isGestorSubsanacion = currentUser.role === 'GESTOR' && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
+          const isOwnSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && credit?.assignedGestorId === currentUser.id;
+          const isGestorSubsanacion = (currentUser.role === 'GESTOR' || isOwnSupervisor) && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
           if (isGestorSubsanacion) dataToSave.subsanacionHabilitada = false;
           await MockService.updateCreditData(credit!.id, dataToSave, currentUser.id);
           setIsEditing(false);
@@ -355,12 +356,14 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   if (!credit) return <div className="p-10 text-center font-bold text-slate-400">Crédito no encontrado.</div>;
 
   const canEdit = MockService.hasPermission(currentUser, 'EDIT_CREDIT_INFO');
+  // Supervisor que tiene créditos propios asignados (ex-gestor) puede gestionarlos como gestor
+  const isGestorOrOwnSupervisor = currentUser.role === 'GESTOR' || (currentUser.role === 'SUPERVISOR_ASIGNADO' && credit.assignedGestorId === currentUser.id);
   // Recalcular el estado actual en cada render para que se actualice inmediatamente
   const currentStateObj = states.find(s => s.id === credit.statusId);
   const hasTasksEnabled = currentStateObj?.enableTasks ?? false;
   const hasEditEnabled = currentStateObj?.enableEdit ?? false;
   const isEditableState = hasTasksEnabled || hasEditEnabled;
-  const canEditAsGestor = currentUser.role === 'GESTOR' && isEditableState && !!credit.subsanacionHabilitada;
+  const canEditAsGestor = isGestorOrOwnSupervisor && isEditableState && !!credit.subsanacionHabilitada;
   const effectiveCanEdit = canEdit || canEditAsGestor;
 
   // Tareas de la devolución actual
@@ -500,7 +503,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                 </button>
              )}
              {/* GESTOR puede cambiar de DEVUELTO/APLAZADO a SUBSANADO únicamente */}
-             {currentUser.role === 'GESTOR' && !MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && isEditableState && (
+             {isGestorOrOwnSupervisor && !MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && isEditableState && (
                 <button
                     onClick={() => {
                         if (!allTasksDone) {
@@ -629,7 +632,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                                             <Download size={10}/> Ver
                                                         </a>
                                                     )}
-                                                    {currentUser.role === 'GESTOR' && isEditableState && (
+                                                    {isGestorOrOwnSupervisor && isEditableState && (
                                                         <button
                                                             onClick={async () => {
                                                                 if (!confirm('¿Cambiar documento? Se eliminará el actual y podrás subir uno nuevo.')) return;
@@ -655,7 +658,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                         </div>
 
                                         {/* Área de acción del Gestor (solo pendiente) */}
-                                        {!task.completed && currentUser.role === 'GESTOR' && (
+                                        {!task.completed && isGestorOrOwnSupervisor && (
                                             <div className="border-t border-slate-100 px-4 pb-4 pt-3">
                                                 {task.requiresDoc ? (
                                                     /* Tarea con adjunto: botón de subir archivo */
@@ -696,7 +699,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                     </div>
                                 ))}
                             </div>
-                            {!allTasksDone && currentUser.role === 'GESTOR' && (
+                            {!allTasksDone && isGestorOrOwnSupervisor && (
                                 <p className="text-[10px] font-bold text-red-500 text-center mt-4 flex items-center justify-center gap-2">
                                     <ClipboardList size={12}/> Completa todas las tareas para habilitar el botón Subsanar Crédito
                                 </p>

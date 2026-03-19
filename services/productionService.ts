@@ -636,16 +636,15 @@ export const ProductionService = {
         if (!canViewAll) {
             if (canViewZone && user.zoneId) {
                 // SUPERVISOR_ASIGNADO: obtener todos los gestores de su zona y filtrar créditos
+                // También incluir sus propios créditos (si fue gestor antes del cambio de rol)
                 const { data: zoneProfiles } = await supabase
                     .from('profiles')
                     .select('id')
                     .eq('zone_id', user.zoneId);
                 const zoneGestorIds = (zoneProfiles || []).map((p: any) => p.id);
-                if (zoneGestorIds.length > 0) {
-                    query = query.in('assigned_gestor_id', zoneGestorIds);
-                } else {
-                    return [];
-                }
+                // Asegurar que el propio supervisor esté incluido (para ver sus créditos anteriores)
+                if (!zoneGestorIds.includes(user.id)) zoneGestorIds.push(user.id);
+                query = query.in('assigned_gestor_id', zoneGestorIds);
             } else if (user.role === 'ANALISTA') {
                 query = query.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA_ENTIDAD') {
@@ -666,11 +665,8 @@ export const ProductionService = {
                 if (canViewZone && user.zoneId) {
                     const { data: zoneProfiles } = await supabase.from('profiles').select('id').eq('zone_id', user.zoneId);
                     const zoneGestorIds = (zoneProfiles || []).map((p: any) => p.id);
-                    if (zoneGestorIds.length > 0) {
-                        fallbackQuery = fallbackQuery.in('assigned_gestor_id', zoneGestorIds);
-                    } else {
-                        return [];
-                    }
+                    if (!zoneGestorIds.includes(user.id)) zoneGestorIds.push(user.id);
+                    fallbackQuery = fallbackQuery.in('assigned_gestor_id', zoneGestorIds);
                 } else if (user.role === 'ANALISTA') {
                     fallbackQuery = fallbackQuery.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
                 } else if (user.role === 'ANALISTA_ENTIDAD') {
@@ -1378,6 +1374,10 @@ export const ProductionService = {
     },
     getZones: async () => { const { data } = await supabase.from('zones').select('*'); return data || []; },
     updateUserProfile: async (id: string, d: any) => {
+        // Obtener rol actual antes de actualizar para detectar cambio de rol
+        const { data: currentProfile } = await supabase.from('profiles').select('role, full_name, cedula').eq('id', id).single();
+        const previousRole = currentProfile?.role;
+
         const updateData: any = {
             full_name: d.name,
             phone: d.phone,
@@ -1393,6 +1393,52 @@ export const ProductionService = {
         if (d.assignedEntities !== undefined) updateData.assigned_entities = d.assignedEntities || [];
         const { error } = await supabase.from('profiles').update(updateData).eq('id', id);
         if (error) throw error;
+
+        // Si cambió a SUPERVISOR_ASIGNADO, crear zona automáticamente
+        const newRole = d.role || previousRole;
+        if (newRole === 'SUPERVISOR_ASIGNADO' && previousRole !== 'SUPERVISOR_ASIGNADO') {
+            try {
+                const fullName = d.name || currentProfile?.full_name || '';
+                const cedula = d.cedula || currentProfile?.cedula || '';
+                const nameParts = fullName.trim().split(/\s+/);
+                const initial1 = (nameParts[0] || '').charAt(0).toUpperCase();
+                const initial2 = (nameParts[nameParts.length > 1 ? 1 : 0] || '').charAt(0).toUpperCase();
+                const last3 = cedula.slice(-3);
+                const zoneName = `${initial1}${initial2}-${last3}`;
+
+                const { data: zoneData } = await supabase
+                    .from('zones')
+                    .insert({ name: zoneName, cities: [] })
+                    .select()
+                    .single();
+
+                if (zoneData?.id) {
+                    await supabase.from('profiles').update({ zone_id: zoneData.id }).eq('id', id);
+                }
+            } catch (err) {
+                console.warn('Error creando zona para nuevo supervisor:', err);
+            }
+
+            // Notificar al usuario del cambio de rol
+            await supabase.from('notifications').insert({
+                user_id: id,
+                title: 'Cambio de rol',
+                message: `Tu rol ha sido actualizado a SUPERVISOR ASIGNADO. Se te ha creado una zona automáticamente. Tus créditos en proceso siguen asignados a ti.`,
+                type: 'info',
+                is_read: false,
+                credit_id: null,
+            }).catch(() => {});
+        } else if (d.role && d.role !== previousRole) {
+            // Notificar cambio de rol para cualquier otro cambio
+            await supabase.from('notifications').insert({
+                user_id: id,
+                title: 'Cambio de rol',
+                message: `Tu rol ha sido actualizado a ${d.role.replace(/_/g, ' ')}. Tus créditos en proceso siguen asignados a ti.`,
+                type: 'info',
+                is_read: false,
+                credit_id: null,
+            }).catch(() => {});
+        }
 
         // Cambiar contraseña via Admin API si se proporcionó una nueva
         if (d.password && d.password.trim()) {
