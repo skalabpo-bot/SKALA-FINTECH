@@ -1406,17 +1406,22 @@ export const ProductionService = {
                 const last3 = cedula.slice(-3);
                 const zoneName = `${initial1}${initial2}-${last3}`;
 
-                const { data: zoneData } = await supabase
+                // Usar supabaseAdmin para evitar problemas de RLS
+                const db = supabaseAdmin || supabase;
+                const { data: zoneData, error: zoneError } = await db
                     .from('zones')
                     .insert({ name: zoneName, cities: [] })
                     .select()
                     .single();
 
-                if (zoneData?.id) {
-                    await supabase.from('profiles').update({ zone_id: zoneData.id }).eq('id', id);
+                if (zoneError) {
+                    console.error('Error creando zona:', zoneError);
+                } else if (zoneData?.id) {
+                    const { error: assignError } = await db.from('profiles').update({ zone_id: zoneData.id }).eq('id', id);
+                    if (assignError) console.error('Error asignando zona al supervisor:', assignError);
                 }
             } catch (err) {
-                console.warn('Error creando zona para nuevo supervisor:', err);
+                console.error('Error creando zona para nuevo supervisor:', err);
             }
 
             // Notificar al usuario del cambio de rol
