@@ -440,25 +440,71 @@ export const ProductionService = {
             await supabase.from('authorization_tokens').update(syncAuth).eq('credit_id', creditId).eq('status', 'pending');
         }
 
-        // Audit log detallado: registrar qué campos cambiaron
+        // Audit log detallado: registrar cambios Y estado completo antes/después
         const changes: string[] = [];
-        if (previousData.amount !== (Number(monto) || 0)) changes.push(`Monto: $${previousData.amount?.toLocaleString() || 0} → $${(Number(monto) || 0).toLocaleString()}`);
-        if (previousData.term !== (Number(plazo) || 0)) changes.push(`Plazo: ${previousData.term || 0} → ${plazo} meses`);
-        if (previousData.entity_name !== (entidadAliada || '')) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entidadAliada}`);
-        if (previousData.interest_rate !== (Number(tasa) || 0)) changes.push(`Tasa: ${previousData.interest_rate || 0}% → ${tasa}%`);
         const prevClient = previousData.client_data || {};
-        const editableClientFields = ['nombres', 'apellidos', 'correo', 'telefonoCelular', 'direccionCompleta', 'barrio', 'ciudadResidencia', 'estadoCivil', 'pagaduria', 'banco', 'tipoCuenta', 'numeroCuenta'];
-        for (const field of editableClientFields) {
-            if (prevClient[field] !== clientFields[field] && (prevClient[field] || clientFields[field])) {
-                changes.push(`${field}: ${prevClient[field] || '-'} → ${clientFields[field] || '-'}`);
+
+        // Comparar condiciones financieras
+        if (String(previousData.amount) !== String(finalMonto)) changes.push(`Monto: $${previousData.amount?.toLocaleString() || 0} → $${finalMonto.toLocaleString()}`);
+        if (String(previousData.term) !== String(finalPlazo)) changes.push(`Plazo: ${previousData.term || 0} → ${finalPlazo} meses`);
+        if ((previousData.entity_name || '') !== (entidadAliada || previousData.entity_name || '')) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entidadAliada}`);
+        if (String(previousData.interest_rate) !== String(finalTasa)) changes.push(`Tasa: ${previousData.interest_rate || 0}% → ${finalTasa}%`);
+        if (String(previousData.disbursement_amount) !== String(finalDesembolso)) changes.push(`Monto Desembolso: $${previousData.disbursement_amount?.toLocaleString() || 0} → $${finalDesembolso.toLocaleString()}`);
+
+        // Comparar todos los campos del cliente
+        const allClientFields = ['nombres', 'apellidos', 'correo', 'telefonoCelular', 'direccionCompleta', 'barrio', 'ciudadResidencia', 'estadoCivil', 'pagaduria', 'banco', 'tipoCuenta', 'numeroCuenta', 'lineaCredito', 'tipoPension', 'mesadaPensional', 'gastosMensuales', 'activos', 'pasivos', 'numeroDocumento'];
+        for (const field of allClientFields) {
+            const prev = String(prevClient[field] || '');
+            const curr = String(clientFields[field] || '');
+            if (prev !== curr && (prev || curr)) {
+                changes.push(`${field}: ${prev || '-'} → ${curr || '-'}`);
             }
         }
+
+        // Siempre guardar estado completo ANTES y DESPUÉS para trazabilidad total
+        const snapshotAntes = [
+            `Monto: $${previousData.amount?.toLocaleString() || 0}`,
+            `Monto Desembolso: $${previousData.disbursement_amount?.toLocaleString() || 0}`,
+            `Plazo: ${previousData.term || 0} meses`,
+            `Entidad: ${previousData.entity_name || '-'}`,
+            `Tasa: ${previousData.interest_rate || 0}% NMV`,
+            `Nombres: ${prevClient.nombres || ''} ${prevClient.apellidos || ''}`,
+            `Cédula: ${prevClient.numeroDocumento || ''}`,
+            `Teléfono: ${prevClient.telefonoCelular || ''}`,
+            `Correo: ${prevClient.correo || ''}`,
+            `Pagaduría: ${prevClient.pagaduria || ''}`,
+            `Ciudad: ${prevClient.ciudadResidencia || ''}`,
+            `Banco: ${prevClient.banco || ''} - ${prevClient.tipoCuenta || ''} - ${prevClient.numeroCuenta || ''}`,
+            `Mesada: $${Number(prevClient.mesadaPensional || 0).toLocaleString()}`,
+            `Gastos: $${Number(prevClient.gastosMensuales || 0).toLocaleString()}`,
+        ].join('\n');
+
+        const snapshotDespues = [
+            `Monto: $${finalMonto.toLocaleString()}`,
+            `Monto Desembolso: $${finalDesembolso.toLocaleString()}`,
+            `Plazo: ${finalPlazo} meses`,
+            `Entidad: ${entidadAliada || previousData.entity_name || '-'}`,
+            `Tasa: ${finalTasa}% NMV`,
+            `Nombres: ${clientFields.nombres || ''} ${clientFields.apellidos || ''}`,
+            `Cédula: ${clientFields.numeroDocumento || ''}`,
+            `Teléfono: ${clientFields.telefonoCelular || ''}`,
+            `Correo: ${clientFields.correo || ''}`,
+            `Pagaduría: ${clientFields.pagaduria || ''}`,
+            `Ciudad: ${clientFields.ciudadResidencia || ''}`,
+            `Banco: ${clientFields.banco || ''} - ${clientFields.tipoCuenta || ''} - ${clientFields.numeroCuenta || ''}`,
+            `Mesada: $${Number(clientFields.mesadaPensional || 0).toLocaleString()}`,
+            `Gastos: $${Number(clientFields.gastosMensuales || 0).toLocaleString()}`,
+        ].join('\n');
+
+        const description = changes.length > 0
+            ? `Campos editados:\n${changes.join('\n')}\n\n--- ANTES ---\n${snapshotAntes}\n\n--- DESPUÉS ---\n${snapshotDespues}`
+            : `Guardado sin cambios detectados.\n\n--- ESTADO COMPLETO ---\n${snapshotDespues}`;
 
         await supabase.from('credit_history').insert({
             credit_id: creditId,
             user_id: userId,
             action: 'EDICIÓN',
-            description: changes.length > 0 ? `Campos editados:\n${changes.join('\n')}` : 'Actualización de campos maestros del expediente.'
+            description
         });
 
         // Webhook: crédito editado
