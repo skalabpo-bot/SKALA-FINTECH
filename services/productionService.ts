@@ -266,11 +266,36 @@ export const ProductionService = {
 
         if (error) throw error;
 
-        await supabase.from('credit_history').insert({ 
-            credit_id: data.id, 
-            user_id: currentUser.id, 
-            action: 'RADICACIÓN', 
-            description: 'Expediente radicado por el gestor.' 
+        // Snapshot completo de condiciones originales de radicación
+        const snapshotRadicacion = [
+            `Monto: $${Number(monto).toLocaleString()}`,
+            `Monto Desembolso: $${Number(montoDesembolso || monto || 0).toLocaleString()}`,
+            `Plazo: ${plazo} meses`,
+            `Entidad: ${entidadAliada}`,
+            `Tasa: ${tasa}% NMV`,
+            `Comisión: ${commPercent}% ($${commEst.toLocaleString()})`,
+            `Nombres: ${rest.nombres || ''} ${rest.apellidos || ''}`,
+            `Cédula: ${rest.numeroDocumento || ''}`,
+            `Teléfono: ${rest.telefonoCelular || ''}`,
+            `Correo: ${rest.correo || ''}`,
+            `Pagaduría: ${rest.pagaduria || ''}`,
+            `Ciudad: ${rest.ciudadResidencia || ''}`,
+            `Dirección: ${rest.direccionCompleta || ''}`,
+            `Estado Civil: ${rest.estadoCivil || ''}`,
+            `Banco: ${rest.banco || ''} - ${rest.tipoCuenta || ''} - ${rest.numeroCuenta || ''}`,
+            `Línea de Crédito: ${rest.lineaCredito || ''}`,
+            `Tipo Pensión: ${rest.tipoPension || ''}`,
+            `Mesada: $${Number(rest.mesadaPensional || 0).toLocaleString()}`,
+            `Gastos Mensuales: $${Number(rest.gastosMensuales || 0).toLocaleString()}`,
+            `Activos: $${Number(rest.activos || 0).toLocaleString()}`,
+            `Pasivos: $${Number(rest.pasivos || 0).toLocaleString()}`,
+        ].join('\n');
+
+        await supabase.from('credit_history').insert({
+            credit_id: data.id,
+            user_id: currentUser.id,
+            action: 'RADICACIÓN',
+            description: `Expediente radicado por el gestor.\n\n--- CONDICIONES ORIGINALES ---\n${snapshotRadicacion}`
         });
 
         if (documents?.length > 0) {
