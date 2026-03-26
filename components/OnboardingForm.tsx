@@ -171,6 +171,12 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     if(!formData.monto || !formData.plazo || !formData.numeroDocumento) {
         return dispatchAlert("Monto, Plazo y Cédula son obligatorios.", "error");
     }
+    if (uploadingType) {
+        return dispatchAlert("Espera a que termine de subir el archivo antes de radicar.", "error");
+    }
+    if (!formData.documents || formData.documents.length === 0) {
+        return dispatchAlert("Debes subir al menos la cédula frontal y un desprendible.", "error");
+    }
     if (!gestorConfirm) {
         return dispatchAlert("Debes confirmar que los datos del cliente son verídicos para radicar.", "error");
     }

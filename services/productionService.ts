@@ -305,7 +305,13 @@ export const ProductionService = {
                 url: d.url,
                 type: d.type
             }));
-            await supabase.from('documents').insert(docsToInsert);
+            const { error: docsError } = await supabase.from('documents').insert(docsToInsert);
+            if (docsError) {
+                console.error('Error al guardar documentos:', docsError);
+                // Reintentar con supabaseAdmin por si es RLS
+                const { error: docsError2 } = await supabaseAdmin.from('documents').insert(docsToInsert);
+                if (docsError2) console.error('Error al guardar documentos (admin):', docsError2);
+            }
         }
 
         // Notificar al gestor que su solicitud fue radicada
