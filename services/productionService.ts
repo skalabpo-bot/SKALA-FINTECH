@@ -2414,11 +2414,17 @@ export const ProductionService = {
         const { data: existing } = await supabase.from('profiles').select('cedula');
         const existingCedulas = new Set((existing || []).map((u: any) => String(u.cedula || '').trim()));
 
-        // Mapear código de supervisor (nombre de zona) a zone_id
+        // Mapear supervisor por nombre de zona O por nombre del supervisor
         const { data: zonesData } = await supabase.from('zones').select('id, name');
         const zoneMap = new Map<string, string>();
         (zonesData || []).forEach((z: any) => {
             if (z.name && z.id) zoneMap.set(z.name.trim().toUpperCase(), z.id);
+        });
+        // También mapear por nombre completo del supervisor
+        const { data: supervisors } = await supabase.from('profiles').select('full_name, zone_id').eq('role', 'SUPERVISOR_ASIGNADO');
+        const supervisorMap = new Map<string, string>();
+        (supervisors || []).forEach((s: any) => {
+            if (s.full_name && s.zone_id) supervisorMap.set(s.full_name.trim().toUpperCase(), s.zone_id);
         });
 
         const results: { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string }[] = [];
@@ -2460,10 +2466,11 @@ export const ProductionService = {
                 // Esperar un momento para que el trigger de Auth termine
                 await new Promise(r => setTimeout(r, 500));
 
-                // Resolver zone_id por código de zona/supervisor
+                // Resolver zone_id: buscar primero por nombre de supervisor, luego por nombre de zona
                 let zoneId: string | null = null;
                 if (row.supervisor?.trim()) {
-                    zoneId = zoneMap.get(row.supervisor.trim().toUpperCase()) || null;
+                    const key = row.supervisor.trim().toUpperCase();
+                    zoneId = supervisorMap.get(key) || zoneMap.get(key) || null;
                 }
 
                 // Upsert del perfil (sobrescribe lo que haya creado el trigger)

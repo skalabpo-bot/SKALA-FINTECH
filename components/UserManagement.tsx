@@ -48,7 +48,7 @@ export const UserManagement = () => {
   const [sendingReset, setSendingReset] = useState<string | null>(null);
 
   // Batch import state
-  type BatchRow = { nombre: string; email: string; cedula: string; rol: string; password: string; telefono: string; ciudad: string };
+  type BatchRow = { nombre: string; email: string; cedula: string; rol: string; password: string; telefono: string; ciudad: string; supervisor: string };
   type BatchResult = { nombre: string; email: string; cedula: string; status: 'creado' | 'omitido' | 'error'; motivo?: string };
   const [csvText, setCsvText] = useState('');
   const [parsedRows, setParsedRows] = useState<BatchRow[]>([]);
@@ -69,11 +69,12 @@ export const UserManagement = () => {
     }
   };
 
-  const TEMPLATE_HEADERS = 'nombre,email,cedula,rol,contraseña,telefono,ciudad';
+  const TEMPLATE_HEADERS = 'nombre,email,cedula,rol,contraseña,telefono,ciudad,supervisor';
   const TEMPLATE_EXAMPLE = [
     TEMPLATE_HEADERS,
-    'Juan Pérez,juan@skala.co,12345678,GESTOR,Clave123!,3001234567,Bogotá',
-    'María García,maria@skala.co,87654321,ANALISTA,Clave123!,3109876543,Medellín',
+    'Juan Pérez,juan@skala.co,12345678,GESTOR,Clave123!,3001234567,Bogotá,Carlos Rodríguez',
+    'María García,maria@skala.co,87654321,GESTOR,Clave123!,3109876543,Medellín,Zona Norte',
+    'Ana López,ana@skala.co,55667788,ANALISTA,Clave123!,3201112233,Cali,',
   ].join('\n');
 
   const parseCSV = (text: string): BatchRow[] => {
@@ -84,7 +85,7 @@ export const UserManagement = () => {
       const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
       const obj: any = {};
       headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
-      return { nombre: obj.nombre || '', email: obj.email || '', cedula: obj.cedula || '', rol: obj.rol || 'GESTOR', password: obj.password || obj['contrasena'] || '', telefono: obj.telefono || '', ciudad: obj.ciudad || '' };
+      return { nombre: obj.nombre || '', email: obj.email || '', cedula: obj.cedula || '', rol: obj.rol || 'GESTOR', password: obj.password || obj['contrasena'] || '', telefono: obj.telefono || '', ciudad: obj.ciudad || '', supervisor: obj.supervisor || '' };
     }).filter(r => r.email && r.cedula);
   };
 
@@ -419,7 +420,7 @@ export const UserManagement = () => {
                         <h3 className="font-bold text-slate-800 text-base mb-1 flex items-center gap-2">
                             <Upload size={18} className="text-primary"/> Importar Usuarios desde CSV
                         </h3>
-                        <p className="text-sm text-slate-500">Carga múltiples usuarios a la vez. Se omiten automáticamente los que ya existen por cédula o email.</p>
+                        <p className="text-sm text-slate-500">Carga múltiples gestores/usuarios a la vez. En la columna <strong>supervisor</strong> puedes poner el nombre del supervisor o el nombre de la zona. Se omiten automáticamente los que ya existen por cédula.</p>
                     </div>
 
                     {/* Template */}
@@ -439,7 +440,7 @@ export const UserManagement = () => {
                         <textarea
                             value={csvText}
                             onChange={e => { setCsvText(e.target.value); setParsedRows([]); setImportResults([]); }}
-                            placeholder={"nombre,email,cedula,rol,contraseña,telefono,ciudad,banco\nJuan Pérez,juan@email.com,12345678,GESTOR,Pass1234!,3001234567,Bogotá,Bancolombia"}
+                            placeholder={"nombre,email,cedula,rol,contraseña,telefono,ciudad,supervisor\nJuan Pérez,juan@email.com,12345678,GESTOR,Pass1234!,3001234567,Bogotá,Carlos Rodríguez"}
                             rows={6}
                             className="w-full border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
                         />
@@ -466,6 +467,7 @@ export const UserManagement = () => {
                                             <th className="p-3">Contraseña</th>
                                             <th className="p-3">Teléfono</th>
                                             <th className="p-3">Ciudad</th>
+                                            <th className="p-3">Supervisor</th>
                                             <th className="p-3">Estado</th>
                                         </tr>
                                     </thead>
@@ -481,6 +483,7 @@ export const UserManagement = () => {
                                                     <td className="p-3 text-slate-400 tracking-widest">{'•'.repeat(Math.min(row.password?.length || 0, 8))}</td>
                                                     <td className="p-3 text-slate-600">{row.telefono}</td>
                                                     <td className="p-3 text-slate-600">{row.ciudad}</td>
+                                                    <td className="p-3 text-slate-500">{row.supervisor || <span className="text-slate-300 italic">—</span>}</td>
                                                     <td className="p-3">
                                                         {result ? (
                                                             <div className="space-y-1">
