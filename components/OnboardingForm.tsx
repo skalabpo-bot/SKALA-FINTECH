@@ -167,6 +167,8 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     setStep(step + 1);
   };
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   const handleRadicar = async () => {
     if(!formData.monto || !formData.plazo || !formData.numeroDocumento) {
         return dispatchAlert("Monto, Plazo y Cédula son obligatorios.", "error");
@@ -180,6 +182,11 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     if (!gestorConfirm) {
         return dispatchAlert("Debes confirmar que los datos del cliente son verídicos para radicar.", "error");
     }
+    setShowConfirmModal(true);
+  };
+
+  const confirmarRadicacion = async () => {
+    setShowConfirmModal(false);
     setIsSubmitting(true);
     try {
       await MockService.createCredit(formData, currentUser);
@@ -473,6 +480,76 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
             </div>
           )}
       </div>
+
+      {/* Modal de confirmación de radicación */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-4 backdrop-blur-lg animate-fade-in">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-black text-slate-800 text-center mb-2">Confirmar Radicación</h3>
+            <p className="text-xs text-slate-400 text-center mb-6">Verifica las condiciones del crédito</p>
+
+            <div className="space-y-3 bg-slate-50 rounded-2xl p-5 mb-6">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Cliente</span>
+                <span className="text-sm font-black text-slate-800">{formData.nombreCompleto || `${formData.nombres || ''} ${formData.apellidos || ''}`.trim() || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Cédula</span>
+                <span className="text-sm font-black text-slate-800">{formData.numeroDocumento || 'N/A'}</span>
+              </div>
+              <div className="border-t border-slate-200 pt-2 flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Entidad</span>
+                <span className="text-sm font-black text-slate-800">{formData.entidadAliada || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Monto</span>
+                <span className="text-sm font-black text-green-600">${Number(formData.monto || 0).toLocaleString('es-CO')}</span>
+              </div>
+              {formData.montoDesembolso ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Monto Desembolso</span>
+                  <span className="text-sm font-black text-blue-600">${Number(formData.montoDesembolso).toLocaleString('es-CO')}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Plazo</span>
+                <span className="text-sm font-black text-slate-800">{formData.plazo} meses</span>
+              </div>
+              {formData.tasa ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Tasa</span>
+                  <span className="text-sm font-black text-slate-800">{formData.tasa}%</span>
+                </div>
+              ) : null}
+              {formData.lineaCredito ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Línea de Crédito</span>
+                  <span className="text-sm font-black text-slate-800">{formData.lineaCredito}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold">Documentos</span>
+                <span className="text-sm font-black text-slate-800">{formData.documents?.length || 0} archivo(s)</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-4 text-slate-400 font-black uppercase text-[11px] hover:text-slate-600 transition-all tracking-widest"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarRadicacion}
+                className="flex-[2] py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/30 transition-all uppercase text-[11px] tracking-widest hover:bg-orange-600 active:scale-95"
+              >
+                Confirmar y Radicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

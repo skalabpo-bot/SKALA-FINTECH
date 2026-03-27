@@ -290,8 +290,22 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     };
   };
 
+  /** Estado para modal de confirmación antes de radicar */
+  const [showConfirmRadicar, setShowConfirmRadicar] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<'radicar' | 'formulario'>('radicar');
+
   /** Opción 1: Radicar directamente con los datos disponibles */
   const handleRadicarAhora = async () => {
+    if (selectedSimIdx === null) {
+      alert('Debes seleccionar una tarjeta de oferta antes de radicar.');
+      return;
+    }
+    setConfirmMode('radicar');
+    setShowConfirmRadicar(true);
+  };
+
+  const confirmarRadicacion = async () => {
+    setShowConfirmRadicar(false);
     setIsCreating(true);
     try {
       const creditData = await buildCreditData();
@@ -307,6 +321,16 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
 
   /** Opción 2: Continuar llenando el formulario completo */
   const handleCompletarFormulario = async () => {
+    if (selectedSimIdx === null) {
+      alert('Debes seleccionar una tarjeta de oferta antes de continuar.');
+      return;
+    }
+    setConfirmMode('formulario');
+    setShowConfirmRadicar(true);
+  };
+
+  const confirmarCompletarFormulario = async () => {
+    setShowConfirmRadicar(false);
     setIsCreating(true);
     try {
       const creditData = await buildCreditData();
@@ -863,6 +887,76 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           </div>
         </div>
       )}
+
+      {/* Modal de confirmación antes de radicar */}
+      {showConfirmRadicar && selectedSimIdx !== null && (() => {
+        const sim = simulations[selectedSimIdx];
+        const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod);
+        return (
+          <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-4 backdrop-blur-lg animate-fade-in">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+              <h3 className="text-xl font-black text-slate-800 text-center mb-2">Confirmar Radicación</h3>
+              <p className="text-xs text-slate-400 text-center mb-6">Verifica las condiciones antes de continuar</p>
+
+              <div className="space-y-3 bg-slate-50 rounded-2xl p-5 mb-6">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Cliente</span>
+                  <span className="text-sm font-black text-slate-800">{clientData?.fullName || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Cédula</span>
+                  <span className="text-sm font-black text-slate-800">{clientData?.idNumber || 'N/A'}</span>
+                </div>
+                <div className="border-t border-slate-200 pt-2 flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Entidad</span>
+                  <span className="text-sm font-black text-slate-800">{sim.entityName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Producto</span>
+                  <span className="text-sm font-black text-slate-800">{sim.product}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Monto Aprobado</span>
+                  <span className="text-sm font-black text-green-600">${sim.maxAmount.toLocaleString('es-CO')}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Monto Desembolso</span>
+                  <span className="text-sm font-black text-blue-600">${disbursement.toLocaleString('es-CO')}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Plazo</span>
+                  <span className="text-sm font-black text-slate-800">{sim.term} meses</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Tasa</span>
+                  <span className="text-sm font-black text-slate-800">{sim.rate}%</span>
+                </div>
+                {lineaCredito && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-bold">Línea de Crédito</span>
+                    <span className="text-sm font-black text-slate-800">{lineaCredito}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowConfirmRadicar(false)}
+                  className="flex-1 py-4 text-slate-400 font-black uppercase text-[11px] hover:text-slate-600 transition-all tracking-widest"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => confirmMode === 'radicar' ? confirmarRadicacion() : confirmarCompletarFormulario()}
+                  className="flex-[2] py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/30 transition-all uppercase text-[11px] tracking-widest hover:bg-orange-600 active:scale-95"
+                >
+                  {confirmMode === 'radicar' ? 'Confirmar y Radicar' : 'Confirmar y Continuar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
     </SimulatorProvider>
   );
