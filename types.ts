@@ -152,6 +152,8 @@ export interface Credit {
   gestorZoneName?: string;
   assignedAnalystId?: string;
   analystName?: string;
+  assignedEntityAnalystId?: string;
+  entityAnalystName?: string;
   statusId: string;
 
   // --- CAMPOS OBLIGATORIOS SOLICITADOS ---

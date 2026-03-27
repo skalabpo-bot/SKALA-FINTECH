@@ -44,6 +44,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [analysts, setAnalysts] = useState<{ id: string; name: string }[]>([]);
   const [showAnalystModal, setShowAnalystModal] = useState(false);
   const [selectedAnalystId, setSelectedAnalystId] = useState('');
+  const [entityAnalysts, setEntityAnalysts] = useState<{ id: string; name: string }[]>([]);
+  const [showEntityAnalystModal, setShowEntityAnalystModal] = useState(false);
+  const [selectedEntityAnalystId, setSelectedEntityAnalystId] = useState('');
   const [creditLines, setCreditLines] = useState<string[]>(['LIBRE INVERSION', 'COMPRA DE CARTERA', 'RETANQUEO', 'LIBRE + SANEAMIENTO', 'COMPRA + SANEAMIENTO']);
 
   // Estado del modal de devolución con tareas
@@ -72,13 +75,14 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     MockService.getCreditReadsByCredit(creditId).then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads));
 
     const loadExtras = async () => {
-      const [ent, pag, cit, bnk, st, analystList, lines] = await Promise.all([MockService.getEntities(), MockService.getPagadurias(), MockService.getCities(), MockService.getBanks(), MockService.getStates(), MockService.getAnalysts ? MockService.getAnalysts() : Promise.resolve([]), MockService.getCreditLines()]);
+      const [ent, pag, cit, bnk, st, analystList, entityAnalystList, lines] = await Promise.all([MockService.getEntities(), MockService.getPagadurias(), MockService.getCities(), MockService.getBanks(), MockService.getStates(), MockService.getAnalysts ? MockService.getAnalysts() : Promise.resolve([]), ProductionService.getEntityAnalysts ? ProductionService.getEntityAnalysts() : Promise.resolve([]), MockService.getCreditLines()]);
       setEntities(ent);
       setPagadurias(pag);
       setCities(cit);
       setBanks(bnk);
       setStates(st);
       setAnalysts(analystList);
+      setEntityAnalysts(entityAnalystList);
       if (lines && lines.length > 0) setCreditLines(lines);
     };
     loadExtras();
@@ -359,6 +363,19 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
       }
   };
 
+  const handleAssignEntityAnalyst = async () => {
+      if (!selectedEntityAnalystId) return;
+      try {
+          await ProductionService.assignEntityAnalyst(credit!.id, selectedEntityAnalystId, currentUser);
+          setShowEntityAnalystModal(false);
+          setSelectedEntityAnalystId('');
+          await refreshData();
+          window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: "Analista de entidad asignado correctamente", type: 'success' } }));
+      } catch (err) {
+          window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: "Error al asignar analista de entidad", type: 'error' } }));
+      }
+  };
+
   if (loading) return <div className="flex justify-center p-24"><Loader2 className="animate-spin text-primary" size={48}/></div>;
   if (!credit) return <div className="p-10 text-center font-bold text-slate-400">Crédito no encontrado.</div>;
 
@@ -397,6 +414,17 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                        className="text-[9px] font-black text-primary bg-orange-50 hover:bg-orange-100 px-3 py-1 rounded-lg uppercase tracking-wider transition-all"
                    >
                        {credit.assignedAnalystId ? 'Cambiar Analista' : 'Asignar Analista'}
+                   </button>
+               )}
+               <span className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-wider ${credit.entityAnalystName ? 'text-purple-600 bg-purple-50' : 'text-slate-400 bg-slate-50'}`}>
+                   A. Entidad: {credit.entityAnalystName || 'Sin asignar'}
+               </span>
+               {['ADMIN', 'ANALISTA'].includes(currentUser.role) && (
+                   <button
+                       onClick={() => { setSelectedEntityAnalystId(credit.assignedEntityAnalystId || ''); setShowEntityAnalystModal(true); }}
+                       className="text-[9px] font-black text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-lg uppercase tracking-wider transition-all"
+                   >
+                       {credit.assignedEntityAnalystId ? 'Cambiar A. Entidad' : 'Asignar A. Entidad'}
                    </button>
                )}
                {currentUser.role === 'ADMIN' && (
@@ -1689,6 +1717,29 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                   <div className="flex gap-4">
                       <button onClick={() => setShowAnalystModal(false)} className="flex-1 py-5 text-slate-400 font-black uppercase text-[11px] hover:text-slate-600 transition-all tracking-widest">Cancelar</button>
                       <button onClick={handleAssignAnalyst} disabled={!selectedAnalystId} className="flex-[2] py-5 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-600/30 disabled:opacity-50 transition-all uppercase text-[11px] tracking-widest hover:bg-blue-700 active:scale-95">Asignar</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showEntityAnalystModal && (
+          <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-6 backdrop-blur-lg animate-fade-in">
+              <div className="bg-white rounded-[3.5rem] p-12 w-full max-w-lg shadow-[0_50px_100px_rgba(0,0,0,0.2)] border border-white/20">
+                  <h3 className="text-2xl font-display font-black text-slate-800 mb-4 tracking-tight text-center">Asignar Analista de Entidad</h3>
+                  <p className="text-xs text-slate-400 mb-8 font-bold text-center">Selecciona el analista de entidad que revisará este crédito</p>
+                  <select
+                      value={selectedEntityAnalystId}
+                      onChange={e => setSelectedEntityAnalystId(e.target.value)}
+                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold mb-8 focus:border-purple-400 outline-none"
+                  >
+                      <option value="">Seleccione un analista de entidad...</option>
+                      {entityAnalysts.map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                  </select>
+                  <div className="flex gap-4">
+                      <button onClick={() => setShowEntityAnalystModal(false)} className="flex-1 py-5 text-slate-400 font-black uppercase text-[11px] hover:text-slate-600 transition-all tracking-widest">Cancelar</button>
+                      <button onClick={handleAssignEntityAnalyst} disabled={!selectedEntityAnalystId} className="flex-[2] py-5 bg-purple-600 text-white font-black rounded-3xl shadow-2xl shadow-purple-600/30 disabled:opacity-50 transition-all uppercase text-[11px] tracking-widest hover:bg-purple-700 active:scale-95">Asignar</button>
                   </div>
               </div>
           </div>

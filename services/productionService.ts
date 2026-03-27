@@ -48,6 +48,8 @@ const mapCreditFromDB = (c: any): Credit => {
         gestorZoneName: c.gestor_profile?.zones?.name || undefined,
         assignedAnalystId: c.assigned_analyst_id || undefined,
         analystName: c.analyst_profile?.full_name || undefined,
+        assignedEntityAnalystId: c.assigned_entity_analyst_id || undefined,
+        entityAnalystName: c.entity_analyst_profile?.full_name || undefined,
         statusId: c.status_id,
         ...clientData,
         monto: Number(c.amount || 0),
@@ -120,6 +122,10 @@ export const ProductionService = {
         // Asegurar que SUPERVISOR_ASIGNADO siempre tenga VIEW_ZONE_CREDITS
         if (user.role === 'SUPERVISOR_ASIGNADO' && user.permissions && !user.permissions.includes('VIEW_ZONE_CREDITS' as Permission)) {
             user.permissions.push('VIEW_ZONE_CREDITS' as Permission);
+        }
+        // Asegurar que ANALISTA siempre tenga VIEW_ALL_CREDITS
+        if (user.role === 'ANALISTA' && user.permissions && !user.permissions.includes('VIEW_ALL_CREDITS' as Permission)) {
+            user.permissions.push('VIEW_ALL_CREDITS' as Permission);
         }
         return user;
     },
@@ -704,8 +710,8 @@ export const ProductionService = {
     getCredits: async (user: User) => {
         // Verificar y archivar créditos DEVUELTO vencidos (fire & forget)
         ProductionService.autoArchiveExpiredDevuelto().catch(() => {});
-        // Intentar con join de analista; si la columna no existe, fallback sin ella
-        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zones(name)), analyst_profile:assigned_analyst_id(full_name, phone)';
+        // Intentar con join de analista y analista de entidad; si la columna no existe, fallback sin ella
+        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zones(name)), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name, phone)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
@@ -725,10 +731,8 @@ export const ProductionService = {
             } else if (user.role === 'ANALISTA') {
                 query = query.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA_ENTIDAD') {
-                if (user.assignedEntities && user.assignedEntities.length > 0) {
-                    query = query.in('entity_name', user.assignedEntities);
-                }
-                // si no tiene entidades asignadas, puede ver todos
+                // Solo ve créditos que un analista le haya asignado explícitamente
+                query = query.eq('assigned_entity_analyst_id', user.id);
             } else {
                 query = query.eq('assigned_gestor_id', user.id);
             }
@@ -747,9 +751,7 @@ export const ProductionService = {
                 } else if (user.role === 'ANALISTA') {
                     fallbackQuery = fallbackQuery.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
                 } else if (user.role === 'ANALISTA_ENTIDAD') {
-                    if (user.assignedEntities && user.assignedEntities.length > 0) {
-                        fallbackQuery = fallbackQuery.in('entity_name', user.assignedEntities);
-                    }
+                    fallbackQuery = fallbackQuery.eq('assigned_entity_analyst_id', user.id);
                 } else {
                     fallbackQuery = fallbackQuery.eq('assigned_gestor_id', user.id);
                 }
@@ -763,7 +765,7 @@ export const ProductionService = {
 
     getCreditById: async (id: string) => {
       // Intentar con join de analista; fallback sin ella
-      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone)').eq('id', id).single();
+      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name, phone)').eq('id', id).single();
       if (!c) {
           // Fallback sin analyst join
           const fallback = await supabase.from('credits').select('*, profiles:assigned_gestor_id(full_name, phone)').eq('id', id).single();
@@ -1055,6 +1057,45 @@ export const ProductionService = {
             .eq('status', 'ACTIVE')
             .order('full_name');
         return (data || []).map((a: any) => ({ id: a.id, name: a.full_name }));
+    },
+
+    // Obtener lista de analistas de entidad activos
+    getEntityAnalysts: async (): Promise<{ id: string; name: string }[]> => {
+        const { data } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .eq('role', 'ANALISTA_ENTIDAD')
+            .eq('status', 'ACTIVE')
+            .order('full_name');
+        return (data || []).map((a: any) => ({ id: a.id, name: a.full_name }));
+    },
+
+    // Asignar analista de entidad a un crédito
+    assignEntityAnalyst: async (creditId: string, entityAnalystId: string, assignedBy: User) => {
+        const { data: analyst } = await supabase.from('profiles').select('full_name').eq('id', entityAnalystId).single();
+        await supabase.from('credits').update({
+            assigned_entity_analyst_id: entityAnalystId,
+            updated_at: new Date().toISOString()
+        }).eq('id', creditId);
+
+        await supabase.from('credit_history').insert({
+            credit_id: creditId,
+            user_id: assignedBy.id,
+            action: 'ASIGNACIÓN ANALISTA ENTIDAD',
+            description: `Analista de entidad asignado: ${analyst?.full_name || 'N/A'}`
+        });
+
+        // Notificar al analista de entidad
+        const { data: credit } = await supabase.from('credits').select('client_data').eq('id', creditId).single();
+        const clientName = credit?.client_data?.nombreCompleto || 'Cliente';
+        await supabase.from('notifications').insert({
+            user_id: entityAnalystId,
+            title: 'Crédito Asignado',
+            message: `Se te ha asignado el crédito de ${clientName} por ${assignedBy.name}.`,
+            type: 'info',
+            is_read: false,
+            credit_id: creditId
+        });
     },
 
     addComment: async (creditId: string, text: string, user: User, file?: File) => {
