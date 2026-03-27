@@ -2414,11 +2414,14 @@ export const ProductionService = {
         const { data: existing } = await supabase.from('profiles').select('cedula');
         const existingCedulas = new Set((existing || []).map((u: any) => String(u.cedula || '').trim()));
 
-        // Mapear supervisor por nombre de zona O por nombre del supervisor
+        // Mapear supervisor por nombre de zona, ID de zona, o nombre del supervisor
         const { data: zonesData } = await supabase.from('zones').select('id, name');
         const zoneMap = new Map<string, string>();
         (zonesData || []).forEach((z: any) => {
-            if (z.name && z.id) zoneMap.set(z.name.trim().toUpperCase(), z.id);
+            if (z.name && z.id) {
+                zoneMap.set(z.name.trim().toUpperCase(), z.id);
+                zoneMap.set(z.id.trim().toUpperCase(), z.id); // también por ID/UUID
+            }
         });
         // También mapear por nombre completo del supervisor
         const { data: supervisors } = await supabase.from('profiles').select('full_name, zone_id').eq('role', 'SUPERVISOR_ASIGNADO');
