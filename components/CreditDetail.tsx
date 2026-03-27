@@ -139,17 +139,24 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     }
   }, [credit?.statusId]);
 
-  // Cargar estado de autorización siempre al abrir el crédito
+  // Cargar estado de autorización siempre al abrir el crédito + polling en tiempo real
   useEffect(() => {
-    if (credit?.id) {
+    if (!credit?.id) return;
+    const fetchAuth = () => {
         ProductionService.getAuthorizationStatus(credit.id)
             .then((auth: any) => {
                 setAuthStatus(auth);
                 setAuthValUrl(auth?.validation_url || '');
             })
             .catch(() => setAuthStatus(null));
-    }
-  }, [credit?.id]);
+    };
+    fetchAuth();
+    // Polling cada 10s mientras está en docs legales y la autorización no está firmada
+    const interval = setInterval(() => {
+        if (activeTab === 'LEGAL_DOCS') fetchAuth();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [credit?.id, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'CHAT') {
@@ -959,6 +966,40 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                     <a href={authStatus.pdf_url} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 hover:underline">
                                         <Download size={12} /> Ver PDF
                                     </a>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Estado del OTP en tiempo real */}
+                        {authStatus && authStatus.status !== 'signed' && (
+                            <div className={`rounded-xl p-3 space-y-1 ${authStatus.otp_code ? (authStatus.otp_expires_at && new Date(authStatus.otp_expires_at) > new Date() ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200') : 'bg-slate-50 border border-slate-200'}`}>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-bold uppercase text-slate-500">Código OTP</p>
+                                    {authStatus.otp_code ? (
+                                        authStatus.otp_expires_at && new Date(authStatus.otp_expires_at) > new Date() ? (
+                                            <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold animate-pulse">ACTIVO</span>
+                                        ) : (
+                                            <span className="text-[10px] px-2 py-0.5 bg-red-100 text-red-600 rounded font-bold">EXPIRADO</span>
+                                        )
+                                    ) : (
+                                        <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded font-bold">NO SOLICITADO</span>
+                                    )}
+                                </div>
+                                {authStatus.otp_code && (
+                                    <>
+                                        <p className="text-lg font-mono font-bold tracking-[0.3em] text-center py-1">{authStatus.otp_code}</p>
+                                        {authStatus.otp_expires_at && (
+                                            <p className="text-[10px] text-center text-slate-500">
+                                                {new Date(authStatus.otp_expires_at) > new Date()
+                                                    ? `Expira: ${new Date(authStatus.otp_expires_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
+                                                    : `Expiró: ${new Date(authStatus.otp_expires_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
+                                                }
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                                {!authStatus.otp_code && (
+                                    <p className="text-xs text-slate-400 text-center py-1">El cliente aún no ha solicitado el código</p>
                                 )}
                             </div>
                         )}
