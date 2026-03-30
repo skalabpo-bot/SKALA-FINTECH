@@ -711,7 +711,7 @@ export const ProductionService = {
         // Verificar y archivar créditos DEVUELTO vencidos (fire & forget)
         ProductionService.autoArchiveExpiredDevuelto().catch(() => {});
         // Intentar con join de analista y analista de entidad; si la columna no existe, fallback sin ella
-        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zones(name)), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name, phone)';
+        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
@@ -765,7 +765,7 @@ export const ProductionService = {
 
     getCreditById: async (id: string) => {
       // Intentar con join de analista; fallback sin ella
-      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name, phone)').eq('id', id).single();
+      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)').eq('id', id).single();
       if (!c) {
           // Fallback sin analyst join
           const fallback = await supabase.from('credits').select('*, profiles:assigned_gestor_id(full_name, phone)').eq('id', id).single();
@@ -3130,7 +3130,7 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
         }
 
         let analysis: PolicyAnalysis;
-        const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+        const models = ['gemini-2.5-flash', 'gemini-2.5-flash-preview-05-20'];
 
         for (const model of models) {
             try {
