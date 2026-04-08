@@ -14,6 +14,55 @@ const API_KEYS: string[] = [
   import.meta.env.VITE_GEMINI_API_KEY_2,
   import.meta.env.VITE_GEMINI_API_KEY_3,
 ].filter(Boolean);
+
+// Cache de modelos disponibles (se refresca cada hora)
+const MODEL_CACHE_KEY = 'gemini_available_models';
+const MODEL_CACHE_TTL = 60 * 60 * 1000; // 1 hora
+
+/** Lista los modelos disponibles de Gemini y devuelve los mejores para generateContent */
+const getAvailableModels = async (apiKey: string): Promise<string[]> => {
+  try {
+    const cached = localStorage.getItem(MODEL_CACHE_KEY);
+    if (cached) {
+      const { models, ts } = JSON.parse(cached);
+      if (Date.now() - ts < MODEL_CACHE_TTL && models.length > 0) return models;
+    }
+  } catch (_) {}
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!res.ok) throw new Error('Failed to list models');
+    const data = await res.json();
+    const flashModels = (data.models || [])
+      .filter((m: any) =>
+        m.name?.includes('flash') &&
+        m.supportedGenerationMethods?.includes('generateContent')
+      )
+      .map((m: any) => m.name.replace('models/', ''))
+      .sort((a: string, b: string) => {
+        // Priorizar: gemini-2.0-flash > gemini-1.5-flash > otros
+        const score = (n: string) => {
+          if (n.includes('2.0-flash') && !n.includes('preview') && !n.includes('exp')) return 100;
+          if (n.includes('2.0-flash')) return 90;
+          if (n.includes('1.5-flash') && !n.includes('preview') && !n.includes('exp')) return 80;
+          if (n.includes('1.5-flash')) return 70;
+          if (n.includes('flash')) return 50;
+          return 10;
+        };
+        return score(b) - score(a);
+      });
+
+    const top = flashModels.slice(0, 3);
+    if (top.length > 0) {
+      try { localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({ models: top, ts: Date.now() })); } catch (_) {}
+    }
+    console.log('🔍 Modelos Gemini disponibles:', top);
+    return top.length > 0 ? top : ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  } catch (e) {
+    console.warn('No se pudo listar modelos, usando defaults:', e);
+    return ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  }
+};
 // ---------------------------------------------------------------------------
 
 const KEY_EXHAUSTED_STORAGE = 'gemini_exhausted_keys';
@@ -166,7 +215,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = ["gemini-2.0-flash-001", "gemini-1.5-flash"];
+  const modelsToTry = await getAvailableModels(availableKeys[0]);
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {
@@ -313,7 +362,7 @@ CAMPOS A EXTRAER:
 Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = ["gemini-2.0-flash-001", "gemini-1.5-flash"];
+  const modelsToTry = await getAvailableModels(availableKeys[0]);
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {
