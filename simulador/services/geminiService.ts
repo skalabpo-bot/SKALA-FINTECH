@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
 import { FinancialData, ClientData } from "../types";
 
 // CONSTANTES DE LÍMITE
@@ -7,6 +8,10 @@ const MAX_RPM = 15;
 const STORAGE_KEY = 'gemini_usage_logs';
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [2000, 4000, 8000]; // espera creciente en ms
+
+// OpenAI fallback
+const OPENAI_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
+const openai = OPENAI_KEY ? new OpenAI({ apiKey: OPENAI_KEY, dangerouslyAllowBrowser: true }) : null;
 
 // ---------------------------------------------------------------------------
 // 🔑 API KEYS — leídas desde variables de entorno (nunca hardcodeadas)
@@ -309,12 +314,46 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     }
   }
 
+  // Fallback: OpenAI GPT-4o
+  if (openai) {
+    try {
+      console.log('🔄 Fallback a OpenAI GPT-4o para desprendible...');
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
+            { type: 'text', text: prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido.' }
+          ]
+        }]
+      });
+      const text = response.choices[0]?.message?.content || '';
+      const data = JSON.parse(text);
+      console.log('✅ ÉXITO: Desprendible leído con OpenAI GPT-4o');
+      return {
+        monthlyIncome: data.monthlyIncome || 0,
+        mandatoryDeductions: data.mandatoryDeductions || 0,
+        otherDeductions: data.otherDeductions || 0,
+        embargos: data.embargos || 0,
+        detailedDeductions: data.detailedDeductions || [],
+        entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+        employerName: data.employerName || '',
+        manualQuota: data.manualQuota || 0
+      };
+    } catch (oaiErr: any) {
+      console.warn('❌ OpenAI fallback también falló:', oaiErr.message);
+      lastError = oaiErr;
+    }
+  }
+
   // Manejo de errores final
   let errorMsg = "No pudimos leer el documento automáticamente.";
   if (lastError) {
     const msg = lastError.message || '';
-    if (msg.includes('404')) errorMsg += " (Modelos IA no disponibles. Verifique nombres de modelo)";
-    else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada en todas las keys configuradas)";
+    if (msg.includes('404')) errorMsg += " (Modelos IA no disponibles)";
+    else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada)";
     else if (msg.includes('403')) errorMsg += " (API Key inválida o sin permisos)";
     else errorMsg += ` (${msg})`;
   }
@@ -462,10 +501,55 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
     }
   }
 
+  // Fallback: OpenAI GPT-4o
+  if (openai) {
+    try {
+      console.log('🔄 Fallback a OpenAI GPT-4o para cédula...');
+      const imageParts = images.map(img => ({
+        type: 'image_url' as const,
+        image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
+      }));
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            ...imageParts,
+            { type: 'text', text: prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido con los campos: fullName, firstName, lastName, idNumber, sex (M o F), birthDate, birthCity, expeditionDate, expeditionCity.' }
+          ]
+        }]
+      });
+      const text = response.choices[0]?.message?.content || '';
+      const data = JSON.parse(text);
+      console.log('✅ ÉXITO: Cédula leída con OpenAI GPT-4o');
+
+      let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
+      if (sex.length > 1) sex = sex[0];
+      const idNumber = (data.idNumber || '').replace(/\D/g, '');
+      const up = (v: any) => (v || '').toString().toUpperCase().trim();
+
+      return {
+        fullName: up(data.fullName),
+        firstName: up(data.firstName),
+        lastName: up(data.lastName),
+        idNumber,
+        sex,
+        birthDate: (data.birthDate || '').trim(),
+        birthCity: up(data.birthCity),
+        expeditionDate: (data.expeditionDate || '').trim(),
+        expeditionCity: up(data.expeditionCity),
+      };
+    } catch (oaiErr: any) {
+      console.warn('❌ OpenAI fallback también falló:', oaiErr.message);
+      lastError = oaiErr;
+    }
+  }
+
   let errorMsg = "No pudimos leer la cédula.";
   if (lastError) {
     const msg = lastError.message || '';
-    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada en todas las keys configuradas)";
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada)";
     else if (msg) errorMsg += ` (${msg})`;
   }
 

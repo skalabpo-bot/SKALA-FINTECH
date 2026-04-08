@@ -3180,10 +3180,63 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                 if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
                     if (attempt < MAX_IA_RETRIES) continue;
                 }
-                if (attempt >= MAX_IA_RETRIES) throw new Error('Error al analizar con IA: ' + msg);
+                if (attempt >= MAX_IA_RETRIES) break; // intentar OpenAI
             }
         }
 
-        throw new Error('No se pudo completar el análisis');
+        // Fallback: OpenAI GPT-4o
+        const oaiKey = import.meta.env.VITE_OPENAI_API_KEY;
+        if (oaiKey) {
+            try {
+                progress('Gemini no disponible. Intentando con OpenAI GPT-4o...');
+                const { default: OpenAI } = await import('openai');
+                const openaiClient = new OpenAI({ apiKey: oaiKey, dangerouslyAllowBrowser: true });
+
+                // Convertir parts a formato OpenAI
+                const oaiContent: any[] = [];
+                for (const p of parts) {
+                    if ('text' in p) oaiContent.push({ type: 'text', text: p.text });
+                    else if ('inlineData' in p) oaiContent.push({ type: 'image_url', image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } });
+                }
+                oaiContent.push({ type: 'text', text: '\n\nIMPORTANTE: Responde SOLO con JSON válido, sin markdown ni backticks.' });
+
+                const oaiResp = await openaiClient.chat.completions.create({
+                    model: 'gpt-4o',
+                    response_format: { type: 'json_object' },
+                    messages: [{ role: 'user', content: oaiContent }],
+                });
+                const oaiText = oaiResp.choices[0]?.message?.content || '';
+                const parsed = JSON.parse(oaiText);
+                analysis = {
+                    status: parsed.status || 'amarillo',
+                    resumen: parsed.resumen || 'Sin resumen disponible',
+                    hallazgos: (parsed.hallazgos || []).map((h: any) => ({
+                        tipo: h.tipo || 'RIESGO',
+                        descripcion: h.descripcion || '',
+                        severidad: h.severidad || 'medio',
+                    })),
+                    analyzedAt: new Date().toISOString(),
+                    entityName: creditData?.entity_name || 'General',
+                };
+
+                progress('Guardando resultado del análisis...');
+                const clientData = creditData?.client_data || {};
+                clientData.legalAnalysis = analysis;
+                await supabase.from('credits').update({ client_data: clientData }).eq('id', creditId);
+                await supabase.from('credit_history').insert({
+                    credit_id: creditId,
+                    action: 'ANÁLISIS IA',
+                    description: `Análisis de documentos legales (OpenAI): ${analysis.status.toUpperCase()} — ${analysis.hallazgos.length} hallazgo(s)`,
+                    user_id: user.id,
+                    user_name: user.name,
+                    user_role: user.role,
+                });
+                return analysis;
+            } catch (oaiErr: any) {
+                console.warn('❌ OpenAI fallback también falló:', oaiErr.message);
+            }
+        }
+
+        throw new Error('No se pudo completar el análisis. Gemini y OpenAI no disponibles.');
     },
 };
