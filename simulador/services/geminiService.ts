@@ -166,7 +166,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-preview-05-20"];
+  const modelsToTry = ["gemini-2.0-flash-001", "gemini-1.5-flash"];
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {
@@ -313,7 +313,7 @@ CAMPOS A EXTRAER:
 Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-preview-05-20"];
+  const modelsToTry = ["gemini-2.0-flash-001", "gemini-1.5-flash"];
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {

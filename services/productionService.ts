@@ -3130,7 +3130,7 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
         }
 
         let analysis: PolicyAnalysis;
-        const models = ['gemini-2.5-flash', 'gemini-2.5-flash-preview-05-20'];
+        const models = ['gemini-2.0-flash-001', 'gemini-1.5-flash'];
 
         for (const model of models) {
             try {
