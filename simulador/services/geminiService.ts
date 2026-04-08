@@ -325,13 +325,17 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
-            { type: 'text', text: prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido.' }
+            { type: 'text', text: prompt + `\n\nIMPORTANTE:
+1. Responde SOLO con JSON válido con esta estructura exacta:
+{"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}
+2. En detailedDeductions DEBES incluir CADA libranza, crédito, préstamo, cartera, cooperativa, seguro y cualquier otro descuento individual que NO sea salud, pensión o embargo. Cada uno como un objeto separado con su nombre exacto y monto.
+3. La suma de todos los amounts de detailedDeductions DEBE ser igual a otherDeductions.` }
           ]
         }]
       });
       const text = response.choices[0]?.message?.content || '';
       const data = JSON.parse(text);
-      console.log('✅ ÉXITO: Desprendible leído con OpenAI GPT-4o');
+      console.log('✅ ÉXITO: Desprendible leído con OpenAI GPT-4o', data);
       return {
         monthlyIncome: data.monthlyIncome || 0,
         mandatoryDeductions: data.mandatoryDeductions || 0,
