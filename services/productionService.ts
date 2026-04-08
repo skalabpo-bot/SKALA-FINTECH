@@ -3130,20 +3130,18 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
         }
 
         let analysis: PolicyAnalysis;
-        // Usar modelos del cache dinámico (geminiService los descubre) o defaults
-        let models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-        try {
-            const cachedModels = localStorage.getItem('gemini_available_models');
-            if (cachedModels) {
-                const { models: m, ts } = JSON.parse(cachedModels);
-                if (Date.now() - ts < 3600000 && m.length > 0) models = m;
-            }
-        } catch (_) {}
+        const MODEL_IA = 'gemini-2.5-flash';
+        const MAX_IA_RETRIES = 3;
+        const IA_DELAYS = [2000, 4000, 8000];
 
-        for (const model of models) {
+        for (let attempt = 0; attempt <= MAX_IA_RETRIES; attempt++) {
             try {
+                if (attempt > 0) {
+                    progress(`Reintentando análisis (${attempt}/${MAX_IA_RETRIES})...`);
+                    await new Promise(r => setTimeout(r, IA_DELAYS[attempt-1]));
+                }
                 const response = await ai.models.generateContent({
-                    model,
+                    model: MODEL_IA,
                     contents: [{ role: 'user', parts }],
                 });
                 const text = response.text?.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim() || '';
@@ -3177,8 +3175,12 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                 });
 
                 return analysis;
-            } catch (e) {
-                if (model === models[models.length - 1]) throw new Error('Error al analizar con IA: ' + (e as Error).message);
+            } catch (e: any) {
+                const msg = e.message || '';
+                if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
+                    if (attempt < MAX_IA_RETRIES) continue;
+                }
+                if (attempt >= MAX_IA_RETRIES) throw new Error('Error al analizar con IA: ' + msg);
             }
         }
 

@@ -5,6 +5,8 @@ import { FinancialData, ClientData } from "../types";
 // CONSTANTES DE LÍMITE
 const MAX_RPM = 15;
 const STORAGE_KEY = 'gemini_usage_logs';
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [2000, 4000, 8000]; // espera creciente en ms
 
 // ---------------------------------------------------------------------------
 // 🔑 API KEYS — leídas desde variables de entorno (nunca hardcodeadas)
@@ -226,19 +228,23 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = await getAvailableModels(availableKeys[0]);
+  // Usar solo gemini-2.5-flash (el único disponible) con retry en 503
+  const MODEL = 'gemini-2.5-flash';
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });
-    let hit429 = false;
 
-    for (const modelName of modelsToTry) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`📡 Intentando modelo: ${modelName} (key: ...${currentKey.slice(-6)})`);
+        if (attempt > 0) {
+          console.log(`⏳ Reintento ${attempt}/${MAX_RETRIES} en ${RETRY_DELAYS[attempt-1]/1000}s...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt-1]));
+        }
+        console.log(`📡 Intentando modelo: ${MODEL} (key: ...${currentKey.slice(-6)})${attempt > 0 ? ` [retry ${attempt}]` : ''}`);
 
         const response = await ai.models.generateContent({
-          model: modelName,
+          model: MODEL,
           contents: {
             parts: [
               { inlineData: { mimeType: mimeType, data: base64Data } },
@@ -274,7 +280,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
         });
 
         if (response.text) {
-          console.log(`✅ ÉXITO: Respuesta recibida del modelo ${modelName}`);
+          console.log(`✅ ÉXITO: Respuesta recibida del modelo ${MODEL}`);
           const data = JSON.parse(response.text);
           return {
             monthlyIncome: data.monthlyIncome || 0,
@@ -289,19 +295,17 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
         }
       } catch (error: any) {
         const msg = error.message || '';
-        console.warn(`❌ Modelo ${modelName} falló:`, msg);
+        console.warn(`❌ Modelo ${MODEL} falló (intento ${attempt+1}):`, msg);
         lastError = error;
         if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
-          hit429 = true;
-          break; // no probar más modelos con esta key
+          markKeyExhausted(currentKey);
+          break; // rotar key
         }
-        // otros errores (404, etc.) → probar siguiente modelo
+        if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
+          if (attempt < MAX_RETRIES) continue; // reintentar con espera
+        }
+        break; // 404 u otro error → no reintentar
       }
-    }
-
-    if (hit429) {
-      console.warn(`🔄 Key ...${currentKey.slice(-6)} agotada (429). Marcando y rotando...`);
-      markKeyExhausted(currentKey);
     }
   }
 
@@ -373,20 +377,23 @@ CAMPOS A EXTRAER:
 Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const modelsToTry = await getAvailableModels(availableKeys[0]);
+  const MODEL_CEDULA = 'gemini-2.5-flash';
   let lastError: any = null;
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });
-    let hit429 = false;
 
-    for (const modelName of modelsToTry) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`📡 Intentando modelo: ${modelName} (key: ...${currentKey.slice(-6)})`);
+        if (attempt > 0) {
+          console.log(`⏳ Reintento ${attempt}/${MAX_RETRIES} en ${RETRY_DELAYS[attempt-1]/1000}s...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt-1]));
+        }
+        console.log(`📡 Intentando modelo: ${MODEL_CEDULA} (key: ...${currentKey.slice(-6)})${attempt > 0 ? ` [retry ${attempt}]` : ''}`);
         const imageParts = images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.base64 } }));
 
         const response = await ai.models.generateContent({
-          model: modelName,
+          model: MODEL_CEDULA,
           contents: {
             parts: [
               ...imageParts,
@@ -414,12 +421,12 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
         });
 
         if (response.text) {
-          console.log(`✅ ÉXITO: Cédula leída con modelo ${modelName}`);
+          console.log(`✅ ÉXITO: Cédula leída con modelo ${MODEL_CEDULA}`);
           const data = JSON.parse(response.text);
 
           // Normalizar sexo — solo M o F
           let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
-          if (sex.length > 1) sex = sex[0]; // tomar solo el primer carácter
+          if (sex.length > 1) sex = sex[0];
 
           // Limpiar número de cédula — solo dígitos
           const idNumber = (data.idNumber || '').replace(/\D/g, '');
@@ -441,18 +448,17 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
         }
       } catch (error: any) {
         const msg = error.message || '';
-        console.warn(`❌ Modelo ${modelName} falló:`, msg);
+        console.warn(`❌ Modelo ${MODEL_CEDULA} falló (intento ${attempt+1}):`, msg);
         lastError = error;
         if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
-          hit429 = true;
-          break;
+          markKeyExhausted(currentKey);
+          break; // rotar key
         }
+        if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
+          if (attempt < MAX_RETRIES) continue;
+        }
+        break;
       }
-    }
-
-    if (hit429) {
-      console.warn(`🔄 Key ...${currentKey.slice(-6)} agotada (429). Marcando y rotando...`);
-      markKeyExhausted(currentKey);
     }
   }
 
