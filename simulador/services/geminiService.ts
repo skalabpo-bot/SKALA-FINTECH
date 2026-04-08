@@ -19,18 +19,22 @@ const API_KEYS: string[] = [
 const MODEL_CACHE_KEY = 'gemini_available_models';
 const MODEL_CACHE_TTL = 60 * 60 * 1000; // 1 hora
 
-// Limpiar cache de modelos viejos al cargar
-try { localStorage.removeItem(MODEL_CACHE_KEY); } catch (_) {}
+// Versión de cache — cambiar para invalidar cache de todos los usuarios
+const MODEL_CACHE_VERSION = 2;
 
 /** Lista los modelos disponibles de Gemini y devuelve los mejores para generateContent */
 const getAvailableModels = async (apiKey: string): Promise<string[]> => {
   try {
     const cached = localStorage.getItem(MODEL_CACHE_KEY);
     if (cached) {
-      const { models, ts } = JSON.parse(cached);
-      if (Date.now() - ts < MODEL_CACHE_TTL && models.length > 0) return models;
+      const { models, ts, v } = JSON.parse(cached);
+      // Invalidar si: expirado, versión vieja, o contiene modelos lite/descontinuados
+      const isValid = v === MODEL_CACHE_VERSION && Date.now() - ts < MODEL_CACHE_TTL && models.length > 0
+        && !models.some((m: string) => m.includes('lite') || m.includes('1.5') || m.includes('001'));
+      if (isValid) return models;
+      localStorage.removeItem(MODEL_CACHE_KEY);
     }
-  } catch (_) {}
+  } catch (_) { try { localStorage.removeItem(MODEL_CACHE_KEY); } catch (_) {} }
 
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -61,7 +65,7 @@ const getAvailableModels = async (apiKey: string): Promise<string[]> => {
 
     const top = flashModels.slice(0, 3);
     if (top.length > 0) {
-      try { localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({ models: top, ts: Date.now() })); } catch (_) {}
+      try { localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({ models: top, ts: Date.now(), v: MODEL_CACHE_VERSION })); } catch (_) {}
     }
     console.log('🔍 Modelos Gemini disponibles:', top);
     return top.length > 0 ? top : ['gemini-2.5-flash', 'gemini-2.0-flash'];
