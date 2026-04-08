@@ -3130,29 +3130,13 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
         }
 
         let analysis: PolicyAnalysis;
-        // Descubrir modelos disponibles dinámicamente
-        let models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+        // Usar modelos del cache dinámico (geminiService los descubre) o defaults
+        let models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
         try {
             const cachedModels = localStorage.getItem('gemini_available_models');
             if (cachedModels) {
                 const { models: m, ts } = JSON.parse(cachedModels);
                 if (Date.now() - ts < 3600000 && m.length > 0) models = m;
-            } else {
-                const apiKey = (window as any).__GEMINI_KEYS?.[0] || import.meta.env.VITE_GEMINI_API_KEY;
-                if (apiKey) {
-                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        const flash = (data.models || [])
-                            .filter((m: any) => m.name?.includes('flash') && m.supportedGenerationMethods?.includes('generateContent'))
-                            .map((m: any) => m.name.replace('models/', ''))
-                            .sort((a: string, b: string) => {
-                                const score = (n: string) => n.includes('2.0-flash') && !n.includes('preview') ? 100 : n.includes('2.0-flash') ? 90 : n.includes('1.5-flash') && !n.includes('preview') ? 80 : 50;
-                                return score(b) - score(a);
-                            }).slice(0, 3);
-                        if (flash.length > 0) { models = flash; localStorage.setItem('gemini_available_models', JSON.stringify({ models: flash, ts: Date.now() })); }
-                    }
-                }
             }
         } catch (_) {}
 

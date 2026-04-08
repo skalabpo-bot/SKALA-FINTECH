@@ -19,6 +19,9 @@ const API_KEYS: string[] = [
 const MODEL_CACHE_KEY = 'gemini_available_models';
 const MODEL_CACHE_TTL = 60 * 60 * 1000; // 1 hora
 
+// Limpiar cache de modelos viejos al cargar
+try { localStorage.removeItem(MODEL_CACHE_KEY); } catch (_) {}
+
 /** Lista los modelos disponibles de Gemini y devuelve los mejores para generateContent */
 const getAvailableModels = async (apiKey: string): Promise<string[]> => {
   try {
@@ -36,18 +39,22 @@ const getAvailableModels = async (apiKey: string): Promise<string[]> => {
     const flashModels = (data.models || [])
       .filter((m: any) =>
         m.name?.includes('flash') &&
-        m.supportedGenerationMethods?.includes('generateContent')
+        m.supportedGenerationMethods?.includes('generateContent') &&
+        !m.name?.includes('tts') &&
+        !m.name?.includes('image') &&
+        !m.name?.includes('lite')
       )
       .map((m: any) => m.name.replace('models/', ''))
       .sort((a: string, b: string) => {
-        // Priorizar: gemini-2.0-flash > gemini-1.5-flash > otros
         const score = (n: string) => {
-          if (n.includes('2.0-flash') && !n.includes('preview') && !n.includes('exp')) return 100;
-          if (n.includes('2.0-flash')) return 90;
-          if (n.includes('1.5-flash') && !n.includes('preview') && !n.includes('exp')) return 80;
-          if (n.includes('1.5-flash')) return 70;
-          if (n.includes('flash')) return 50;
-          return 10;
+          if (n === 'gemini-2.5-flash') return 200;
+          if (n === 'gemini-2.0-flash') return 150;
+          if (n.includes('2.5-flash') && !n.includes('preview')) return 140;
+          if (n.includes('2.0-flash') && !n.includes('preview')) return 130;
+          if (n.includes('2.5-flash')) return 120;
+          if (n.includes('2.0-flash')) return 110;
+          if (n.includes('3') && n.includes('flash')) return 100;
+          return 50;
         };
         return score(b) - score(a);
       });
@@ -57,10 +64,10 @@ const getAvailableModels = async (apiKey: string): Promise<string[]> => {
       try { localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({ models: top, ts: Date.now() })); } catch (_) {}
     }
     console.log('🔍 Modelos Gemini disponibles:', top);
-    return top.length > 0 ? top : ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    return top.length > 0 ? top : ['gemini-2.5-flash', 'gemini-2.0-flash'];
   } catch (e) {
     console.warn('No se pudo listar modelos, usando defaults:', e);
-    return ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    return ['gemini-2.5-flash', 'gemini-2.0-flash'];
   }
 };
 // ---------------------------------------------------------------------------
