@@ -6,7 +6,7 @@ import { ProductionService } from '../services/productionService';
 import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
-    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw, Star, Brain, AlertTriangle, CheckCircle, Info
+    RotateCcw, History, User as UserIcon, MapPin, Briefcase, DollarSign, CreditCard, Loader2, ShieldCheck, Trash, Users, Unlock, Lock, ClipboardList, Plus, CheckCircle2, FolderLock, Upload, Shield, ExternalLink, RefreshCw, Star, Brain, AlertTriangle, CheckCircle, XCircle, Info
 } from 'lucide-react';
 
 export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBack: () => void }> = ({ creditId, currentUser, onBack }) => {
@@ -612,6 +612,50 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                 <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Modo Subsanación Habilitado</p>
                                 <p className="text-xs text-amber-600 font-medium mt-0.5">El analista te habilitó la edición. Corrige los datos, guarda los cambios y usa el botón <strong>Subsanar Crédito</strong> para notificar.</p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* RESUMEN ANÁLISIS IA — visible para todos incluyendo gestores */}
+                    {credit?.legalAnalysis && (
+                        <div className={`rounded-2xl border-2 p-5 -mb-8 ${
+                            credit.legalAnalysis.status === 'verde' ? 'bg-green-50 border-green-200' :
+                            credit.legalAnalysis.status === 'amarillo' ? 'bg-yellow-50 border-yellow-200' :
+                            'bg-red-50 border-red-200'
+                        }`}>
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                                    credit.legalAnalysis.status === 'verde' ? 'bg-green-100' :
+                                    credit.legalAnalysis.status === 'amarillo' ? 'bg-yellow-100' :
+                                    'bg-red-100'
+                                }`}>
+                                    {credit.legalAnalysis.status === 'verde' ? <CheckCircle size={18} className="text-green-600"/> :
+                                     credit.legalAnalysis.status === 'amarillo' ? <AlertTriangle size={18} className="text-yellow-600"/> :
+                                     <XCircle size={18} className="text-red-600"/>}
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Análisis IA — Documentos Legales</p>
+                                    <p className={`text-xs font-bold ${
+                                        credit.legalAnalysis.status === 'verde' ? 'text-green-700' :
+                                        credit.legalAnalysis.status === 'amarillo' ? 'text-yellow-700' :
+                                        'text-red-700'
+                                    }`}>{credit.legalAnalysis.resumen}</p>
+                                </div>
+                            </div>
+                            {credit.legalAnalysis.hallazgos.length > 0 && (
+                                <div className="space-y-2 mt-3 pt-3 border-t border-slate-200/50">
+                                    {credit.legalAnalysis.hallazgos.map((h: any, i: number) => (
+                                        <div key={i} className={`flex items-start gap-2 p-2 rounded-xl text-xs ${
+                                            h.severidad === 'alto' ? 'bg-red-100/50 text-red-800' :
+                                            h.severidad === 'medio' ? 'bg-yellow-100/50 text-yellow-800' :
+                                            'bg-blue-100/50 text-blue-800'
+                                        }`}>
+                                            <span className="font-black text-[9px] uppercase shrink-0 mt-0.5 px-1.5 py-0.5 rounded bg-white/60">{h.tipo}</span>
+                                            <span className="font-medium">{h.descripcion}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="text-[9px] text-slate-400 mt-2">Analizado: {new Date(credit.legalAnalysis.analyzedAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
                     )}
 
