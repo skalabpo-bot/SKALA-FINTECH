@@ -41,6 +41,9 @@ export const AdminDashboard: React.FC = () => {
 
   // --- STATE: CSV UPLOAD ---
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvParsedFactors, setCsvParsedFactors] = useState<any[] | null>(null);
+  const [csvDetectedProducts, setCsvDetectedProducts] = useState<string[]>([]);
+  const [csvCommissions, setCsvCommissions] = useState<Record<string, number>>({});
 
   // --- STATE: ENTITY POLICIES MAP (for badge display) ---
   const [entitiesWithPolicy, setEntitiesWithPolicy] = useState<Set<string>>(new Set());
@@ -281,63 +284,40 @@ export const AdminDashboard: React.FC = () => {
 
   const handleCsvUpload = async () => {
       if (!csvFile || !editingEntity.name) return;
-      
+
       const reader = new FileReader();
       reader.onload = async (e) => {
           const text = e.target?.result as string;
           if (!text) return;
-          
+
           try {
-              // Normalize line endings to avoid issues with Windows/Mac
               const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
               const lines = normalizedText.split('\n');
               const newFactors: any[] = [];
-              
-              // Detect separator (semicolon for LatAm/Excel, comma for standard)
+
               const firstLine = lines.find(l => l.trim().length > 0);
               const separator = firstLine && firstLine.includes(';') ? ';' : ',';
               const isLatAmFormat = separator === ';';
 
+              const parseNum = (val: string) => {
+                  if (!val) return 0;
+                  let clean = val.replace(/[$\s]/g, '');
+                  if (isLatAmFormat) { clean = clean.replace(/\./g, ''); clean = clean.replace(',', '.'); }
+                  else { clean = clean.replace(/,/g, ''); }
+                  const result = parseFloat(clean);
+                  return isNaN(result) ? 0 : result;
+              };
+
               for (let i = 1; i < lines.length; i++) {
                   const line = lines[i].trim();
                   if (!line) continue;
-                  
-                  // Split by detected separator
                   const cols = line.split(separator).map(c => c.trim());
-                  
-                  // Columnas esperadas: Producto; Plazo; Tasa; Factor; Descuento(%)
-                  let pStr: string, tStr: string, rStr: string, fStr: string, dStr: string = '';
-                  if (cols.length >= 6) {
-                      // Con columna extra al inicio (id/entidad): ignorar col[0]
-                      pStr = cols[1]; tStr = cols[2]; rStr = cols[3]; fStr = cols[4]; dStr = cols[5] || '';
-                  } else if (cols.length === 5) {
-                      // Estándar con descuento: Producto, Plazo, Tasa, Factor, Descuento
-                      pStr = cols[0]; tStr = cols[1]; rStr = cols[2]; fStr = cols[3]; dStr = cols[4] || '';
-                  } else if (cols.length === 4) {
-                      // Sin columna descuento (compatibilidad hacia atrás)
-                      pStr = cols[0]; tStr = cols[1]; rStr = cols[2]; fStr = cols[3];
-                  } else {
-                      continue;
-                  }
 
-                  // Robust Number Parser for Colombia (1.234,56) vs US (1,234.56)
-                  const parseNum = (val: string) => {
-                      if (!val) return 0;
-                      let clean = val.replace(/[$\s]/g, ''); // Remove symbols
-                      
-                      if (isLatAmFormat) {
-                          // LATAM: Dots are thousands separators -> REMOVE THEM
-                          // Commas are decimals -> REPLACE WITH DOT
-                          clean = clean.replace(/\./g, ''); 
-                          clean = clean.replace(',', '.');
-                      } else {
-                          // US: Commas are thousands separators -> REMOVE THEM
-                          clean = clean.replace(/,/g, '');
-                      }
-                      
-                      const result = parseFloat(clean);
-                      return isNaN(result) ? 0 : result;
-                  };
+                  let pStr: string, tStr: string, rStr: string, fStr: string, dStr: string = '';
+                  if (cols.length >= 6) { pStr = cols[1]; tStr = cols[2]; rStr = cols[3]; fStr = cols[4]; dStr = cols[5] || ''; }
+                  else if (cols.length === 5) { pStr = cols[0]; tStr = cols[1]; rStr = cols[2]; fStr = cols[3]; dStr = cols[4] || ''; }
+                  else if (cols.length === 4) { pStr = cols[0]; tStr = cols[1]; rStr = cols[2]; fStr = cols[3]; }
+                  else continue;
 
                   let productEnum = ProductType.LIBRE_INVERSION;
                   const lowerProd = pStr ? pStr.toLowerCase() : '';
@@ -351,7 +331,6 @@ export const AdminDashboard: React.FC = () => {
                   const factorVal = parseNum(fStr);
                   const discountVal = parseNum(dStr);
 
-                  // Validations to prevent bad data
                   if (factorVal <= 0 || termVal <= 0) continue;
 
                   newFactors.push({
@@ -364,32 +343,18 @@ export const AdminDashboard: React.FC = () => {
               }
 
               if (newFactors.length === 0) {
-                  return showAlert(`No se encontraron datos válidos. \nVerifique el formato:\nSeparador: ${separator}\nColumnas esperadas: Producto, Plazo, Tasa, Factor`, "Error de Formato");
+                  return showAlert(`No se encontraron datos válidos.\nSeparador: ${separator}\nColumnas: Producto, Plazo, Tasa, Factor, Descuento`, "Error de Formato");
               }
 
-              // USE CUSTOM CONFIRMATION INSTEAD OF NATIVE CONFIRM
-              requestConfirm(
-                "Confirmar Importación Masiva", 
-                `Se reemplazarán TODOS los factores de ${editingEntity.name} con ${newFactors.length} registros encontrados en el CSV. ¿Desea continuar?`,
-                async () => {
-                    setIsLoading(true);
-                    try {
-                        const insertedCount = await importFactorsForEntity(editingEntity.name!, newFactors);
-                        await refreshEntityFactors(editingEntity.name!);
-                        setCsvFile(null);
-                        showAlert(`¡Éxito! Se importaron ${insertedCount} factores correctamente.`, "Importación Completada");
-                    } catch (err: any) {
-                        console.error("Error Import:", err);
-                        if (err.message?.includes('row-level security') || err.code === '42501') {
-                            showAlert("ERROR CRÍTICO DE PERMISOS (RLS):\n\nLa base de datos rechazó la carga masiva.\nDebe configurar las Políticas RLS en Supabase para permitir 'INSERT' a usuarios autenticados.", "Error de Permisos");
-                        } else {
-                            showAlert("Error en la base de datos: " + (err.message || err), "Error");
-                        }
-                    } finally {
-                        setIsLoading(false);
-                    }
-                }
-              );
+              // Detectar productos únicos y pedir comisión
+              const products = [...new Set(newFactors.map(f => f.product as string))].sort();
+              const existingComms = editingEntity.commissions || {};
+              const initialComms: Record<string, number> = {};
+              products.forEach(p => { initialComms[p] = existingComms[p] || 0; });
+
+              setCsvParsedFactors(newFactors);
+              setCsvDetectedProducts(products);
+              setCsvCommissions(initialComms);
 
           } catch (err) {
               showAlert("Error procesando CSV: " + err, "Excepción");
@@ -397,6 +362,72 @@ export const AdminDashboard: React.FC = () => {
           }
       };
       reader.readAsText(csvFile);
+  };
+
+  const handleConfirmCsvImport = async () => {
+      if (!csvParsedFactors || !editingEntity.name) return;
+      // Validar que todas las comisiones estén configuradas
+      const missingComm = csvDetectedProducts.filter(p => !csvCommissions[p] || csvCommissions[p] <= 0);
+      if (missingComm.length > 0) {
+          return showAlert(`Falta configurar la comisión para: ${missingComm.join(', ')}`, "Comisiones requeridas");
+      }
+
+      setIsLoading(true);
+      try {
+          const insertedCount = await importFactorsForEntity(editingEntity.name, csvParsedFactors);
+
+          // Actualizar comisiones en financial_entities
+          await supabase.from('financial_entities').update({ commissions: csvCommissions }).eq('name', editingEntity.name);
+
+          // Sincronizar con allied_entities
+          const ratesMap = new Map<number, number>();
+          for (const f of csvParsedFactors) {
+              const c = csvCommissions[f.product] || 0;
+              if (c > 0 && (!ratesMap.has(f.rate) || c > (ratesMap.get(f.rate) || 0))) {
+                  ratesMap.set(f.rate, c);
+              }
+          }
+          const rates = Array.from(ratesMap).map(([rate, commission]) => ({ rate, commission })).sort((a, b) => b.rate - a.rate);
+          if (rates.length > 0) {
+              const { data: existing } = await supabase.from('allied_entities').select('id').eq('name', editingEntity.name).single();
+              if (existing) await supabase.from('allied_entities').update({ rates }).eq('name', editingEntity.name);
+              else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
+          }
+
+          // Recalcular comisiones de créditos existentes de esta entidad
+          let creditosActualizados = 0;
+          try {
+              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount, client_data').eq('entity_name', editingEntity.name);
+              if (credits && credits.length > 0) {
+                  for (const c of credits) {
+                      const linea = c.client_data?.lineaCredito || '';
+                      const comm = csvCommissions[linea] || 0;
+                      if (comm > 0) {
+                          const newCommEst = (Number(c.amount) * comm) / 100;
+                          await supabase.from('credits').update({ commission_percent: comm, commission_est: newCommEst }).eq('id', c.id);
+                          creditosActualizados++;
+                      }
+                  }
+              }
+          } catch (syncErr) { console.warn('Error actualizando créditos:', syncErr); }
+
+          setEditingEntity(prev => ({ ...prev, commissions: csvCommissions }));
+          await refreshEntityFactors(editingEntity.name);
+          setCsvFile(null);
+          setCsvParsedFactors(null);
+          setCsvDetectedProducts([]);
+          setCsvCommissions({});
+          showAlert(`¡Éxito! Se importaron ${insertedCount} factores, comisiones actualizadas${creditosActualizados > 0 ? ` y ${creditosActualizados} crédito(s) recalculado(s)` : ''}.`, "Importación Completada");
+      } catch (err: any) {
+          console.error("Error Import:", err);
+          if (err.message?.includes('row-level security') || err.code === '42501') {
+              showAlert("ERROR CRÍTICO DE PERMISOS (RLS):\n\nLa base de datos rechazó la carga.\nConfigura las Políticas RLS en Supabase.", "Error de Permisos");
+          } else {
+              showAlert("Error en la base de datos: " + (err.message || err), "Error");
+          }
+      } finally {
+          setIsLoading(false);
+      }
   };
 
   // ==========================================
@@ -820,10 +851,51 @@ export const AdminDashboard: React.FC = () => {
                           Sube un archivo CSV para actualizar todos los factores.
                           <br/>Columnas: <code className="bg-white px-1 py-0.5 rounded border border-indigo-200 font-bold">Producto; Plazo; Tasa; Factor; Descuento</code>
                       </p>
-                      <input type="file" accept=".csv" className={fileInputClass} onChange={e => setCsvFile(e.target.files?.[0] || null)} />
-                      <button onClick={handleCsvUpload} disabled={!csvFile || !editingEntity.name} className="w-full mt-3 bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 shadow-md transition-all">
-                          Importar Base
-                      </button>
+                      <input type="file" accept=".csv" className={fileInputClass} onChange={e => { setCsvFile(e.target.files?.[0] || null); setCsvParsedFactors(null); setCsvDetectedProducts([]); }} />
+                      {!csvParsedFactors && (
+                          <button onClick={handleCsvUpload} disabled={!csvFile || !editingEntity.name} className="w-full mt-3 bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 shadow-md transition-all">
+                              Leer CSV
+                          </button>
+                      )}
+
+                      {/* Paso 2: Productos detectados + comisiones */}
+                      {csvParsedFactors && csvDetectedProducts.length > 0 && (
+                          <div className="mt-4 space-y-3">
+                              <div className="bg-white rounded-xl p-4 border border-indigo-200">
+                                  <p className="text-xs font-bold text-indigo-800 mb-1">{csvParsedFactors.length} factores encontrados</p>
+                                  <p className="text-[10px] text-indigo-600 mb-3">Configura la comisión del gestor para cada producto:</p>
+                                  {csvDetectedProducts.map(prod => (
+                                      <div key={prod} className="flex items-center gap-3 mb-2">
+                                          <span className="text-xs font-bold text-slate-700 w-32 truncate">{prod}</span>
+                                          <div className="relative flex-1">
+                                              <input
+                                                  type="number"
+                                                  min="0"
+                                                  max="20"
+                                                  step="0.1"
+                                                  className="w-full text-xs px-3 py-2 pr-7 border border-indigo-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 font-bold text-right"
+                                                  value={csvCommissions[prod] || ''}
+                                                  placeholder="0"
+                                                  onChange={e => {
+                                                      const val = e.target.value !== '' ? Number(e.target.value) : 0;
+                                                      setCsvCommissions(prev => ({ ...prev, [prod]: val }));
+                                                  }}
+                                              />
+                                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                              <div className="flex gap-2">
+                                  <button onClick={() => { setCsvParsedFactors(null); setCsvDetectedProducts([]); setCsvCommissions({}); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-slate-200 text-slate-600 hover:bg-slate-300">
+                                      Cancelar
+                                  </button>
+                                  <button onClick={handleConfirmCsvImport} disabled={isLoading} className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 shadow-md">
+                                      {isLoading ? 'Importando...' : 'Confirmar e Importar'}
+                                  </button>
+                              </div>
+                          </div>
+                      )}
                   </div>
               </div>
 

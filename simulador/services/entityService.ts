@@ -85,6 +85,40 @@ export const saveEntity = async (entity: Omit<FinancialEntity, 'id'>, id?: strin
       .insert([payload]);
     if (error) throw error;
   }
+
+  // Sincronizar con allied_entities (sistema principal) — convertir commissions a rates
+  try {
+    const comms = entity.commissions || {};
+    // Obtener tasas únicas de FPM para esta entidad
+    const { data: fpmRows } = await supabase.from('fpm_factors').select('rate').eq('entity_name', entity.name);
+    const uniqueRates = [...new Set((fpmRows || []).map((r: any) => Number(r.rate)))].sort((a, b) => b - a);
+    // Crear array de rates con la comisión más alta de los productos
+    const maxComm = Math.max(...Object.values(comms).map(Number), 0);
+    const rates = uniqueRates.map(rate => ({ rate, commission: maxComm }));
+    // Si hay comisiones por producto, usar la del primer producto encontrado
+    if (Object.keys(comms).length > 0) {
+      // Mapear cada tasa con su producto y comisión correspondiente
+      const { data: fpmDetailed } = await supabase.from('fpm_factors').select('rate, product').eq('entity_name', entity.name);
+      const ratesMap = new Map<number, number>();
+      for (const row of (fpmDetailed || [])) {
+        const r = Number(row.rate);
+        const c = comms[row.product] ?? maxComm;
+        if (!ratesMap.has(r) || c > (ratesMap.get(r) || 0)) ratesMap.set(r, c);
+      }
+      rates.length = 0;
+      for (const [rate, commission] of ratesMap) rates.push({ rate, commission });
+      rates.sort((a, b) => b.rate - a.rate);
+    }
+
+    const { data: existing } = await supabase.from('allied_entities').select('id').eq('name', entity.name).single();
+    if (existing) {
+      await supabase.from('allied_entities').update({ rates }).eq('name', entity.name);
+    } else {
+      await supabase.from('allied_entities').insert({ name: entity.name, rates });
+    }
+  } catch (syncErr) {
+    console.warn('Sync allied_entities falló (no crítico):', syncErr);
+  }
 };
 
 export const deleteEntity = async (id: string): Promise<void> => {
