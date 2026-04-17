@@ -46,7 +46,7 @@ export const AdminDashboard: React.FC = () => {
   const [csvCommissions, setCsvCommissions] = useState<Record<string, number>>({});
 
   // Generador de factores
-  const [genProduct, setGenProduct] = useState(ProductType.LIBRE_INVERSION);
+  const [genProduct, setGenProduct] = useState('');
   const [genRate, setGenRate] = useState('');
   const [genDiscount, setGenDiscount] = useState('');
   const [genPlazosText, setGenPlazosText] = useState('');
@@ -926,10 +926,8 @@ export const AdminDashboard: React.FC = () => {
                       <p className="text-xs text-amber-700 mb-4">Si no tienes los factores por millón, el sistema los calcula con la tasa y los plazos.</p>
                       <div className="space-y-3">
                           <div>
-                              <label className="text-[10px] uppercase font-bold text-slate-500">Producto</label>
-                              <select className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" value={genProduct} onChange={e => setGenProduct(e.target.value as any)}>
-                                  {Object.values(ProductType).map(p => <option key={p} value={p}>{p}</option>)}
-                              </select>
+                              <label className="text-[10px] uppercase font-bold text-slate-500">Nombre del Producto</label>
+                              <input type="text" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="Ej: Oro, Platino, Libre Inversión" value={genProduct} onChange={e => setGenProduct(e.target.value as any)} />
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                               <div>
@@ -953,7 +951,7 @@ export const AdminDashboard: React.FC = () => {
                               onClick={() => {
                                   const rate = Number(genRate);
                                   const discount = Number(genDiscount);
-                                  if (!rate || !genPlazosText.trim()) return;
+                                  if (!rate || !genPlazosText.trim() || !genProduct.trim()) return;
                                   const plazos = genPlazosText.split(',').map(p => Number(p.trim())).filter(p => p > 0);
                                   const tasaMensual = rate / 100;
                                   const factors = plazos.map(term => {
@@ -968,7 +966,7 @@ export const AdminDashboard: React.FC = () => {
                                   });
                                   setGenPreview(factors);
                               }}
-                              disabled={!genRate || !genPlazosText.trim()}
+                              disabled={!genRate || !genPlazosText.trim() || !genProduct.trim()}
                               className="w-full bg-amber-500 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-amber-600 shadow-md transition-all"
                           >
                               Calcular Factores
