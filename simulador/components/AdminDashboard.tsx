@@ -394,13 +394,14 @@ export const AdminDashboard: React.FC = () => {
               else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
           }
 
-          // Recalcular comisiones de créditos existentes — comisión es por PRODUCTO (determinado por tasa)
+          // Recalcular comisiones SOLO de créditos del mes actual
           const rateToProduct = new Map<number, string>();
           for (const f of csvParsedFactors) { if (!rateToProduct.has(f.rate)) rateToProduct.set(f.rate, f.product); }
+          const firstOfMonth = new Date(); firstOfMonth.setDate(1); firstOfMonth.setHours(0,0,0,0);
 
           let creditosActualizados = 0;
           try {
-              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name);
+              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name).gte('created_at', firstOfMonth.toISOString());
               if (credits && credits.length > 0) {
                   for (const c of credits) {
                       const product = rateToProduct.get(Number(c.interest_rate));
@@ -868,8 +869,9 @@ export const AdminDashboard: React.FC = () => {
                                               // Recalcular créditos existentes — comisión por PRODUCTO (determinado por tasa)
                                               const rateToProduct2 = new Map<number, string>();
                                               for (const f of currentEntityFactors) { if (!rateToProduct2.has(f.rate)) rateToProduct2.set(f.rate, f.product); }
+                                              const fom = new Date(); fom.setDate(1); fom.setHours(0,0,0,0);
                                               let updated = 0;
-                                              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name);
+                                              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name).gte('created_at', fom.toISOString());
                                               if (credits) {
                                                   for (const c of credits) {
                                                       const product = rateToProduct2.get(Number(c.interest_rate));
