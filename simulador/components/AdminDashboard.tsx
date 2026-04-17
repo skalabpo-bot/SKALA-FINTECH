@@ -328,19 +328,30 @@ export const AdminDashboard: React.FC = () => {
                   else if (cols.length === 4) { pStr = cols[0]; tStr = cols[1]; rStr = cols[2]; fStr = cols[3]; }
                   else continue;
 
-                  let productEnum = ProductType.LIBRE_INVERSION;
-                  const lowerProd = pStr ? pStr.toLowerCase() : '';
-                  if (lowerProd.includes('oro')) productEnum = ProductType.ORO;
-                  else if (lowerProd.includes('platino')) productEnum = ProductType.PLATINO;
-                  else if (lowerProd.includes('zafiro')) productEnum = ProductType.ZAFIRO;
-                  else if (lowerProd.includes('cartera')) productEnum = ProductType.COMPRA_CARTERA;
+                  // Detectar producto: mapear a enum conocido o usar nombre del CSV
+                  let productEnum: string = pStr.trim() || ProductType.LIBRE_INVERSION;
+                  const lowerProd = pStr ? pStr.toLowerCase().trim() : '';
+                  if (lowerProd.includes('oro') || lowerProd === 'oro') productEnum = ProductType.ORO;
+                  else if (lowerProd.includes('platino') || lowerProd === 'platino') productEnum = ProductType.PLATINO;
+                  else if (lowerProd.includes('zafiro') || lowerProd === 'zafiro') productEnum = ProductType.ZAFIRO;
+                  else if (lowerProd.includes('cartera') || lowerProd === 'compra de cartera') productEnum = ProductType.COMPRA_CARTERA;
+                  else if (lowerProd.includes('libre') || lowerProd === 'libre inversion') productEnum = ProductType.LIBRE_INVERSION;
 
                   const termVal = parseNum(tStr);
                   const rateVal = parseNum(rStr);
-                  const factorVal = parseNum(fStr);
+                  let factorVal = parseNum(fStr);
                   const discountVal = parseNum(dStr);
 
-                  if (factorVal <= 0 || termVal <= 0) continue;
+                  if (termVal <= 0 || rateVal <= 0) continue;
+
+                  // Si no trae factor, calcularlo automáticamente
+                  if (factorVal <= 0 && rateVal > 0 && termVal > 0) {
+                      const tasaMensual = rateVal / 100;
+                      factorVal = tasaMensual / (1 - Math.pow(1 + tasaMensual, -termVal));
+                      factorVal = Math.round(factorVal * 100000000) / 100000000;
+                  }
+
+                  if (factorVal <= 0) continue;
 
                   newFactors.push({
                       product: productEnum,
@@ -906,18 +917,8 @@ export const AdminDashboard: React.FC = () => {
                       })()}
                   </div>
 
-                  {/* Toggle: CSV vs Generar */}
-                  <div className="flex rounded-xl overflow-hidden border border-slate-200 shadow-sm">
-                      <button onClick={() => setFactorMode('csv')} className={`flex-1 py-2.5 text-xs font-bold transition-all ${factorMode === 'csv' ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>
-                          Tengo Factores (CSV)
-                      </button>
-                      <button onClick={() => setFactorMode('generate')} className={`flex-1 py-2.5 text-xs font-bold transition-all ${factorMode === 'generate' ? 'bg-amber-500 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>
-                          Calcular Factores
-                      </button>
-                  </div>
-
-                  {factorMode === 'generate' && (
-                  /* Generador automático de factores */
+                  {/* Generador automático de factores (standalone) */}
+                  {false && (
                   <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 shadow-sm">
                       <h4 className="text-amber-900 font-bold mb-2 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V13.5zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V18zm2.498-6.75h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V13.5zm0 2.25h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V18zm2.504-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zm0 2.25h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V18zm2.498-6.75h.008v.008H18v-.008zm0 2.25h.008v.008H18V13.5zM9.75 9h4.5" /></svg>
@@ -1034,15 +1035,15 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                   )}
 
-                  {factorMode === 'csv' && (
+                  {/* Carga CSV — si el factor viene en 0 o vacío, lo calcula automáticamente */}
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
                       <h4 className="text-indigo-900 font-bold mb-2 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
                         Carga Masiva (CSV)
                       </h4>
                       <p className="text-xs text-indigo-700 mb-4 leading-relaxed">
-                          Sube un archivo CSV para actualizar todos los factores.
-                          <br/>Columnas: <code className="bg-white px-1 py-0.5 rounded border border-indigo-200 font-bold">Producto; Plazo; Tasa; Factor; Descuento</code>
+                          Sube un archivo CSV. Si no tienes los factores, déjalos en 0 y se calculan automáticamente.
+                          <br/>Columnas: <code className="bg-white px-1 py-0.5 rounded border border-indigo-200 font-bold">Producto; Plazo; Tasa; Factor (o 0); Descuento</code>
                       </p>
                       <input type="file" accept=".csv" className={fileInputClass} onChange={e => { setCsvFile(e.target.files?.[0] || null); setCsvParsedFactors(null); setCsvDetectedProducts([]); }} />
                       {!csvParsedFactors && (
