@@ -216,18 +216,21 @@ export const ProductionService = {
         const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, ...rest } = formData;
         const states = await ProductionService.getStates();
 
-        // Buscar comisión en financial_entities (simulador admin — fuente de verdad)
+        // Buscar comisión por PRODUCTO (determinado por tasa) en financial_entities
         let commPercent = 0;
         try {
-            const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entidadAliada).single();
-            if (finEntity?.commissions && lineaCredito) {
-                // commissions es Record<string, number>, ej: {"Libre Inversión": 3.5}
-                commPercent = finEntity.commissions[lineaCredito] || 0;
+            // 1. Buscar qué producto tiene esta tasa en los factores FPM
+            const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entidadAliada).eq('rate', Number(tasa)).limit(1).single();
+            const product = fpmRow?.product || '';
+            // 2. Buscar la comisión de ese producto en financial_entities
+            if (product) {
+                const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entidadAliada).single();
+                commPercent = finEntity?.commissions?.[product] || 0;
             }
-            // Si no hay comisión por producto, buscar en allied_entities como fallback
+            // 3. Fallback: buscar en allied_entities por tasa
             if (!commPercent) {
-                const { data: alliedEntities } = await supabase.from('allied_entities').select('rates').eq('name', entidadAliada).single();
-                const rateConfig = alliedEntities?.rates?.find((r: any) => r.rate === Number(tasa));
+                const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entidadAliada).single();
+                const rateConfig = alliedEntity?.rates?.find((r: any) => r.rate === Number(tasa));
                 commPercent = rateConfig?.commission || 0;
             }
         } catch (_) {}
@@ -433,14 +436,15 @@ export const ProductionService = {
         const finalDesembolso = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
 
         // Recalcular comisión basada en entidad y tasa
-        // Buscar comisión en financial_entities (simulador admin — fuente de verdad)
+        // Buscar comisión por PRODUCTO (determinado por tasa) en financial_entities
         const entityName = entidadAliada || previousData.entity_name || '';
-        const creditLine = lineaCredito || previousData.client_data?.lineaCredito || '';
         let commPercent = 0;
         try {
-            const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entityName).single();
-            if (finEntity?.commissions && creditLine) {
-                commPercent = finEntity.commissions[creditLine] || 0;
+            const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entityName).eq('rate', finalTasa).limit(1).single();
+            const product = fpmRow?.product || '';
+            if (product) {
+                const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entityName).single();
+                commPercent = finEntity?.commissions?.[product] || 0;
             }
             if (!commPercent) {
                 const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entityName).single();

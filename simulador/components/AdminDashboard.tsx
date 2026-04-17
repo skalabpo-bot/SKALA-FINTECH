@@ -394,14 +394,17 @@ export const AdminDashboard: React.FC = () => {
               else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
           }
 
-          // Recalcular comisiones de créditos existentes de esta entidad
+          // Recalcular comisiones de créditos existentes — comisión es por PRODUCTO (determinado por tasa)
+          const rateToProduct = new Map<number, string>();
+          for (const f of csvParsedFactors) { if (!rateToProduct.has(f.rate)) rateToProduct.set(f.rate, f.product); }
+
           let creditosActualizados = 0;
           try {
-              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount, client_data').eq('entity_name', editingEntity.name);
+              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name);
               if (credits && credits.length > 0) {
                   for (const c of credits) {
-                      const linea = c.client_data?.lineaCredito || '';
-                      const comm = csvCommissions[linea] || 0;
+                      const product = rateToProduct.get(Number(c.interest_rate));
+                      const comm = product ? (csvCommissions[product] || 0) : 0;
                       if (comm > 0) {
                           const newCommEst = (Number(c.amount) * comm) / 100;
                           await supabase.from('credits').update({ commission_percent: comm, commission_est: newCommEst }).eq('id', c.id);
@@ -862,13 +865,15 @@ export const AdminDashboard: React.FC = () => {
                                                   if (existing) await supabase.from('allied_entities').update({ rates }).eq('name', editingEntity.name);
                                                   else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
                                               }
-                                              // Recalcular créditos existentes
+                                              // Recalcular créditos existentes — comisión por PRODUCTO (determinado por tasa)
+                                              const rateToProduct2 = new Map<number, string>();
+                                              for (const f of currentEntityFactors) { if (!rateToProduct2.has(f.rate)) rateToProduct2.set(f.rate, f.product); }
                                               let updated = 0;
-                                              const { data: credits } = await supabase.from('credits').select('id, amount, client_data').eq('entity_name', editingEntity.name);
+                                              const { data: credits } = await supabase.from('credits').select('id, interest_rate, amount').eq('entity_name', editingEntity.name);
                                               if (credits) {
                                                   for (const c of credits) {
-                                                      const linea = c.client_data?.lineaCredito || '';
-                                                      const comm = editingEntity.commissions[linea] || 0;
+                                                      const product = rateToProduct2.get(Number(c.interest_rate));
+                                                      const comm = product ? (editingEntity.commissions?.[product] || 0) : 0;
                                                       if (comm > 0) {
                                                           await supabase.from('credits').update({ commission_percent: comm, commission_est: (Number(c.amount) * comm) / 100 }).eq('id', c.id);
                                                           updated++;
