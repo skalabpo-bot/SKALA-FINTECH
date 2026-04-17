@@ -732,38 +732,6 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Comisiones por Producto */}
-                          <div className="bg-green-50 p-4 rounded-xl border border-green-200">
-                            <h5 className="text-xs font-bold text-green-800 uppercase tracking-wide mb-3">Comisiones por Producto (%)</h5>
-                            <p className="text-[10px] text-green-700 mb-3">Porcentaje de comisión que gana el asesor sobre el monto aprobado</p>
-                            <div className="space-y-2">
-                              {['Libre Inversión', 'Compra de Cartera', 'Oro', 'Platino', 'Zafiro'].map(prod => (
-                                <div key={prod} className="flex items-center gap-3">
-                                  <span className="text-xs font-semibold text-slate-700 w-36 flex-shrink-0">{prod}</span>
-                                  <div className="relative flex-1">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="20"
-                                      step="0.1"
-                                      className="w-full text-xs px-3 py-2 pr-7 border border-green-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-green-400 font-bold text-right"
-                                      value={editingEntity.commissions?.[prod] ?? ''}
-                                      placeholder="0"
-                                      onChange={e => {
-                                        const val = e.target.value !== '' ? Number(e.target.value) : undefined;
-                                        const updated = { ...(editingEntity.commissions ?? {}) };
-                                        if (val !== undefined) updated[prod] = val;
-                                        else delete updated[prod];
-                                        setEditingEntity({...editingEntity, commissions: updated});
-                                      }}
-                                    />
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
                           {/* URL de Validación de Identidad */}
                           <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
                             <h5 className="text-xs font-bold text-indigo-800 uppercase tracking-wide mb-2">Consulta y Validación de Identidad</h5>
