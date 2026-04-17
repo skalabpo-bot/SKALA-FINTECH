@@ -45,14 +45,6 @@ export const AdminDashboard: React.FC = () => {
   const [csvDetectedProducts, setCsvDetectedProducts] = useState<string[]>([]);
   const [csvCommissions, setCsvCommissions] = useState<Record<string, number>>({});
 
-  // Generador de factores
-  const [genProduct, setGenProduct] = useState('');
-  const [genRate, setGenRate] = useState('');
-  const [genDiscount, setGenDiscount] = useState('');
-  const [genPlazosText, setGenPlazosText] = useState('');
-  const [genCommission, setGenCommission] = useState('');
-  const [genPreview, setGenPreview] = useState<any[]>([]);
-  const [factorMode, setFactorMode] = useState<'csv' | 'generate'>('csv');
 
   // --- STATE: ENTITY POLICIES MAP (for badge display) ---
   const [entitiesWithPolicy, setEntitiesWithPolicy] = useState<Set<string>>(new Set());
@@ -917,124 +909,6 @@ export const AdminDashboard: React.FC = () => {
                       })()}
                   </div>
 
-                  {/* Generador automático de factores (standalone) */}
-                  {false && (
-                  <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 shadow-sm">
-                      <h4 className="text-amber-900 font-bold mb-2 flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V13.5zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V18zm2.498-6.75h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V13.5zm0 2.25h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V18zm2.504-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zm0 2.25h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V18zm2.498-6.75h.008v.008H18v-.008zm0 2.25h.008v.008H18V13.5zM9.75 9h4.5" /></svg>
-                        Generar Factores Automáticamente
-                      </h4>
-                      <p className="text-xs text-amber-700 mb-4">Si no tienes los factores por millón, el sistema los calcula con la tasa y los plazos.</p>
-                      <div className="space-y-3">
-                          <div>
-                              <label className="text-[10px] uppercase font-bold text-slate-500">Nombre del Producto</label>
-                              <input type="text" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="Ej: Oro, Platino, Libre Inversión" value={genProduct} onChange={e => setGenProduct(e.target.value as any)} />
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                              <div>
-                                  <label className="text-[10px] uppercase font-bold text-slate-500">Tasa % NMV</label>
-                                  <input type="number" step="0.01" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="1.85" value={genRate} onChange={e => setGenRate(e.target.value)} />
-                              </div>
-                              <div>
-                                  <label className="text-[10px] uppercase font-bold text-slate-500">Descuento %</label>
-                                  <input type="number" step="0.1" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="17.5" value={genDiscount} onChange={e => setGenDiscount(e.target.value)} />
-                              </div>
-                              <div>
-                                  <label className="text-[10px] uppercase font-bold text-slate-500">Comisión %</label>
-                                  <input type="number" step="0.1" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="6" value={genCommission} onChange={e => setGenCommission(e.target.value)} />
-                              </div>
-                          </div>
-                          <div>
-                              <label className="text-[10px] uppercase font-bold text-slate-500">Plazos (separados por coma)</label>
-                              <input type="text" className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white text-sm font-bold" placeholder="36, 48, 60, 72, 84, 96" value={genPlazosText} onChange={e => setGenPlazosText(e.target.value)} />
-                          </div>
-                          <button
-                              onClick={() => {
-                                  const rate = Number(genRate);
-                                  const discount = Number(genDiscount);
-                                  if (!rate || !genPlazosText.trim() || !genProduct.trim()) return;
-                                  const plazos = genPlazosText.split(',').map(p => Number(p.trim())).filter(p => p > 0);
-                                  const tasaMensual = rate / 100;
-                                  const factors = plazos.map(term => {
-                                      const factor = tasaMensual / (1 - Math.pow(1 + tasaMensual, -term));
-                                      return {
-                                          product: genProduct,
-                                          termMonths: term,
-                                          rate,
-                                          factor: Math.round(factor * 100000000) / 100000000,
-                                          discountPct: discount || 0,
-                                      };
-                                  });
-                                  setGenPreview(factors);
-                              }}
-                              disabled={!genRate || !genPlazosText.trim() || !genProduct.trim()}
-                              className="w-full bg-amber-500 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-amber-600 shadow-md transition-all"
-                          >
-                              Calcular Factores
-                          </button>
-
-                          {genPreview.length > 0 && (
-                              <div className="mt-3 space-y-2">
-                                  <div className="bg-white rounded-xl p-3 border border-amber-200 max-h-48 overflow-auto">
-                                      <table className="w-full text-xs">
-                                          <thead><tr className="text-slate-500 font-bold"><th className="text-left py-1">Producto</th><th>Plazo</th><th>Tasa</th><th>Factor</th><th>Desc%</th></tr></thead>
-                                          <tbody>
-                                              {genPreview.map((f, i) => (
-                                                  <tr key={i} className="border-t border-slate-100">
-                                                      <td className="py-1 font-bold">{f.product}</td>
-                                                      <td className="text-center">{f.termMonths}m</td>
-                                                      <td className="text-center">{f.rate}%</td>
-                                                      <td className="text-center font-mono text-amber-700">{f.factor.toFixed(8)}</td>
-                                                      <td className="text-center">{f.discountPct}%</td>
-                                                  </tr>
-                                              ))}
-                                          </tbody>
-                                      </table>
-                                  </div>
-                                  <button
-                                      onClick={async () => {
-                                          if (!editingEntity.name) return;
-                                          setIsLoading(true);
-                                          try {
-                                              const insertedCount = await importFactorsForEntity(editingEntity.name, genPreview);
-                                              // Guardar comisión del producto
-                                              const comm = Number(genCommission);
-                                              if (comm > 0) {
-                                                  const updatedComms = { ...(editingEntity.commissions || {}), [genProduct]: comm };
-                                                  await supabase.from('financial_entities').update({ commissions: updatedComms }).eq('name', editingEntity.name);
-                                                  // Sync allied_entities
-                                                  const ratesMap = new Map<number, number>();
-                                                  for (const f of [...currentEntityFactors, ...genPreview]) {
-                                                      const c2 = updatedComms[f.product] || 0;
-                                                      if (c2 > 0 && (!ratesMap.has(f.rate) || c2 > (ratesMap.get(f.rate) || 0))) ratesMap.set(f.rate, c2);
-                                                  }
-                                                  const rates = Array.from(ratesMap).map(([r, c2]) => ({ rate: r, commission: c2 })).sort((a, b) => b.rate - a.rate);
-                                                  if (rates.length > 0) {
-                                                      const { data: existing } = await supabase.from('allied_entities').select('id').eq('name', editingEntity.name).single();
-                                                      if (existing) await supabase.from('allied_entities').update({ rates }).eq('name', editingEntity.name);
-                                                      else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
-                                                  }
-                                                  setEditingEntity(prev => ({ ...prev, commissions: updatedComms }));
-                                              }
-                                              await refreshEntityFactors(editingEntity.name);
-                                              setGenPreview([]);
-                                              setGenRate(''); setGenDiscount(''); setGenPlazosText(''); setGenCommission('');
-                                              showAlert(`¡Éxito! Se generaron ${insertedCount} factores${comm > 0 ? ' y comisión configurada' : ''}.`, "Factores Generados");
-                                          } catch (err: any) {
-                                              showAlert("Error: " + err.message, "Error");
-                                          } finally { setIsLoading(false); }
-                                      }}
-                                      disabled={isLoading}
-                                      className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-green-700 shadow-md transition-all"
-                                  >
-                                      {isLoading ? 'Importando...' : `Importar ${genPreview.length} Factores`}
-                                  </button>
-                              </div>
-                          )}
-                      </div>
-                  </div>
-                  )}
-
                   {/* Carga CSV — si el factor viene en 0 o vacío, lo calcula automáticamente */}
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
                       <h4 className="text-indigo-900 font-bold mb-2 flex items-center gap-2">
@@ -1091,7 +965,6 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                       )}
                   </div>
-                  )}
               </div>
 
               {/* RIGHT: Factors Management */}

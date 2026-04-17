@@ -440,6 +440,11 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Opcional</span>
                  </div>
 
+                 <div className="flex items-start gap-2 px-3 py-2 rounded-lg mb-4 text-xs font-medium bg-blue-50 border border-blue-200 text-blue-700">
+                     <span className="mt-0.5 text-base">💡</span>
+                     <span>Ten en cuenta que cada entidad permite un número limitado de compras de cartera y un número limitado de entidades a comprar. Consulta con tu supervisor o el chatbot por esta política.</span>
+                 </div>
+
                  {effectiveMaxCartera != null && (
                    <div className={`flex items-start gap-2 px-3 py-2 rounded-lg mb-4 text-xs font-semibold ${carteraAtLimit ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-amber-50 border border-amber-200 text-amber-800'}`}>
                      <span className="mt-0.5 text-base">{carteraAtLimit ? '' : ''}</span>

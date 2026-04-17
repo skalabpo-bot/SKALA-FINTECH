@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { OnboardingForm } from './components/OnboardingForm';
 import { SimulatorView } from './components/SimulatorView';
+import { CreditTypeSelector } from './components/CreditTypeSelector';
 import { CreditDetail } from './components/CreditDetail';
 import { AdminPanel } from './components/AdminPanel';
 import { ReportsPanel } from './components/ReportsPanel';
@@ -697,6 +698,11 @@ const App = () => {
       {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
+        <CreditTypeSelector onSelect={(type) => {
+          if (type === 'libranza') setCurrentView('simulator_libranza');
+        }} />
+      )}
+      {currentView === 'simulator_libranza' && (
         <SimulatorView
           currentUser={currentUser}
           onCreditCreated={(creditId) => {
@@ -707,7 +713,7 @@ const App = () => {
             setPrefilledCreditData(prefilled);
             setCurrentView('onboarding');
           }}
-          onCancel={() => setCurrentView('credits')}
+          onCancel={() => setCurrentView('simulator')}
         />
       )}
       {currentView === 'onboarding' && (
