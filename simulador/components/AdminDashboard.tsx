@@ -842,6 +842,86 @@ export const AdminDashboard: React.FC = () => {
                       </button>
                   </div>
 
+                  {/* Configurar Comisiones desde factores existentes */}
+                  <div className="bg-green-50 p-6 rounded-2xl border border-green-200 shadow-sm">
+                      <h4 className="text-green-900 font-bold mb-2 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
+                        Comisiones por Producto
+                      </h4>
+                      <p className="text-xs text-green-700 mb-3">Configura la comisión del gestor (%) para cada producto de esta entidad.</p>
+                      {(() => {
+                          const products = [...new Set(currentEntityFactors.map((f: any) => f.product as string))].sort();
+                          if (products.length === 0) return <p className="text-xs text-slate-400 italic">No hay factores cargados aún.</p>;
+                          return (
+                              <div className="space-y-2">
+                                  {products.map(prod => (
+                                      <div key={prod} className="flex items-center gap-3">
+                                          <span className="text-xs font-bold text-slate-700 w-36 truncate">{prod}</span>
+                                          <div className="relative flex-1">
+                                              <input
+                                                  type="number" min="0" max="20" step="0.1"
+                                                  className="w-full text-xs px-3 py-2 pr-7 border border-green-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-green-400 font-bold text-right"
+                                                  value={editingEntity.commissions?.[prod] ?? ''}
+                                                  placeholder="0"
+                                                  onChange={e => {
+                                                      const val = e.target.value !== '' ? Number(e.target.value) : undefined;
+                                                      const updated = { ...(editingEntity.commissions ?? {}) };
+                                                      if (val !== undefined) updated[prod] = val;
+                                                      else delete updated[prod];
+                                                      setEditingEntity({...editingEntity, commissions: updated});
+                                                  }}
+                                              />
+                                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                                          </div>
+                                      </div>
+                                  ))}
+                                  <button
+                                      onClick={async () => {
+                                          if (!editingEntity.name || !editingEntity.commissions) return;
+                                          setIsLoading(true);
+                                          try {
+                                              // Guardar en financial_entities
+                                              await supabase.from('financial_entities').update({ commissions: editingEntity.commissions }).eq('name', editingEntity.name);
+                                              // Sincronizar con allied_entities
+                                              const ratesMap = new Map<number, number>();
+                                              for (const f of currentEntityFactors) {
+                                                  const c = editingEntity.commissions[f.product] || 0;
+                                                  if (c > 0 && (!ratesMap.has(f.rate) || c > (ratesMap.get(f.rate) || 0))) ratesMap.set(f.rate, c);
+                                              }
+                                              const rates = Array.from(ratesMap).map(([rate, commission]) => ({ rate, commission })).sort((a, b) => b.rate - a.rate);
+                                              if (rates.length > 0) {
+                                                  const { data: existing } = await supabase.from('allied_entities').select('id').eq('name', editingEntity.name).single();
+                                                  if (existing) await supabase.from('allied_entities').update({ rates }).eq('name', editingEntity.name);
+                                                  else await supabase.from('allied_entities').insert({ name: editingEntity.name, rates });
+                                              }
+                                              // Recalcular créditos existentes
+                                              let updated = 0;
+                                              const { data: credits } = await supabase.from('credits').select('id, amount, client_data').eq('entity_name', editingEntity.name);
+                                              if (credits) {
+                                                  for (const c of credits) {
+                                                      const linea = c.client_data?.lineaCredito || '';
+                                                      const comm = editingEntity.commissions[linea] || 0;
+                                                      if (comm > 0) {
+                                                          await supabase.from('credits').update({ commission_percent: comm, commission_est: (Number(c.amount) * comm) / 100 }).eq('id', c.id);
+                                                          updated++;
+                                                      }
+                                                  }
+                                              }
+                                              showAlert(`Comisiones guardadas${updated > 0 ? ` y ${updated} crédito(s) recalculado(s)` : ''}.`, "Éxito");
+                                          } catch (err: any) {
+                                              showAlert("Error: " + err.message, "Error");
+                                          } finally { setIsLoading(false); }
+                                      }}
+                                      disabled={isLoading}
+                                      className="w-full mt-3 bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-green-700 shadow-md transition-all"
+                                  >
+                                      {isLoading ? 'Guardando...' : 'Guardar Comisiones y Recalcular Créditos'}
+                                  </button>
+                              </div>
+                          );
+                      })()}
+                  </div>
+
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
                       <h4 className="text-indigo-900 font-bold mb-2 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
