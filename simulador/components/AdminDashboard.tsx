@@ -52,6 +52,7 @@ export const AdminDashboard: React.FC = () => {
   const [genPlazosText, setGenPlazosText] = useState('');
   const [genCommission, setGenCommission] = useState('');
   const [genPreview, setGenPreview] = useState<any[]>([]);
+  const [factorMode, setFactorMode] = useState<'csv' | 'generate'>('csv');
 
   // --- STATE: ENTITY POLICIES MAP (for badge display) ---
   const [entitiesWithPolicy, setEntitiesWithPolicy] = useState<Set<string>>(new Set());
@@ -905,7 +906,18 @@ export const AdminDashboard: React.FC = () => {
                       })()}
                   </div>
 
-                  {/* Generador automático de factores */}
+                  {/* Toggle: CSV vs Generar */}
+                  <div className="flex rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                      <button onClick={() => setFactorMode('csv')} className={`flex-1 py-2.5 text-xs font-bold transition-all ${factorMode === 'csv' ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>
+                          Tengo Factores (CSV)
+                      </button>
+                      <button onClick={() => setFactorMode('generate')} className={`flex-1 py-2.5 text-xs font-bold transition-all ${factorMode === 'generate' ? 'bg-amber-500 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>
+                          Calcular Factores
+                      </button>
+                  </div>
+
+                  {factorMode === 'generate' && (
+                  /* Generador automático de factores */
                   <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 shadow-sm">
                       <h4 className="text-amber-900 font-bold mb-2 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V13.5zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V18zm2.498-6.75h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V13.5zm0 2.25h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V18zm2.504-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zm0 2.25h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V18zm2.498-6.75h.008v.008H18v-.008zm0 2.25h.008v.008H18V13.5zM9.75 9h4.5" /></svg>
@@ -1022,7 +1034,9 @@ export const AdminDashboard: React.FC = () => {
                           )}
                       </div>
                   </div>
+                  )}
 
+                  {factorMode === 'csv' && (
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
                       <h4 className="text-indigo-900 font-bold mb-2 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
@@ -1078,6 +1092,7 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                       )}
                   </div>
+                  )}
               </div>
 
               {/* RIGHT: Factors Management */}
