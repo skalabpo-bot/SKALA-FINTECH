@@ -1,6 +1,5 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import OpenAI from "openai";
 import { FinancialData, ClientData } from "../types";
 
 // CONSTANTES DE LÍMITE
@@ -9,9 +8,26 @@ const STORAGE_KEY = 'gemini_usage_logs';
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [2000, 4000, 8000]; // espera creciente en ms
 
-// OpenAI fallback
-const OPENAI_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
-const openai = OPENAI_KEY ? new OpenAI({ apiKey: OPENAI_KEY, dangerouslyAllowBrowser: true }) : null;
+// Edge Function de Supabase que llama OpenAI (sin CORS)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const EDGE_FN_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/analyze-document` : '';
+
+async function callEdgeFunction(type: 'cedula' | 'paystub' | 'legal', images: Array<{ base64: string; mimeType: string }>, prompt: string): Promise<any> {
+  if (!EDGE_FN_URL) throw new Error('Edge Function URL no configurada');
+  const resp = await fetch(EDGE_FN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    body: JSON.stringify({ type, images, prompt, model: 'gpt-4o-mini' }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Edge Function ${resp.status}: ${err}`);
+  }
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error);
+  return json.data;
+}
 
 // ---------------------------------------------------------------------------
 // 🔑 API KEYS — leídas desde variables de entorno (nunca hardcodeadas)
@@ -314,48 +330,30 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     }
   }
 
-  // Fallback: OpenAI GPT-4o con reintentos
-  if (openai) {
-    const oaiPrompt = prompt + `\n\nIMPORTANTE:
+  // Fallback: OpenAI vía Edge Function (sin CORS)
+  if (EDGE_FN_URL) {
+    try {
+      console.log('🔄 Fallback a OpenAI GPT-4o-mini vía Edge Function para desprendible...');
+      const oaiPrompt = prompt + `\n\nIMPORTANTE:
 1. Responde SOLO con JSON válido con esta estructura exacta:
 {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}
 2. En detailedDeductions DEBES incluir CADA libranza, crédito, préstamo, cartera, cooperativa, seguro y cualquier otro descuento individual que NO sea salud, pensión o embargo. Cada uno como un objeto separado con su nombre exacto y monto.
 3. La suma de todos los amounts de detailedDeductions DEBE ser igual a otherDeductions.`;
-    for (let oaiAttempt = 0; oaiAttempt < 3; oaiAttempt++) {
-      try {
-        if (oaiAttempt > 0) {
-          console.log(`⏳ OpenAI reintento ${oaiAttempt}/3 en ${RETRY_DELAYS[oaiAttempt-1]/1000}s...`);
-          await new Promise(r => setTimeout(r, RETRY_DELAYS[oaiAttempt-1]));
-        }
-        console.log(`🔄 Fallback a OpenAI GPT-4o para desprendible...${oaiAttempt > 0 ? ` [retry ${oaiAttempt}]` : ''}`);
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          response_format: { type: 'json_object' },
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
-              { type: 'text', text: oaiPrompt }
-            ]
-          }]
-        });
-        const text = response.choices[0]?.message?.content || '';
-        const data = JSON.parse(text);
-        console.log('✅ ÉXITO: Desprendible leído con OpenAI GPT-4o', data);
-        return {
-          monthlyIncome: data.monthlyIncome || 0,
-          mandatoryDeductions: data.mandatoryDeductions || 0,
-          otherDeductions: data.otherDeductions || 0,
-          embargos: data.embargos || 0,
-          detailedDeductions: data.detailedDeductions || [],
-          entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
-          employerName: data.employerName || '',
-          manualQuota: data.manualQuota || 0
-        };
-      } catch (oaiErr: any) {
-        console.warn(`❌ OpenAI intento ${oaiAttempt+1} falló:`, oaiErr.message);
-        lastError = oaiErr;
-      }
+      const data = await callEdgeFunction('paystub', [{ base64: base64Data, mimeType }], oaiPrompt);
+      console.log('✅ ÉXITO: Desprendible leído vía Edge Function', data);
+      return {
+        monthlyIncome: data.monthlyIncome || 0,
+        mandatoryDeductions: data.mandatoryDeductions || 0,
+        otherDeductions: data.otherDeductions || 0,
+        embargos: data.embargos || 0,
+        detailedDeductions: data.detailedDeductions || [],
+        entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+        employerName: data.employerName || '',
+        manualQuota: data.manualQuota || 0
+      };
+    } catch (edgeErr: any) {
+      console.warn('❌ Edge Function falló:', edgeErr.message);
+      lastError = edgeErr;
     }
   }
 
@@ -512,55 +510,33 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
     }
   }
 
-  // Fallback: OpenAI GPT-4o con reintentos
-  if (openai) {
-    const oaiCedulaPrompt = prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido con los campos: fullName, firstName, lastName, idNumber, sex (M o F), birthDate, birthCity, expeditionDate, expeditionCity.';
-    const imageParts = images.map(img => ({
-      type: 'image_url' as const,
-      image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
-    }));
-    for (let oaiAttempt = 0; oaiAttempt < 3; oaiAttempt++) {
-      try {
-        if (oaiAttempt > 0) {
-          console.log(`⏳ OpenAI reintento ${oaiAttempt}/3 en ${RETRY_DELAYS[oaiAttempt-1]/1000}s...`);
-          await new Promise(r => setTimeout(r, RETRY_DELAYS[oaiAttempt-1]));
-        }
-        console.log(`🔄 Fallback a OpenAI GPT-4o para cédula...${oaiAttempt > 0 ? ` [retry ${oaiAttempt}]` : ''}`);
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          response_format: { type: 'json_object' },
-          messages: [{
-            role: 'user',
-            content: [
-              ...imageParts,
-              { type: 'text', text: oaiCedulaPrompt }
-            ]
-          }]
-        });
-        const text = response.choices[0]?.message?.content || '';
-        const data = JSON.parse(text);
-        console.log('✅ ÉXITO: Cédula leída con OpenAI GPT-4o');
+  // Fallback: OpenAI vía Edge Function (sin CORS)
+  if (EDGE_FN_URL) {
+    try {
+      console.log('🔄 Fallback a OpenAI GPT-4o-mini vía Edge Function para cédula...');
+      const oaiCedulaPrompt = prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido con los campos: fullName, firstName, lastName, idNumber, sex (M o F), birthDate, birthCity, expeditionDate, expeditionCity.';
+      const data = await callEdgeFunction('cedula', images, oaiCedulaPrompt);
+      console.log('✅ ÉXITO: Cédula leída vía Edge Function');
 
-        let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
-        if (sex.length > 1) sex = sex[0];
-        const idNumber = (data.idNumber || '').replace(/\D/g, '');
-        const up = (v: any) => (v || '').toString().toUpperCase().trim();
+      let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
+      if (sex.length > 1) sex = sex[0];
+      const idNumber = (data.idNumber || '').replace(/\D/g, '');
+      const up = (v: any) => (v || '').toString().toUpperCase().trim();
 
-        return {
-          fullName: up(data.fullName),
-          firstName: up(data.firstName),
-          lastName: up(data.lastName),
-          idNumber,
-          sex,
-          birthDate: (data.birthDate || '').trim(),
-          birthCity: up(data.birthCity),
-          expeditionDate: (data.expeditionDate || '').trim(),
-          expeditionCity: up(data.expeditionCity),
-        };
-      } catch (oaiErr: any) {
-        console.warn(`❌ OpenAI intento ${oaiAttempt+1} falló:`, oaiErr.message);
-        lastError = oaiErr;
-      }
+      return {
+        fullName: up(data.fullName),
+        firstName: up(data.firstName),
+        lastName: up(data.lastName),
+        idNumber,
+        sex,
+        birthDate: (data.birthDate || '').trim(),
+        birthCity: up(data.birthCity),
+        expeditionDate: (data.expeditionDate || '').trim(),
+        expeditionCity: up(data.expeditionCity),
+      };
+    } catch (edgeErr: any) {
+      console.warn('❌ Edge Function falló:', edgeErr.message);
+      lastError = edgeErr;
     }
   }
 
