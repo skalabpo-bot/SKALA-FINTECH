@@ -25,45 +25,36 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ============ GEMINI ============
 async function callGemini(images: any[], prompt: string): Promise<any> {
-  const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
-  const RETRY_DELAYS = [1500, 3000, 6000];
+  // Solo 1 intento por modelo, sin retries largos (ya Groq es el primario)
+  const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
 
   for (const model of models) {
-    for (let attempt = 0; attempt <= 3; attempt++) {
-      if (attempt > 0) await sleep(RETRY_DELAYS[attempt - 1]);
+    try {
+      const parts: any[] = [];
+      for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
+      parts.push({ text: prompt });
 
-      try {
-        const parts: any[] = [];
-        for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
-        parts.push({ text: prompt });
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+        }),
+      });
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0 },
-          }),
-        });
-
-        if (!resp.ok) {
-          const err = await resp.text();
-          console.warn(`Gemini ${model} attempt ${attempt + 1} falló: ${resp.status}`);
-          // 503 y 429 → reintentar con este modelo
-          if ((resp.status === 503 || resp.status === 429) && attempt < 3) continue;
-          // 404 u otro → pasar al siguiente modelo
-          break;
-        }
-
-        const data = await resp.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        return { data: JSON.parse(cleanText), model: `gemini/${model}` };
-      } catch (e: any) {
-        console.warn(`Gemini ${model} error:`, e.message);
-        if (attempt >= 3) break;
+      if (!resp.ok) {
+        console.warn(`Gemini ${model} falló: ${resp.status}`);
+        continue;
       }
+
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      return { data: JSON.parse(cleanText), model: `gemini/${model}` };
+    } catch (e: any) {
+      console.warn(`Gemini ${model} error:`, e.message);
     }
   }
   throw new Error('Gemini: todos los modelos fallaron');
@@ -76,7 +67,8 @@ async function callGroq(images: any[], prompt: string): Promise<any> {
     image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
   }));
 
-  const models = ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.2-90b-vision-preview', 'llama-3.2-11b-vision-preview'];
+  // llama-4-scout es el más rápido y preciso disponible en Groq para vision
+  const models = ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
 
   for (const model of models) {
     try {
@@ -147,22 +139,22 @@ serve(async (req) => {
 
     const errors: string[] = [];
 
-    // 1. Gemini (primera opción)
-    if (GEMINI_API_KEY) {
-      try {
-        const result = await callGemini(images, prompt);
-        return new Response(JSON.stringify({ success: true, ...result }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
-      } catch (e: any) { errors.push(`Gemini: ${e.message}`); }
-    }
-
-    // 2. Groq (gratis, rápido)
+    // 1. Groq (ultra rápido ~500ms, gratis)
     if (GROQ_API_KEY) {
       try {
         const result = await callGroq(images, prompt);
         return new Response(JSON.stringify({ success: true, ...result }),
           { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
       } catch (e: any) { errors.push(`Groq: ${e.message}`); }
+    }
+
+    // 2. Gemini (fallback si Groq falla)
+    if (GEMINI_API_KEY) {
+      try {
+        const result = await callGemini(images, prompt);
+        return new Response(JSON.stringify({ success: true, ...result }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (e: any) { errors.push(`Gemini: ${e.message}`); }
     }
 
     // 3. OpenAI (último recurso)
