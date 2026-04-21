@@ -249,9 +249,33 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  // Usar solo gemini-2.5-flash (el único disponible) con retry en 503
-  const MODEL = 'gemini-2.5-flash';
   let lastError: any = null;
+
+  // Intento 1: Edge Function (Gemini → Groq → OpenAI en cascada del servidor)
+  if (EDGE_FN_URL) {
+    try {
+      console.log('📡 Llamando Edge Function (cascada: Gemini → Groq → OpenAI) para desprendible...');
+      const edgePrompt = prompt + `\n\nIMPORTANTE: Responde SOLO con JSON válido con esta estructura: {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}. En detailedDeductions incluye CADA libranza, crédito, cartera individual.`;
+      const data = await callEdgeFunction('paystub', [{ base64: base64Data, mimeType }], edgePrompt);
+      console.log('✅ Desprendible leído vía Edge Function', data);
+      return {
+        monthlyIncome: data.monthlyIncome || 0,
+        mandatoryDeductions: data.mandatoryDeductions || 0,
+        otherDeductions: data.otherDeductions || 0,
+        embargos: data.embargos || 0,
+        detailedDeductions: data.detailedDeductions || [],
+        entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+        employerName: data.employerName || '',
+        manualQuota: data.manualQuota || 0
+      };
+    } catch (edgeErr: any) {
+      console.warn('⚠️ Edge Function falló, intentando Gemini directo como último recurso:', edgeErr.message);
+      lastError = edgeErr;
+    }
+  }
+
+  // Intento 2: Gemini directo (último recurso si Edge Function falla)
+  const MODEL = 'gemini-2.5-flash';
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });
@@ -425,8 +449,40 @@ CAMPOS A EXTRAER:
 Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
 
-  const MODEL_CEDULA = 'gemini-2.5-flash';
   let lastError: any = null;
+
+  // Intento 1: Edge Function (cascada Gemini → Groq → OpenAI en servidor)
+  if (EDGE_FN_URL) {
+    try {
+      console.log('📡 Llamando Edge Function (cascada) para cédula...');
+      const edgePrompt = prompt + '\n\nIMPORTANTE: Responde SOLO con JSON válido con los campos: fullName, firstName, lastName, idNumber, sex (M o F), birthDate, birthCity, expeditionDate, expeditionCity.';
+      const data = await callEdgeFunction('cedula', images, edgePrompt);
+      console.log('✅ Cédula leída vía Edge Function');
+
+      let sex = (data.sex || '').toUpperCase().trim().replace(/[^MF]/g, '');
+      if (sex.length > 1) sex = sex[0];
+      const idNumber = (data.idNumber || '').replace(/\D/g, '');
+      const up = (v: any) => (v || '').toString().toUpperCase().trim();
+
+      return {
+        fullName: up(data.fullName),
+        firstName: up(data.firstName),
+        lastName: up(data.lastName),
+        idNumber,
+        sex,
+        birthDate: (data.birthDate || '').trim(),
+        birthCity: up(data.birthCity),
+        expeditionDate: (data.expeditionDate || '').trim(),
+        expeditionCity: up(data.expeditionCity),
+      };
+    } catch (edgeErr: any) {
+      console.warn('⚠️ Edge Function falló, intentando Gemini directo:', edgeErr.message);
+      lastError = edgeErr;
+    }
+  }
+
+  // Intento 2: Gemini directo (último recurso)
+  const MODEL_CEDULA = 'gemini-2.5-flash';
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });

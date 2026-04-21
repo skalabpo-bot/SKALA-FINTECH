@@ -1,8 +1,11 @@
-// Supabase Edge Function: Analyze Document (OpenAI GPT-4o-mini)
+// Supabase Edge Function: Analyze Document
+// Cascada: Gemini (múltiples modelos) → Groq → OpenAI
 // Despliega con: supabase functions deploy analyze-document
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('VITE_GEMINI_API_KEY') || '';
+const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') || '';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || '';
 
 const CORS_HEADERS = {
@@ -18,92 +21,163 @@ interface AnalyzeRequest {
   model?: string;
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS_HEADERS });
-  }
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  try {
-    if (!OPENAI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'OPENAI_API_KEY not configured' }),
-        { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
-    }
+// ============ GEMINI ============
+async function callGemini(images: any[], prompt: string): Promise<any> {
+  const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+  const RETRY_DELAYS = [1500, 3000, 6000];
 
-    const body: AnalyzeRequest = await req.json();
-    const { type, images, prompt, model = 'gpt-4o-mini' } = body;
-
-    if (!images || images.length === 0 || !prompt) {
-      return new Response(
-        JSON.stringify({ error: 'Missing images or prompt' }),
-        { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const MAX_RETRIES = 3;
-    const RETRY_DELAYS = [1000, 3000, 6000];
-    let lastError = '';
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt - 1]));
-      }
+  for (const model of models) {
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      if (attempt > 0) await sleep(RETRY_DELAYS[attempt - 1]);
 
       try {
-        const imageParts = images.map(img => ({
-          type: 'image_url' as const,
-          image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
-        }));
+        const parts: any[] = [];
+        for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
+        parts.push({ text: prompt });
 
-        const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+        const resp = await fetch(url, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model,
-            response_format: { type: 'json_object' },
-            messages: [{
-              role: 'user',
-              content: [
-                ...imageParts,
-                { type: 'text', text: prompt },
-              ],
-            }],
+            contents: [{ parts }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0 },
           }),
         });
 
-        if (!openaiResp.ok) {
-          const errText = await openaiResp.text();
-          lastError = `OpenAI ${openaiResp.status}: ${errText}`;
-          if (openaiResp.status === 429 || openaiResp.status === 503) continue;
-          throw new Error(lastError);
+        if (!resp.ok) {
+          const err = await resp.text();
+          console.warn(`Gemini ${model} attempt ${attempt + 1} falló: ${resp.status}`);
+          // 503 y 429 → reintentar con este modelo
+          if ((resp.status === 503 || resp.status === 429) && attempt < 3) continue;
+          // 404 u otro → pasar al siguiente modelo
+          break;
         }
 
-        const data = await openaiResp.json();
-        const content = data.choices?.[0]?.message?.content || '';
-        const parsed = JSON.parse(content);
-
-        return new Response(
-          JSON.stringify({ success: true, data: parsed, model }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-        );
-      } catch (err: any) {
-        lastError = err.message || String(err);
-        if (attempt >= MAX_RETRIES) break;
+        const data = await resp.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        return { data: JSON.parse(cleanText), model: `gemini/${model}` };
+      } catch (e: any) {
+        console.warn(`Gemini ${model} error:`, e.message);
+        if (attempt >= 3) break;
       }
     }
+  }
+  throw new Error('Gemini: todos los modelos fallaron');
+}
 
-    return new Response(
-      JSON.stringify({ error: lastError || 'Failed after retries' }),
-      { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-    );
+// ============ GROQ ============
+async function callGroq(images: any[], prompt: string): Promise<any> {
+  const imageParts = images.map(img => ({
+    type: 'image_url',
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+
+  const models = ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.2-90b-vision-preview', 'llama-3.2-11b-vision-preview'];
+
+  for (const model of models) {
+    try {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          response_format: { type: 'json_object' },
+          temperature: 0,
+          messages: [{ role: 'user', content: [...imageParts, { type: 'text', text: prompt }] }],
+        }),
+      });
+
+      if (!resp.ok) {
+        console.warn(`Groq ${model} falló: ${resp.status}`);
+        continue;
+      }
+
+      const data = await resp.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      return { data: JSON.parse(content), model: `groq/${model}` };
+    } catch (e: any) {
+      console.warn(`Groq ${model} error:`, e.message);
+    }
+  }
+  throw new Error('Groq: todos los modelos fallaron');
+}
+
+// ============ OPENAI ============
+async function callOpenAI(images: any[], prompt: string, model: string): Promise<any> {
+  const imageParts = images.map(img => ({
+    type: 'image_url',
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: [...imageParts, { type: 'text', text: prompt }] }],
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`OpenAI ${resp.status}: ${err}`);
+  }
+
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  return { data: JSON.parse(content), model: `openai/${model}` };
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
+
+  try {
+    const body: AnalyzeRequest = await req.json();
+    const { images, prompt, model = 'gpt-4o-mini' } = body;
+
+    if (!images || images.length === 0 || !prompt) {
+      return new Response(JSON.stringify({ error: 'Missing images or prompt' }),
+        { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+    }
+
+    const errors: string[] = [];
+
+    // 1. Gemini (primera opción)
+    if (GEMINI_API_KEY) {
+      try {
+        const result = await callGemini(images, prompt);
+        return new Response(JSON.stringify({ success: true, ...result }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (e: any) { errors.push(`Gemini: ${e.message}`); }
+    }
+
+    // 2. Groq (gratis, rápido)
+    if (GROQ_API_KEY) {
+      try {
+        const result = await callGroq(images, prompt);
+        return new Response(JSON.stringify({ success: true, ...result }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (e: any) { errors.push(`Groq: ${e.message}`); }
+    }
+
+    // 3. OpenAI (último recurso)
+    if (OPENAI_API_KEY) {
+      try {
+        const result = await callOpenAI(images, prompt, model);
+        return new Response(JSON.stringify({ success: true, ...result }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (e: any) { errors.push(`OpenAI: ${e.message}`); }
+    }
+
+    return new Response(JSON.stringify({ error: errors.join(' | ') || 'No API keys configured' }),
+      { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
   } catch (err: any) {
-    return new Response(
-      JSON.stringify({ error: err.message || 'Unknown error' }),
-      { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: err.message || 'Unknown error' }),
+      { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
   }
 });
