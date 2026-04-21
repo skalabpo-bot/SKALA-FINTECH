@@ -25,36 +25,43 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ============ GEMINI ============
 async function callGemini(images: any[], prompt: string): Promise<any> {
-  // Solo 1 intento por modelo, sin retries largos (ya Groq es el primario)
   const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
+  const RETRY_DELAYS = [1000, 2000, 3000]; // 1s, 2s, 3s
 
   for (const model of models) {
-    try {
-      const parts: any[] = [];
-      for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
-      parts.push({ text: prompt });
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      if (attempt > 0) await sleep(RETRY_DELAYS[attempt - 1]);
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0 },
-        }),
-      });
+      try {
+        const parts: any[] = [];
+        for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
+        parts.push({ text: prompt });
 
-      if (!resp.ok) {
-        console.warn(`Gemini ${model} falló: ${resp.status}`);
-        continue;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+          }),
+        });
+
+        if (!resp.ok) {
+          console.warn(`Gemini ${model} attempt ${attempt + 1} falló: ${resp.status}`);
+          // Si es 503/429 reintentar; si es otro error (404, 400), pasar al siguiente modelo
+          if ((resp.status === 503 || resp.status === 429) && attempt < 2) continue;
+          break;
+        }
+
+        const data = await resp.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        return { data: JSON.parse(cleanText), model: `gemini/${model}` };
+      } catch (e: any) {
+        console.warn(`Gemini ${model} error:`, e.message);
+        if (attempt >= 2) break;
       }
-
-      const data = await resp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return { data: JSON.parse(cleanText), model: `gemini/${model}` };
-    } catch (e: any) {
-      console.warn(`Gemini ${model} error:`, e.message);
     }
   }
   throw new Error('Gemini: todos los modelos fallaron');
@@ -139,22 +146,12 @@ serve(async (req) => {
 
     const errors: string[] = [];
 
-    // Estrategia por tipo de documento:
-    // - Cédula (texto simple): Groq primero (rápido)
-    // - Desprendible/legal (extracción detallada): Gemini primero (más preciso)
-    const isDetailed = type === 'paystub' || type === 'legal';
-
-    const providers = isDetailed
-      ? [
-          { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
-          { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
-          { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
-        ]
-      : [
-          { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
-          { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
-          { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
-        ];
+    // Orden fijo: Gemini (más preciso) → OpenAI → Groq (último recurso)
+    const providers = [
+      { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
+      { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
+      { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
+    ];
 
     for (const provider of providers) {
       if (!provider.key) continue;
