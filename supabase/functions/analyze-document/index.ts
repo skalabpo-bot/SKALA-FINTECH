@@ -130,7 +130,7 @@ serve(async (req) => {
 
   try {
     const body: AnalyzeRequest = await req.json();
-    const { images, prompt, model = 'gpt-4o-mini' } = body;
+    const { images, prompt, model = 'gpt-4o-mini', type } = body;
 
     if (!images || images.length === 0 || !prompt) {
       return new Response(JSON.stringify({ error: 'Missing images or prompt' }),
@@ -139,31 +139,30 @@ serve(async (req) => {
 
     const errors: string[] = [];
 
-    // 1. Groq (ultra rápido ~500ms, gratis)
-    if (GROQ_API_KEY) {
-      try {
-        const result = await callGroq(images, prompt);
-        return new Response(JSON.stringify({ success: true, ...result }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
-      } catch (e: any) { errors.push(`Groq: ${e.message}`); }
-    }
+    // Estrategia por tipo de documento:
+    // - Cédula (texto simple): Groq primero (rápido)
+    // - Desprendible/legal (extracción detallada): Gemini primero (más preciso)
+    const isDetailed = type === 'paystub' || type === 'legal';
 
-    // 2. Gemini (fallback si Groq falla)
-    if (GEMINI_API_KEY) {
-      try {
-        const result = await callGemini(images, prompt);
-        return new Response(JSON.stringify({ success: true, ...result }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
-      } catch (e: any) { errors.push(`Gemini: ${e.message}`); }
-    }
+    const providers = isDetailed
+      ? [
+          { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
+          { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
+          { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
+        ]
+      : [
+          { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
+          { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
+          { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
+        ];
 
-    // 3. OpenAI (último recurso)
-    if (OPENAI_API_KEY) {
+    for (const provider of providers) {
+      if (!provider.key) continue;
       try {
-        const result = await callOpenAI(images, prompt, model);
+        const result = await provider.fn();
         return new Response(JSON.stringify({ success: true, ...result }),
           { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
-      } catch (e: any) { errors.push(`OpenAI: ${e.message}`); }
+      } catch (e: any) { errors.push(`${provider.name}: ${e.message}`); }
     }
 
     return new Response(JSON.stringify({ error: errors.join(' | ') || 'No API keys configured' }),
