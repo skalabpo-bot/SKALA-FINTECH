@@ -131,10 +131,15 @@ export const ProductionService = {
     },
 
     resetPassword: async (email: string) => {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin,
+        if (!email || !email.includes('@')) throw new Error("Email inválido.");
+        const redirectUrl = `${window.location.origin}/#recovery`;
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+            redirectTo: redirectUrl,
         });
-        if (error) throw new Error("Error al enviar el correo de recuperación.");
+        if (error) {
+            console.error('resetPassword error:', error);
+            throw new Error(error.message || "Error al enviar el correo de recuperación.");
+        }
         return true;
     },
 

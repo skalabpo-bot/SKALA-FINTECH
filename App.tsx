@@ -138,11 +138,32 @@ const App = () => {
 
   // Detectar token de recuperación de contraseña enviado por Supabase
   useEffect(() => {
+    // 1. Detectar vía evento onAuthStateChange
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordReset(true);
       }
     });
+
+    // 2. Detectar manualmente si el hash de URL tiene el token de recuperación
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery') || hash.includes('access_token')) {
+      // Intentar procesar la sesión desde la URL
+      const params = new URLSearchParams(hash.substring(1));
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const type = params.get('type');
+      if (accessToken && type === 'recovery') {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' })
+          .then(() => {
+            setShowPasswordReset(true);
+            // Limpiar el hash de la URL
+            window.history.replaceState(null, '', window.location.pathname);
+          })
+          .catch(err => console.error('Error procesando recovery token:', err));
+      }
+    }
+
     return () => subscription.unsubscribe();
   }, []);
 
