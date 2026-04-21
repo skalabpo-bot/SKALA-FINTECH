@@ -26,6 +26,7 @@ async function callEdgeFunction(type: 'cedula' | 'paystub' | 'legal', images: Ar
   }
   const json = await resp.json();
   if (json.error) throw new Error(json.error);
+  console.log(`%c🤖 Modelo utilizado: ${json.model || 'desconocido'}`, 'color: #10b981; font-weight: bold; font-size: 12px;');
   return json.data;
 }
 
