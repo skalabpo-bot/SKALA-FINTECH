@@ -1009,143 +1009,16 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                     </div>
 
-                    {/* Autorización de Consulta y Validación de Identidad */}
+                    {/* Autorización de Consulta y Validación de Identidad — DESHABILITADO temporalmente */}
+                    {false && (
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <Shield size={18} className="text-indigo-500" />
                                 <h4 className="font-bold text-sm text-slate-800">Autorización de Consulta y Validación de Identidad</h4>
                             </div>
-                            {authLoading ? (
-                                <Loader2 size={14} className="animate-spin text-slate-300" />
-                            ) : authStatus?.status === 'signed' ? (
-                                <span className="text-[10px] px-2 py-1 bg-green-100 text-green-700 rounded-lg font-bold">FIRMADA</span>
-                            ) : authStatus?.status === 'pending' ? (
-                                <span className="text-[10px] px-2 py-1 bg-orange-100 text-orange-600 rounded-lg font-bold">PENDIENTE</span>
-                            ) : authStatus?.status === 'expired' ? (
-                                <span className="text-[10px] px-2 py-1 bg-red-100 text-red-600 rounded-lg font-bold">EXPIRADA</span>
-                            ) : (
-                                <span className="text-[10px] px-2 py-1 bg-slate-100 text-slate-500 rounded-lg font-bold">NO ENVIADA</span>
-                            )}
                         </div>
-
-                        {authStatus?.status === 'signed' && (
-                            <div className="bg-green-50 border border-green-100 rounded-xl p-3 space-y-1">
-                                <p className="text-xs text-green-700">
-                                    Firmada el {authStatus.signed_at ? new Date(authStatus.signed_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}
-                                </p>
-                                {authStatus.pdf_url && (
-                                    <a href={authStatus.pdf_url} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 hover:underline">
-                                        <Download size={12} /> Ver PDF
-                                    </a>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Estado del OTP en tiempo real */}
-                        {authStatus && authStatus.status !== 'signed' && (
-                            <div className={`rounded-xl p-3 space-y-1 ${authStatus.otp_code ? (authStatus.otp_expires_at && new Date(authStatus.otp_expires_at) > new Date() ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200') : 'bg-slate-50 border border-slate-200'}`}>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-bold uppercase text-slate-500">Código OTP</p>
-                                    {authStatus.otp_code ? (
-                                        authStatus.otp_expires_at && new Date(authStatus.otp_expires_at) > new Date() ? (
-                                            <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold animate-pulse">ACTIVO</span>
-                                        ) : (
-                                            <span className="text-[10px] px-2 py-0.5 bg-red-100 text-red-600 rounded font-bold">EXPIRADO</span>
-                                        )
-                                    ) : (
-                                        <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded font-bold">NO SOLICITADO</span>
-                                    )}
-                                </div>
-                                {authStatus.otp_code && (
-                                    <>
-                                        <p className="text-lg font-mono font-bold tracking-[0.3em] text-center py-1">{authStatus.otp_code}</p>
-                                        {authStatus.otp_expires_at && (
-                                            <p className="text-[10px] text-center text-slate-500">
-                                                {new Date(authStatus.otp_expires_at) > new Date()
-                                                    ? `Expira: ${new Date(authStatus.otp_expires_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
-                                                    : `Expiró: ${new Date(authStatus.otp_expires_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
-                                                }
-                                            </p>
-                                        )}
-                                    </>
-                                )}
-                                {!authStatus.otp_code && (
-                                    <p className="text-xs text-slate-400 text-center py-1">El cliente aún no ha solicitado el código</p>
-                                )}
-                            </div>
-                        )}
-
-                        {authStatus && authStatus.status !== 'signed' && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={async () => {
-                                        if (!credit) return;
-                                        setAuthResending(true);
-                                        try {
-                                            const result = await ProductionService.resendAuthorization(credit.id, currentUser.id);
-                                            setAuthStatus(result as AuthorizationToken);
-                                            alert('Autorización reenviada exitosamente.');
-                                        } catch (err: any) {
-                                            alert('Error: ' + err.message);
-                                        } finally {
-                                            setAuthResending(false);
-                                        }
-                                    }}
-                                    disabled={authResending}
-                                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
-                                >
-                                    {authResending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                    {authStatus.status === 'expired' ? 'Generar nueva' : 'Reenviar'}
-                                </button>
-                                {authStatus.token && (
-                                    <button
-                                        onClick={() => {
-                                            const url = `${window.location.origin}/?autorizacion=${authStatus.token}`;
-                                            navigator.clipboard.writeText(url);
-                                            alert('Link copiado al portapapeles');
-                                        }}
-                                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-colors"
-                                    >
-                                        <ExternalLink size={12} /> Copiar link
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        {!authStatus && !authLoading && (
-                            <button
-                                onClick={async () => {
-                                    if (!credit) return;
-                                    setAuthResending(true);
-                                    try {
-                                        const result = await ProductionService.createAuthorizationToken(credit.id, currentUser.id);
-                                        setAuthStatus(result as AuthorizationToken);
-                                        alert('Autorización creada y enviada.');
-                                    } catch (err: any) {
-                                        alert('Error: ' + err.message);
-                                    } finally {
-                                        setAuthResending(false);
-                                    }
-                                }}
-                                disabled={authResending}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
-                            >
-                                {authResending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                                Enviar Autorización
-                            </button>
-                        )}
-
-                        {/* Editar URL de validación — siempre visible */}
                         <div className="border-t border-slate-100 pt-3 mt-2">
-                            <div className="flex items-center gap-2 mb-1">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Link de validación de identidad</p>
-                                {!authValEditing && (
-                                    <button onClick={() => setAuthValEditing(true)} className="text-[10px] text-indigo-500 hover:underline font-bold">
-                                        Editar
-                                    </button>
-                                )}
-                            </div>
                             {authValEditing ? (
                                 <div className="flex gap-2">
                                     <input
@@ -1180,6 +1053,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             )}
                         </div>
                     </div>
+                    )}
 
                     {/* Upload row */}
                     <div className="flex gap-2 items-center">

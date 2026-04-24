@@ -400,18 +400,7 @@ export const ProductionService = {
             }
         });
 
-        // --- AUTO-ENVIAR AUTORIZACIÓN DE CONSULTA Y VALIDACIÓN DE IDENTIDAD ---
-        try {
-            await ProductionService.createAuthorizationToken(data.id, currentUser.id);
-            await supabase.from('notifications').insert({
-                user_id: currentUser.id,
-                title: 'Autorización enviada',
-                message: `Se envió la autorización de consulta y validación de identidad a ${rest.nombres} ${rest.apellidos} (${rest.telefonoCelular}).`,
-                type: 'info',
-                is_read: false,
-                credit_id: data.id,
-            });
-        } catch (e) { console.warn('No se pudo crear autorización automática:', e); }
+        // Autorización de consulta deshabilitada — cada entidad maneja su propio flujo
 
         return data;
     },
@@ -1323,7 +1312,18 @@ export const ProductionService = {
     getPagadurias: async () => {
         try {
             const { data, error } = await supabase.from('pagadurias').select('name').order('name');
-            if (!error && data && data.length > 0) return data.map((p: any) => p.name);
+            if (!error && data && data.length > 0) {
+                const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+                const seen = new Set<string>();
+                return data
+                    .map((p: any) => p.name.toString().replace(/\s+/g, ' ').trim().toUpperCase())
+                    .filter((name: string) => {
+                        const key = normalize(name);
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+            }
         } catch (e) { /* fallback */ }
         return ["COLPENSIONES", "CREMIL", "CASUR", "FIDUPREVISORA", "GOBIERNO", "PRIVADA"];
     },
@@ -1342,21 +1342,33 @@ export const ProductionService = {
                 return '🛡️ Aseguradoras – Rentas Vitalicias / ARL';
             return 'Otras';
         };
+        // Normalización profunda: quita tildes, espacios extras, mayúsculas, caracteres invisibles
+        const normalizeKey = (s: string): string => {
+            return s
+                .normalize('NFD').replace(/[̀-ͯ]/g, '') // sin tildes
+                .replace(/[​-‍﻿]/g, '') // sin caracteres invisibles
+                .replace(/\s+/g, ' ') // espacios múltiples → uno
+                .trim()
+                .toUpperCase();
+        };
         try {
             const { data, error } = await supabase.from('pagadurias').select('name, tipo').order('name');
             if (!error && data && data.length > 0) {
                 const items = data.map((p: any) => ({
-                    name: p.name.toUpperCase().trim(),
+                    name: p.name.toString().replace(/\s+/g, ' ').trim().toUpperCase(),
                     tipo: p.tipo && p.tipo !== 'Sin clasificar' ? p.tipo : inferTipo(p.name),
+                    _key: normalizeKey(p.name),
                 }));
-                // Deduplicar por nombre normalizado (elimina duplicados por diferencia de mayúsculas)
+                // Deduplicar por clave normalizada (sin tildes, sin caracteres invisibles, sin espacios extras)
                 const seen = new Set<string>();
                 const deduped = items.filter((item: any) => {
-                    if (seen.has(item.name)) return false;
-                    seen.add(item.name);
+                    if (seen.has(item._key)) return false;
+                    seen.add(item._key);
                     return true;
                 });
-                return deduped.sort((a: any, b: any) => a.tipo.localeCompare(b.tipo) || a.name.localeCompare(b.name));
+                return deduped
+                    .map(({ _key, ...rest }: any) => rest)
+                    .sort((a: any, b: any) => a.tipo.localeCompare(b.tipo) || a.name.localeCompare(b.name));
             }
         } catch (e) { /* fallback */ }
         // Fallback completo con la lista de Credialianza
@@ -2764,19 +2776,7 @@ export const ProductionService = {
 
         if (error) throw error;
 
-        // Disparar webhook para que n8n envíe el link al cliente
-        const appUrl = 'https://skalapp.co';
-        ProductionService.triggerWebhooks('authorization_request_sent', {
-            credit_id: creditId,
-            token,
-            authorization_url: `${appUrl}/?autorizacion=${token}`,
-            cliente: {
-                nombre: clientName,
-                documento: clientDoc,
-                celular: clientPhone,
-                correo: clientEmail,
-            },
-        });
+        // Webhook de autorización deshabilitado — no notificar al cliente
 
         return authToken;
     },
@@ -2817,18 +2817,7 @@ export const ProductionService = {
             otp_expires_at: otpExpires.toISOString(),
         }).eq('id', auth.id);
 
-        // Disparar webhook para que n8n envíe el OTP por el canal elegido
-        ProductionService.triggerWebhooks('authorization_otp_requested', {
-            credit_id: auth.credit_id,
-            otp_code: otp,
-            canal: channel,
-            cliente: {
-                nombre: auth.client_name,
-                documento: auth.client_document,
-                celular: auth.client_phone,
-                correo: auth.client_email,
-            },
-        });
+        // Webhook OTP deshabilitado — no enviar OTP al cliente
 
         const hint = channel === 'whatsapp'
             ? auth.client_phone.slice(-4)
@@ -2944,20 +2933,8 @@ export const ProductionService = {
             throw new Error('Esta autorización ya fue firmada');
         }
 
-        // Si existe y está pendiente, reenviar el mismo token
+        // Reenvío de autorización al cliente deshabilitado
         if (existing && existing.status === 'pending' && new Date(existing.expires_at) > new Date()) {
-            const appUrl = 'https://skalapp.co';
-            ProductionService.triggerWebhooks('authorization_request_sent', {
-                credit_id: creditId,
-                token: existing.token,
-                authorization_url: `${appUrl}/?autorizacion=${existing.token}`,
-                cliente: {
-                    nombre: existing.client_name,
-                    documento: existing.client_document,
-                    celular: existing.client_phone,
-                    correo: existing.client_email,
-                },
-            });
             return existing;
         }
 
