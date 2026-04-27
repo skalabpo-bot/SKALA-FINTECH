@@ -458,16 +458,11 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
              )}
              {/* ACCIONES RÁPIDAS DEL ESTADO */}
              {stateActions.length > 0 && stateActions.map(action => {
-                const labelLower = action.label.toLowerCase();
-                const requiresAuth = labelLower.includes('validaci') || labelLower.includes('autorizaci');
-                const authBlocked = requiresAuth && authStatus?.status !== 'signed';
                 return (
                 <button
                     key={action.id}
-                    disabled={executingActionId === action.id || authBlocked}
-                    title={authBlocked ? 'El cliente debe firmar la autorización de consulta y validación de identidad antes de ejecutar esta acción' : ''}
+                    disabled={executingActionId === action.id}
                     onClick={async () => {
-                        if (authBlocked) return;
                         setExecutingActionId(action.id);
                         try {
                             await MockService.logStateAction?.(credit.id, action.label, currentUser);
