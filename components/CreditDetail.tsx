@@ -21,6 +21,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [analyzingDocs, setAnalyzingDocs] = useState<string | false>(false);
   const [authStatus, setAuthStatus] = useState<AuthorizationToken | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [manualRules, setManualRules] = useState<{id: string; name: string; description?: string}[]>([]);
+  const [executingRuleId, setExecutingRuleId] = useState<string | null>(null);
   const [authResending, setAuthResending] = useState(false);
   const [authValUrl, setAuthValUrl] = useState('');
   const [authValEditing, setAuthValEditing] = useState(false);
@@ -142,6 +144,14 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
       }).catch(() => setStateActions([]));
     }
   }, [credit?.statusId]);
+
+  // Cargar reglas con botón manual al abrir el crédito
+  useEffect(() => {
+    if (!credit?.id || !currentUser) return;
+    ProductionService.getManualRulesForUser(currentUser)
+      .then((rules: any[]) => setManualRules(rules || []))
+      .catch(() => setManualRules([]));
+  }, [credit?.id, currentUser?.id]);
 
   // Cargar estado de autorización siempre al abrir el crédito + polling en tiempo real
   useEffect(() => {
@@ -481,18 +491,13 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error al registrar acción', type: 'error' } }));
                         } finally { setExecutingActionId(null); }
                     }}
-                    className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg ${
-                        authBlocked
-                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                            : 'bg-amber-500 hover:bg-amber-600 text-white'
-                    } disabled:opacity-50 disabled:cursor-wait`}
+                    className="flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 disabled:cursor-wait"
                 >
                     {executingActionId === action.id
                         ? <Loader2 size={13} className="animate-spin"/>
                         : <Check size={13}/>
                     }
                     {action.label}
-                    {authBlocked && <span className="text-[8px] normal-case tracking-normal ml-1">(Pendiente autorización)</span>}
                 </button>
                 );
              })}
@@ -606,6 +611,39 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             <div>
                                 <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Modo Subsanación Habilitado</p>
                                 <p className="text-xs text-amber-600 font-medium mt-0.5">El analista te habilitó la edición. Corrige los datos, guarda los cambios y usa el botón <strong>Subsanar Crédito</strong> para notificar.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ACCIONES MANUALES — botones de reenvío de webhooks */}
+                    {manualRules.length > 0 && (
+                        <div className="bg-white border-2 border-amber-100 rounded-2xl p-5 -mb-8">
+                            <div className="flex items-center gap-2 mb-3">
+                                <RefreshCw size={16} className="text-amber-500" />
+                                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Acciones manuales</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {manualRules.map(rule => (
+                                    <button
+                                        key={rule.id}
+                                        disabled={executingRuleId === rule.id}
+                                        onClick={async () => {
+                                            if (!confirm(`¿Reenviar "${rule.name}"?`)) return;
+                                            setExecutingRuleId(rule.id);
+                                            try {
+                                                await ProductionService.triggerManualWebhook(rule.id, credit.id, currentUser);
+                                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: `✓ ${rule.name} reenviado`, type: 'success' } }));
+                                            } catch (err: any) {
+                                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: err.message || 'Error al reenviar', type: 'error' } }));
+                                            } finally { setExecutingRuleId(null); }
+                                        }}
+                                        title={rule.description || ''}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {executingRuleId === rule.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                        {rule.name}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     )}
