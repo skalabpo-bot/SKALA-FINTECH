@@ -1124,13 +1124,33 @@ export const ProductionService = {
         let url = null;
         if (file) url = await ProductionService.uploadImage(file);
 
-        await supabase.from('comments').insert({
+        const { error: insertErr } = await supabase.from('comments').insert({
             credit_id: creditId,
             user_id: user.id,
             text,
             attachment_name: file?.name,
             attachment_url: url
         });
+        if (insertErr) {
+            console.error('addComment INSERT error:', insertErr);
+            // Reintentar con supabaseAdmin si falla por RLS u otro motivo
+            try {
+                const { supabaseAdmin } = await import('./supabaseClient');
+                const { error: adminErr } = await (supabaseAdmin as any).from('comments').insert({
+                    credit_id: creditId,
+                    user_id: user.id,
+                    text,
+                    attachment_name: file?.name,
+                    attachment_url: url
+                });
+                if (adminErr) {
+                    console.error('addComment admin retry failed:', adminErr);
+                    throw adminErr;
+                }
+            } catch (e) {
+                throw insertErr;
+            }
+        }
 
         // Obtener datos de gestor, analista y cliente para webhooks de este crédito
         let gestorInfo: any = null;
@@ -1893,6 +1913,11 @@ export const ProductionService = {
                         const parsedS = typeof a.status_filter === 'string' ? JSON.parse(a.status_filter) : a.status_filter;
                         if (Array.isArray(parsedS)) statusFilter = parsedS;
                     } catch { statusFilter = []; }
+                    let manualButtonRoles: string[] = [];
+                    try {
+                        const parsedRoles = typeof a.manual_button_roles === 'string' ? JSON.parse(a.manual_button_roles) : a.manual_button_roles;
+                        if (Array.isArray(parsedRoles)) manualButtonRoles = parsedRoles;
+                    } catch { manualButtonRoles = []; }
                     return {
                         id: a.id,
                         name: a.name,
@@ -1902,7 +1927,9 @@ export const ProductionService = {
                         eventTypes,
                         automationType: a.automation_type || 'webhook',
                         recipients,
-                        statusFilter
+                        statusFilter,
+                        manualButtonEnabled: a.manual_button_enabled || false,
+                        manualButtonRoles
                     };
                 })
             };
@@ -1942,7 +1969,9 @@ export const ProductionService = {
                 event_type: JSON.stringify(a.eventTypes || ['all']),
                 automation_type: a.automationType || 'webhook',
                 recipients: JSON.stringify(a.recipients || []),
-                status_filter: JSON.stringify(a.statusFilter || [])
+                status_filter: JSON.stringify(a.statusFilter || []),
+                manual_button_enabled: a.manualButtonEnabled || false,
+                manual_button_roles: JSON.stringify(a.manualButtonRoles || [])
             }));
             let { error: insertErr } = await supabase.from('automation_rules').insert(rows);
             if (insertErr) {
@@ -1962,6 +1991,127 @@ export const ProductionService = {
                 }
             }
         }
+    },
+    // Reenvía manualmente el webhook de una regla recreando el payload del evento original
+    triggerManualWebhook: async (ruleId: string, creditId: string, currentUser: User) => {
+        // 1. Obtener la regla
+        const { data: rule, error: ruleErr } = await supabase.from('automation_rules').select('*').eq('id', ruleId).single();
+        if (ruleErr || !rule) throw new Error('Regla no encontrada');
+        if (!rule.manual_button_enabled) throw new Error('Esta regla no tiene botón manual habilitado');
+        if (!rule.active) throw new Error('La regla está inactiva');
+
+        // 2. Validar rol
+        let allowedRoles: string[] = [];
+        try {
+            const parsed = typeof rule.manual_button_roles === 'string' ? JSON.parse(rule.manual_button_roles) : rule.manual_button_roles;
+            if (Array.isArray(parsed)) allowedRoles = parsed;
+        } catch {}
+        if (allowedRoles.length > 0 && !allowedRoles.includes(currentUser.role)) {
+            throw new Error('No tienes permisos para ejecutar esta acción');
+        }
+
+        // 3. Detectar tipo de evento
+        let eventTypes: string[] = [];
+        try {
+            const parsedE = typeof rule.event_type === 'string' ? JSON.parse(rule.event_type) : rule.event_type;
+            eventTypes = Array.isArray(parsedE) ? parsedE : [parsedE].filter(Boolean);
+        } catch { eventTypes = [rule.event_type].filter(Boolean); }
+        const primaryEvent = eventTypes.find(e => e !== 'all') || eventTypes[0] || 'credit_created';
+
+        // 4. Obtener crédito completo + cliente + gestor + analista
+        const { data: creditRow } = await supabase.from('credits').select('*').eq('id', creditId).single();
+        if (!creditRow) throw new Error('Crédito no encontrado');
+        const clientData = creditRow.client_data || {};
+
+        const { data: gestor } = await supabase.from('profiles').select('id, full_name, phone, email').eq('id', creditRow.assigned_gestor_id).single();
+        const { data: analyst } = creditRow.assigned_analyst_id
+            ? await supabase.from('profiles').select('id, full_name, phone, email').eq('id', creditRow.assigned_analyst_id).single()
+            : { data: null };
+
+        // 5. Reconstruir el payload exacto del evento original
+        const basePayload: any = {
+            credit_id: creditId,
+            estado_inicial: creditRow.status_id || '',
+            gestor: gestor ? {
+                id: gestor.id,
+                nombre: gestor.full_name,
+                telefono: gestor.phone || '',
+                email: gestor.email || ''
+            } : null,
+            analista: analyst ? {
+                id: analyst.id,
+                nombre: analyst.full_name,
+                telefono: analyst.phone || '',
+                email: analyst.email || ''
+            } : null,
+            cliente: {
+                nombre: `${clientData.nombres || ''} ${clientData.apellidos || ''}`.trim(),
+                documento: clientData.numeroDocumento || '',
+                celular: clientData.telefonoCelular || '',
+                correo: clientData.correo || ''
+            },
+            credito: {
+                id: creditId,
+                solicitud_number: creditRow.solicitud_number,
+                monto: Number(creditRow.amount || 0),
+                plazo: Number(creditRow.term || 0),
+                entidad: creditRow.entity_name,
+                tasa: Number(creditRow.interest_rate || 0),
+                comision_estimada: Number(creditRow.commission_est || 0),
+                comision_porcentaje: Number(creditRow.commission_percent || 0),
+                monto_desembolso: Number(creditRow.disbursement_amount || 0),
+                estado: creditRow.status_id
+            },
+            // Marca opcional para que n8n sepa que es disparo manual (no obligatorio procesarla)
+            _manual_trigger: {
+                triggered_by: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+                rule_name: rule.name,
+                triggered_at: new Date().toISOString()
+            }
+        };
+
+        // 6. Enviar webhook con el evento real
+        const payload = { event: primaryEvent, timestamp: new Date().toISOString(), source: 'skala_platform', ...basePayload };
+        try {
+            const response = await fetch(rule.webhook_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) throw new Error(`Webhook respondió ${response.status}`);
+        } catch (err: any) {
+            throw new Error('Error al enviar webhook: ' + err.message);
+        }
+
+        // 7. Registrar en historial
+        try {
+            await supabase.from('credit_history').insert({
+                credit_id: creditId,
+                action: 'AUTOMATIZACIÓN MANUAL',
+                description: `Reenviado: ${rule.name} (evento: ${primaryEvent})`,
+                user_id: currentUser.id,
+                user_name: currentUser.name,
+                user_role: currentUser.role,
+            });
+        } catch {}
+
+        return { success: true, event: primaryEvent };
+    },
+    // Lista solo las reglas con botón manual habilitado y rol permitido
+    getManualRulesForUser: async (currentUser: User) => {
+        const { data } = await supabase.from('automation_rules')
+            .select('id, name, description, manual_button_roles, active')
+            .eq('manual_button_enabled', true)
+            .eq('active', true);
+        if (!data) return [];
+        return data.filter((r: any) => {
+            let roles: string[] = [];
+            try {
+                const parsed = typeof r.manual_button_roles === 'string' ? JSON.parse(r.manual_button_roles) : r.manual_button_roles;
+                if (Array.isArray(parsed)) roles = parsed;
+            } catch {}
+            return roles.length === 0 || roles.includes(currentUser.role);
+        }).map((r: any) => ({ id: r.id, name: r.name, description: r.description }));
     },
     testAutomation: async (webhookUrl: string) => {
         try {
