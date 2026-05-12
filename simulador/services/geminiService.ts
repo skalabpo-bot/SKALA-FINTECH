@@ -18,7 +18,7 @@ async function callEdgeFunction(type: 'cedula' | 'paystub' | 'legal', images: Ar
   const resp = await fetch(EDGE_FN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-    body: JSON.stringify({ type, images, prompt, model: 'gpt-4o-mini' }),
+    body: JSON.stringify({ type, images, prompt, model: type === 'paystub' ? 'gpt-4o' : 'gpt-4o-mini' }),
   });
   if (!resp.ok) {
     const err = await resp.text();
@@ -245,9 +245,25 @@ export const analyzePaystubDocument = async (
     EXCLUYE: salud, pensión, embargos (ya están en sus propios campos).
 
     CAMPO 6 — detailedDeductions
-    Lista cada ítem incluido en otherDeductions con su nombre exacto del documento y su valor.
-    REGLA CRÍTICA: la suma de todos los amounts de esta lista debe ser IGUAL a otherDeductions.
-    NO incluyas salud, pensión ni embargos en esta lista.
+    Lista CADA descuento individual incluido en otherDeductions con su nombre EXACTO del documento y su valor numérico.
+
+    PROCEDIMIENTO OBLIGATORIO PARA detailedDeductions:
+    1. Recorre línea por línea TODA la sección de descuentos/deducciones del desprendible.
+    2. Por cada línea que NO sea salud, NO sea pensión, NO sea embargo → agrégala a la lista con su nombre y monto.
+    3. Si una entidad financiera aparece con descripción tipo "BANCOLOMBIA CR-12345", "DAVIVIENDA", "FONDO EMP", "COOMEVA", "FINANDINA", "CREDIVALORES", etc. → cada una es una entrada SEPARADA aunque parezcan similares.
+    4. NO consolides ni sumes carteras del mismo banco — cada línea visible va separada.
+    5. NO inventes datos. Si no estás seguro de un monto, omítelo (es mejor menos que inventar).
+    6. VERIFICACIÓN MATEMÁTICA FINAL: suma todos los amounts de la lista que generaste. Debe ser IGUAL al valor de otherDeductions. Si no cuadra, AJUSTA otherDeductions para que sea exactamente la suma de la lista (no al revés).
+
+    Ejemplo de formato esperado para detailedDeductions:
+    [
+      {"name": "BANCO BBVA LIBRANZA", "amount": 350000},
+      {"name": "DAVIVIENDA CR-78901", "amount": 215000},
+      {"name": "FONDO DE EMPLEADOS", "amount": 120000},
+      {"name": "COOMEVA CUOTA", "amount": 95000}
+    ]
+
+    PROHIBIDO en detailedDeductions: salud, EPS, pensión, AFP, embargo, retención judicial, cuota alimentaria.
 
     CAMPO 7 — entityType
     Detecta solo para referencia interna:

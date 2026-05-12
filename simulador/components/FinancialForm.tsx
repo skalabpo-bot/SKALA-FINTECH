@@ -170,7 +170,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
       if (file.type === 'application/pdf') {
         // Convertir PDF a imágenes JPEG (una por página) — OpenAI/Groq no aceptan PDFs
         // y Gemini inline_data con PDFs falla en algunos casos.
-        images = await pdfToImages(file, 3, 2);
+        // Scale 3 = ~216 dpi, mejor OCR para cifras de carteras.
+        images = await pdfToImages(file, 3, 3);
         console.log(`📄 PDF convertido a ${images.length} imagen(es) JPEG`);
       } else {
         // Imágenes: comprimir y enviar como JPEG
