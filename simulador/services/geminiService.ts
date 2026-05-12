@@ -191,7 +191,22 @@ const trackUsage = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
 };
 
-export const analyzePaystubDocument = async (base64Data: string, mimeType: string): Promise<FinancialData> => {
+export interface PaystubImage {
+  base64: string;
+  mimeType: string;
+}
+
+export const analyzePaystubDocument = async (
+  base64DataOrImages: string | PaystubImage[],
+  mimeType?: string
+): Promise<FinancialData> => {
+  // Normalizar entrada: aceptar tanto la firma vieja (base64, mimeType) como la nueva (imágenes[])
+  const images: PaystubImage[] = Array.isArray(base64DataOrImages)
+    ? base64DataOrImages
+    : [{ base64: base64DataOrImages, mimeType: mimeType || 'image/jpeg' }];
+
+  if (images.length === 0) throw new Error('Se requiere al menos una imagen del desprendible.');
+
   const availableKeys = getAvailableKeysArray();
 
   if (availableKeys.length === 0) {
@@ -255,9 +270,9 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
   // Intento 1: Edge Function (Gemini → Groq → OpenAI en cascada del servidor)
   if (EDGE_FN_URL) {
     try {
-      console.log('📡 Llamando Edge Function (cascada: Gemini → Groq → OpenAI) para desprendible...');
+      console.log(`📡 Llamando Edge Function (cascada: Gemini → Groq → OpenAI) para desprendible (${images.length} página(s))...`);
       const edgePrompt = prompt + `\n\nIMPORTANTE: Responde SOLO con JSON válido con esta estructura: {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}. En detailedDeductions incluye CADA libranza, crédito, cartera individual.`;
-      const data = await callEdgeFunction('paystub', [{ base64: base64Data, mimeType }], edgePrompt);
+      const data = await callEdgeFunction('paystub', images, edgePrompt);
       console.log('✅ Desprendible leído vía Edge Function', data);
       return {
         monthlyIncome: data.monthlyIncome || 0,
@@ -293,7 +308,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
           model: MODEL,
           contents: {
             parts: [
-              { inlineData: { mimeType: mimeType, data: base64Data } },
+              ...images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.base64 } })),
               { text: prompt }
             ]
           },
@@ -364,7 +379,7 @@ export const analyzePaystubDocument = async (base64Data: string, mimeType: strin
 {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}
 2. En detailedDeductions DEBES incluir CADA libranza, crédito, préstamo, cartera, cooperativa, seguro y cualquier otro descuento individual que NO sea salud, pensión o embargo. Cada uno como un objeto separado con su nombre exacto y monto.
 3. La suma de todos los amounts de detailedDeductions DEBE ser igual a otherDeductions.`;
-      const data = await callEdgeFunction('paystub', [{ base64: base64Data, mimeType }], oaiPrompt);
+      const data = await callEdgeFunction('paystub', images, oaiPrompt);
       console.log('✅ ÉXITO: Desprendible leído vía Edge Function', data);
       return {
         monthlyIncome: data.monthlyIncome || 0,

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FinancialData, AnalysisResult, EntityType } from '../types';
 import { calculateCapacity } from '../services/calculatorService';
 import { analyzePaystubDocument } from '../services/geminiService';
+import { pdfToImages } from '../services/pdfToImage';
 import { useSimulator } from '../context/SimulatorContext';
 
 interface FinancialFormProps {
@@ -164,22 +165,20 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     setError(null);
 
     try {
-      let base64String = "";
-      if (file.type.includes('image')) {
-        base64String = await compressImage(file);
+      let images: { base64: string; mimeType: string }[];
+
+      if (file.type === 'application/pdf') {
+        // Convertir PDF a imágenes JPEG (una por página) — OpenAI/Groq no aceptan PDFs
+        // y Gemini inline_data con PDFs falla en algunos casos.
+        images = await pdfToImages(file, 3, 2);
+        console.log(`📄 PDF convertido a ${images.length} imagen(es) JPEG`);
       } else {
-        base64String = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const res = (reader.result as string).split(',')[1];
-                resolve(res);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
+        // Imágenes: comprimir y enviar como JPEG
+        const base64String = await compressImage(file);
+        images = [{ base64: base64String, mimeType: 'image/jpeg' }];
       }
 
-      const extractedData = await analyzePaystubDocument(base64String, file.type.includes('image') ? 'image/jpeg' : file.type);
+      const extractedData = await analyzePaystubDocument(images);
 
       if (extractedData.employerName) {
         onEmployerNameRef.current?.(extractedData.employerName);
