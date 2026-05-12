@@ -1,3 +1,4 @@
+// Build marker: v1.0.1 (test del banner) — 2026-05-12
 // Detecta si hay una versión más nueva del bundle desplegada y notifica al cliente.
 //
 // Funcionamiento:
