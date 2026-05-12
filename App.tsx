@@ -5,6 +5,7 @@ import { Dashboard } from './components/Dashboard';
 import { OnboardingForm } from './components/OnboardingForm';
 import { SimulatorView } from './components/SimulatorView';
 import { CreditTypeSelector } from './components/CreditTypeSelector';
+import { UpdateBanner } from './components/UpdateBanner';
 import { CreditDetail } from './components/CreditDetail';
 import { AdminPanel } from './components/AdminPanel';
 import { ReportsPanel } from './components/ReportsPanel';
@@ -754,6 +755,7 @@ const App = () => {
       {currentView === 'notifications' && <NotificationsView currentUser={currentUser} onViewCredit={(id) => { setSelectedCreditId(id); setCurrentView('detail'); }} />}
       {currentView === 'profile' && <ProfileView currentUser={currentUser} onUpdate={setCurrentUser} />}
       {currentView === 'detail' && selectedCreditId && <CreditDetail creditId={selectedCreditId} currentUser={currentUser} onBack={() => { setSelectedCreditId(null); setCurrentView('credits'); }} />}
+      <UpdateBanner />
     </Layout>
   );
 };
