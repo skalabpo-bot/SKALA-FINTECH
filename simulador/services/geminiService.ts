@@ -44,7 +44,7 @@ const MODEL_CACHE_KEY = 'gemini_available_models';
 const MODEL_CACHE_TTL = 60 * 60 * 1000; // 1 hora
 
 // Versión de cache — cambiar para invalidar cache de todos los usuarios
-const MODEL_CACHE_VERSION = 2;
+const MODEL_CACHE_VERSION = 3;
 
 /** Lista los modelos disponibles de Gemini y devuelve los mejores para generateContent */
 const getAvailableModels = async (apiKey: string): Promise<string[]> => {
@@ -75,13 +75,21 @@ const getAvailableModels = async (apiKey: string): Promise<string[]> => {
       .map((m: any) => m.name.replace('models/', ''))
       .sort((a: string, b: string) => {
         const score = (n: string) => {
+          // Prioridad máxima: alias -latest (siempre apunta al más nuevo)
+          if (n === 'gemini-flash-latest') return 300;
+          if (n === 'gemini-pro-latest') return 290;
+          // Versiones 3.x específicas (cuando Google las libere o estén ya en API)
+          if (n.includes('3.1-flash') && !n.includes('preview')) return 270;
+          if (n.includes('3-flash') && !n.includes('preview')) return 260;
+          if (n.includes('3.1-flash')) return 240;
+          if (n.includes('3-flash')) return 230;
+          // 2.5 / 2.0 estables
           if (n === 'gemini-2.5-flash') return 200;
           if (n === 'gemini-2.0-flash') return 150;
           if (n.includes('2.5-flash') && !n.includes('preview')) return 140;
           if (n.includes('2.0-flash') && !n.includes('preview')) return 130;
           if (n.includes('2.5-flash')) return 120;
           if (n.includes('2.0-flash')) return 110;
-          if (n.includes('3') && n.includes('flash')) return 100;
           return 50;
         };
         return score(b) - score(a);
@@ -307,7 +315,8 @@ export const analyzePaystubDocument = async (
   }
 
   // Intento 2: Gemini directo (último recurso si Edge Function falla)
-  const MODEL = 'gemini-2.5-flash';
+  // Usamos -latest para tomar siempre el modelo más nuevo (gemini-3.x cuando esté disponible)
+  const MODEL = 'gemini-flash-latest';
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });
@@ -514,7 +523,7 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   }
 
   // Intento 2: Gemini directo (último recurso)
-  const MODEL_CEDULA = 'gemini-2.5-flash';
+  const MODEL_CEDULA = 'gemini-flash-latest';
 
   for (const currentKey of availableKeys) {
     const ai = new GoogleGenAI({ apiKey: currentKey });

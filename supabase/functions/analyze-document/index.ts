@@ -25,8 +25,22 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ============ GEMINI ============
 async function callGemini(images: any[], prompt: string): Promise<any> {
-  const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
-  const RETRY_DELAYS = [1000, 2000, 3000]; // 1s, 2s, 3s
+  // Prioridad: alias -latest (siempre el más nuevo) → versiones 3.x específicas → 2.5 como respaldo.
+  // Si Google libera 3.2 / 4 mañana, -latest los captura sin tocar código.
+  const models = [
+    'gemini-flash-latest',
+    'gemini-3.1-flash',
+    'gemini-3-flash',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+  ];
+  const RETRY_DELAYS = [1000, 2000, 3000];
+
+  if (!GEMINI_API_KEY) {
+    throw new Error('Gemini: GEMINI_API_KEY no configurada en Edge Function secrets');
+  }
+
+  const detailedErrors: string[] = [];
 
   for (const model of models) {
     for (let attempt = 0; attempt <= 2; attempt++) {
@@ -48,8 +62,15 @@ async function callGemini(images: any[], prompt: string): Promise<any> {
         });
 
         if (!resp.ok) {
-          console.warn(`Gemini ${model} attempt ${attempt + 1} falló: ${resp.status}`);
-          // Si es 503/429 reintentar; si es otro error (404, 400), pasar al siguiente modelo
+          // Capturar el cuerpo del error para diagnóstico real (no solo status)
+          const errBody = await resp.text().catch(() => '');
+          const errSummary = errBody.slice(0, 200).replace(/\s+/g, ' ');
+          console.warn(`Gemini ${model} attempt ${attempt + 1} falló: ${resp.status} - ${errSummary}`);
+          detailedErrors.push(`${model}: ${resp.status} ${errSummary}`);
+          // 503/429 reintentar; 400/404 pasar al siguiente modelo; 401/403 abortar Gemini completo
+          if (resp.status === 401 || resp.status === 403) {
+            throw new Error(`Gemini: key inválida o sin permisos (${resp.status}) - ${errSummary}`);
+          }
           if ((resp.status === 503 || resp.status === 429) && attempt < 2) continue;
           break;
         }
@@ -59,12 +80,16 @@ async function callGemini(images: any[], prompt: string): Promise<any> {
         const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         return { data: JSON.parse(cleanText), model: `gemini/${model}` };
       } catch (e: any) {
-        console.warn(`Gemini ${model} error:`, e.message);
+        const msg = e.message || String(e);
+        console.warn(`Gemini ${model} error:`, msg);
+        detailedErrors.push(`${model}: ${msg}`);
+        // Si fue un 401/403, no seguir intentando otros modelos con la misma key inválida
+        if (msg.includes('key inválida')) throw e;
         if (attempt >= 2) break;
       }
     }
   }
-  throw new Error('Gemini: todos los modelos fallaron');
+  throw new Error('Gemini falló en todos los modelos: ' + detailedErrors.slice(0, 3).join(' | '));
 }
 
 // ============ GROQ ============
