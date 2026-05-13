@@ -82,20 +82,20 @@ export const AutomationsPanel = () => {
 
     const openAddForm = () => {
         setEditingId(null);
-        setFormData({ eventTypes: [], automationType: 'whatsapp', recipients: [], statusFilter: [] });
+        setFormData({ eventTypes: [], automationType: 'whatsapp', recipients: [], statusFilter: [], manualButtonEnabled: false, manualButtonRoles: [] });
         setIsFormOpen(true);
     };
 
     const openEditForm = (rule: AutomationRule) => {
         setEditingId(rule.id);
-        setFormData({ name: rule.name, description: rule.description, webhookUrl: rule.webhookUrl, eventTypes: [...rule.eventTypes], automationType: rule.automationType || 'webhook', recipients: [...(rule.recipients || [])], statusFilter: [...(rule.statusFilter || [])] });
+        setFormData({ name: rule.name, description: rule.description, webhookUrl: rule.webhookUrl, eventTypes: [...rule.eventTypes], automationType: rule.automationType || 'webhook', recipients: [...(rule.recipients || [])], statusFilter: [...(rule.statusFilter || [])], manualButtonEnabled: rule.manualButtonEnabled || false, manualButtonRoles: [...(rule.manualButtonRoles || [])] });
         setIsFormOpen(true);
     };
 
     const closeForm = () => {
         setIsFormOpen(false);
         setEditingId(null);
-        setFormData({ eventTypes: [], automationType: 'whatsapp', recipients: [], statusFilter: [] });
+        setFormData({ eventTypes: [], automationType: 'whatsapp', recipients: [], statusFilter: [], manualButtonEnabled: false, manualButtonRoles: [] });
     };
 
     const toggleRecipient = (recipient: string) => {
@@ -128,7 +128,9 @@ export const AutomationsPanel = () => {
                     eventTypes: formData.eventTypes!,
                     automationType: formData.automationType || 'webhook',
                     recipients: formData.recipients || [],
-                    statusFilter: formData.statusFilter || []
+                    statusFilter: formData.statusFilter || [],
+                    manualButtonEnabled: formData.manualButtonEnabled || false,
+                    manualButtonRoles: formData.manualButtonRoles || []
                 } : a)
             }));
         } else {
@@ -141,7 +143,9 @@ export const AutomationsPanel = () => {
                 eventTypes: formData.eventTypes,
                 automationType: formData.automationType || 'webhook',
                 recipients: formData.recipients || [],
-                statusFilter: formData.statusFilter || []
+                statusFilter: formData.statusFilter || [],
+                manualButtonEnabled: formData.manualButtonEnabled || false,
+                manualButtonRoles: formData.manualButtonRoles || []
             };
             setConfig(prev => ({ ...prev, automations: [...prev.automations, rule] }));
         }
@@ -390,6 +394,49 @@ export const AutomationsPanel = () => {
                                     onChange={e => setFormData({ ...formData, webhookUrl: e.target.value })}
                                     className={inputClass}
                                 />
+                            </div>
+
+                            {/* BOTÓN MANUAL DE REENVÍO */}
+                            <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.manualButtonEnabled || false}
+                                        onChange={e => setFormData({ ...formData, manualButtonEnabled: e.target.checked })}
+                                        className="w-4 h-4 accent-amber-500"
+                                    />
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-900">Habilitar botón manual de reenvío</p>
+                                        <p className="text-[11px] text-amber-700">Permite reenviar este webhook manualmente desde el detalle del crédito</p>
+                                    </div>
+                                </label>
+                                {formData.manualButtonEnabled && (
+                                    <div className="mt-3 pt-3 border-t border-amber-200">
+                                        <label className="block text-[11px] font-bold text-amber-800 uppercase mb-2">Roles que ven el botón</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {dynamicRoles.map(r => (
+                                                <button
+                                                    key={r.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const current = formData.manualButtonRoles || [];
+                                                        const next = current.includes(r.value) ? current.filter(x => x !== r.value) : [...current, r.value];
+                                                        setFormData({ ...formData, manualButtonRoles: next });
+                                                    }}
+                                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 text-xs font-bold transition-all ${(formData.manualButtonRoles || []).includes(r.value) ? 'border-amber-500 bg-amber-100 text-amber-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                                                >
+                                                    <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border-2 ${(formData.manualButtonRoles || []).includes(r.value) ? 'bg-amber-500 border-amber-500' : 'border-slate-300'}`}>
+                                                        {(formData.manualButtonRoles || []).includes(r.value) && <Check size={9} className="text-white" />}
+                                                    </div>
+                                                    {r.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {(formData.manualButtonRoles || []).length === 0 && (
+                                            <p className="text-[10px] text-slate-500 mt-1 italic">Si no seleccionas ningún rol, todos los usuarios verán el botón.</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 pt-2">

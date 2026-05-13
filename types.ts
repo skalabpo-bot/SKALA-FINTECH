@@ -241,6 +241,9 @@ export interface Credit {
   recomendado?: boolean;
   legalAnalysis?: PolicyAnalysis;
 
+  creditTypeId?: string;
+  formData?: Record<string, any>;
+
   comments: Comment[];
   documents: CreditDocument[];
   history: CreditHistoryItem[];
@@ -382,6 +385,8 @@ export interface AutomationRule {
     automationType: AutomationType;
     recipients: string[];
     statusFilter?: string[];
+    manualButtonEnabled?: boolean;
+    manualButtonRoles?: string[];
 }
 
 export interface N8nConfig {

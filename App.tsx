@@ -5,6 +5,7 @@ import { Dashboard } from './components/Dashboard';
 import { OnboardingForm } from './components/OnboardingForm';
 import { SimulatorView } from './components/SimulatorView';
 import { CreditTypeSelector } from './components/CreditTypeSelector';
+import { DynamicOnboardingView } from './components/DynamicOnboardingView';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CreditDetail } from './components/CreditDetail';
 import { AdminPanel } from './components/AdminPanel';
@@ -60,6 +61,7 @@ const App = () => {
   const [sessionChecked, setSessionChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
+  const [selectedCreditType, setSelectedCreditType] = useState<any | null>(null);
   const [prefilledCreditData, setPrefilledCreditData] = useState<Record<string, any> | null>(null);
   const [authView, setAuthView] = useState<'LOGIN' | 'REGISTER' | 'FORGOT_PASSWORD'>('LOGIN');
   const [email, setEmail] = useState('');
@@ -312,9 +314,11 @@ const App = () => {
     const [credits, setCredits] = useState<Credit[]>([]);
     const [states, setStates] = useState<any[]>([]);
     const [entities, setEntities] = useState<any[]>([]);
+    const [creditTypes, setCreditTypes] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [filterEntity, setFilterEntity] = useState('');
+    const [filterCreditType, setFilterCreditType] = useState('');
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
@@ -323,15 +327,17 @@ const App = () => {
 
     useEffect(() => {
         const fetchData = async () => {
-            const [cr, st, ent, readMap] = await Promise.all([
+            const [cr, st, ent, ct, readMap] = await Promise.all([
                 MockService.getCredits(currentUser!),
                 MockService.getStates(),
                 MockService.getEntities(),
+                MockService.getCreditTypes ? MockService.getCreditTypes() : Promise.resolve([]),
                 MockService.getCreditReadMap(currentUser!.id)
             ]);
             setCredits(cr);
             setStates(st);
             setEntities(ent);
+            setCreditTypes(ct || []);
             setCreditReadMap(readMap);
         };
         fetchData();
@@ -352,7 +358,7 @@ const App = () => {
         }
     };
 
-    const activeFilterCount = [filterStatus, filterEntity, filterDateFrom, filterDateTo].filter(Boolean).length;
+    const activeFilterCount = [filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo].filter(Boolean).length;
 
     const filtered = credits.filter(c => {
         const matchesSearch = !searchTerm ||
@@ -361,12 +367,22 @@ const App = () => {
             c.gestorName?.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesStatus = !filterStatus || c.statusId === filterStatus;
         const matchesEntity = !filterEntity || c.entidadAliada === filterEntity;
+        const matchesCreditType = !filterCreditType || c.creditTypeId === filterCreditType;
         const matchesDateFrom = !filterDateFrom || new Date(c.createdAt) >= new Date(filterDateFrom);
         const matchesDateTo = !filterDateTo || new Date(c.createdAt) <= new Date(filterDateTo + 'T23:59:59');
-        return matchesSearch && matchesStatus && matchesEntity && matchesDateFrom && matchesDateTo;
+        return matchesSearch && matchesStatus && matchesEntity && matchesCreditType && matchesDateFrom && matchesDateTo;
     });
 
-    const clearFilters = () => { setFilterStatus(''); setFilterEntity(''); setFilterDateFrom(''); setFilterDateTo(''); };
+    const clearFilters = () => { setFilterStatus(''); setFilterEntity(''); setFilterCreditType(''); setFilterDateFrom(''); setFilterDateTo(''); };
+
+    // Mapa estático de colores para pill de tipo (Tailwind JIT necesita clases literales)
+    const TYPE_PILL_COLOR: Record<string, string> = {
+      orange: 'bg-orange-100 text-orange-700 border-orange-200',
+      blue: 'bg-blue-100 text-blue-700 border-blue-200',
+      emerald: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      purple: 'bg-purple-100 text-purple-700 border-purple-200',
+      pink: 'bg-pink-100 text-pink-700 border-pink-200',
+    };
 
     return (
       <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
@@ -393,7 +409,14 @@ const App = () => {
 
             {showFilters && (
                 <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 animate-fade-in">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Tipo de Crédito</label>
+                            <select value={filterCreditType} onChange={e => setFilterCreditType(e.target.value)} className="w-full px-3 py-2.5 bg-white border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-primary">
+                                <option value="">Todos los tipos</option>
+                                {creditTypes.map((ct: any) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                            </select>
+                        </div>
                         <div>
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Estado</label>
                             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full px-3 py-2.5 bg-white border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-primary">
@@ -443,12 +466,20 @@ const App = () => {
               {filtered.map(c => {
                 const lastRead = creditReadMap[c.id];
                 const hasUnread = !!lastRead && new Date(c.updatedAt) > lastRead;
+                const ctype = creditTypes.find((t: any) => t.id === c.creditTypeId);
+                const pillClass = ctype ? (TYPE_PILL_COLOR[ctype.color] || TYPE_PILL_COLOR.orange) : TYPE_PILL_COLOR.orange;
+                const isDirect = ctype && ctype.requires_entity === false;
                 return (
                   <tr key={c.id} className={`hover:bg-slate-50/50 transition-colors group ${hasUnread ? 'bg-orange-50/30' : ''}`}>
                     <td className="px-8 py-6">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-2xl font-black text-primary">{c.solicitudNumber || 'N/A'}</p>
                             {hasUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-300 flex-shrink-0" title="Actividad no leída"/>}
+                            {ctype && (
+                                <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${pillClass}`} title={ctype.name}>
+                                    {ctype.name.replace('Crédito ', '').replace('crédito ', '')}
+                                </span>
+                            )}
                             {c.recomendado && currentUser!.role !== 'GESTOR' && (
                                 <span className="flex items-center gap-0.5 text-[8px] font-black text-yellow-700 bg-yellow-100 border border-yellow-200 px-1.5 py-0.5 rounded-full uppercase" title="Crédito recomendado">
                                     <Star size={9} fill="currentColor" /> Recomendado
@@ -465,7 +496,9 @@ const App = () => {
                         {c.analystName && <p className="text-[10px] text-blue-500 font-bold mt-0.5">AN: {c.analystName}</p>}
                     </td>
                     <td className="px-8 py-6">
-                        <p className="text-xs font-bold text-slate-600">{c.entidadAliada || '---'}</p>
+                        {isDirect
+                          ? <p className="text-xs font-bold text-slate-400 italic">Skala (Directo)</p>
+                          : <p className="text-xs font-bold text-slate-600">{c.entidadAliada || '---'}</p>}
                     </td>
                     <td className="px-8 py-6 font-black text-slate-800 text-base">${c.monto?.toLocaleString()}</td>
                     <td className="px-8 py-6">
@@ -721,12 +754,18 @@ const App = () => {
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
         <CreditTypeSelector onSelect={(type) => {
-          if (type === 'libranza') setCurrentView('simulator_libranza');
+          setSelectedCreditType(type);
+          if (type.requires_entity === false) {
+            setCurrentView('dynamic_onboarding');
+          } else {
+            setCurrentView('simulator_libranza');
+          }
         }} />
       )}
       {currentView === 'simulator_libranza' && (
         <SimulatorView
           currentUser={currentUser}
+          creditTypeId={selectedCreditType?.id}
           onCreditCreated={(creditId) => {
             setSelectedCreditId(creditId);
             setCurrentView('detail');
@@ -736,6 +775,14 @@ const App = () => {
             setCurrentView('onboarding');
           }}
           onCancel={() => setCurrentView('simulator')}
+        />
+      )}
+      {currentView === 'dynamic_onboarding' && selectedCreditType && (
+        <DynamicOnboardingView
+          creditType={selectedCreditType}
+          currentUser={currentUser!}
+          onSuccess={() => { setSelectedCreditType(null); setCurrentView('credits'); }}
+          onCancel={() => { setSelectedCreditType(null); setCurrentView('simulator'); }}
         />
       )}
       {currentView === 'onboarding' && (

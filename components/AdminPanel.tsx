@@ -5,6 +5,9 @@ import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '
 import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap, FileText, Save } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
 import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
+import { CreditTypesAdmin } from './CreditTypesAdmin';
+import { StateBannersAdmin } from './StateBannersAdmin';
+import { FieldLibraryAdmin } from './FieldLibraryAdmin';
 import { getRadicacionAbierta, updateRadicacionAbierta } from '../simulador/services/settingsService';
 
 const STATE_COLORS = [
@@ -547,6 +550,48 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* TIPOS DE CRÉDITO */}
+            <div>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-purple-100 rounded-xl">
+                        <CreditCard size={20} className="text-purple-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Tipos de Crédito</h2>
+                        <p className="text-xs text-slate-500">Define los tipos de crédito (Libranza, Hipotecario, Vehículo, etc.).</p>
+                    </div>
+                </div>
+                <CreditTypesAdmin />
+            </div>
+
+            {/* BANNERS POR ESTADO */}
+            <div>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-amber-100 rounded-xl">
+                        <Layers size={20} className="text-amber-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Banners Informativos</h2>
+                        <p className="text-xs text-slate-500">Mensajes que aparecen al usuario según el estado del crédito y la entidad.</p>
+                    </div>
+                </div>
+                <StateBannersAdmin />
+            </div>
+
+            {/* BIBLIOTECA DE CAMPOS */}
+            <div>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-indigo-100 rounded-xl">
+                        <CreditCard size={20} className="text-indigo-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Biblioteca de Campos</h2>
+                        <p className="text-xs text-slate-500">Define todos los campos posibles del formulario. Después se asignan a cada entidad desde el admin de entidades.</p>
+                    </div>
+                </div>
+                <FieldLibraryAdmin />
             </div>
 
             {/* SIMULADOR — Entidades & Factores FPM */}

@@ -10,9 +10,10 @@ interface LoanConfiguratorProps {
   onSimulate: (config: LoanConfiguration) => void;
   onBack: () => void;
   selectedPagaduria?: string;
+  selectedCreditTypeId?: string;
 }
 
-export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria }) => {
+export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria, selectedCreditTypeId }) => {
   const { state: { entities, fpmTable } } = useSimulator();
 
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
@@ -24,12 +25,22 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   const [manualCarteraItems, setManualCarteraItems] = useState<CarteraItem[]>([]);
   const [selectedDeductions, setSelectedDeductions] = useState<Set<number>>(new Set());
 
-  // Visible entities filtered by pagaduría
+  // Visible entities filtered by pagaduría AND credit type
   const pagKey = selectedPagaduria?.toUpperCase().trim() ?? '';
   const visibleEntities = useMemo(() => {
-    if (!selectedPagaduria) return entities;
-    return entities.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey));
-  }, [entities, selectedPagaduria, pagKey]);
+    let list = entities;
+    if (selectedPagaduria) {
+      list = list.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey));
+    }
+    if (selectedCreditTypeId) {
+      list = list.filter(e => {
+        const types = (e as any).creditTypeIds || [];
+        // Si la entidad no tiene tipos asignados, asumimos compatibilidad legacy con todos
+        return types.length === 0 || types.includes(selectedCreditTypeId);
+      });
+    }
+    return list;
+  }, [entities, selectedPagaduria, pagKey, selectedCreditTypeId]);
 
   // Auto-select first entity
   useEffect(() => {

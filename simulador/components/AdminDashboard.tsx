@@ -5,11 +5,18 @@ import { loadFPMData, addFPMEntry, deleteFPMEntry, getFPMsByEntity, importFactor
 import { getAllAds, saveAd, deleteAd, uploadAdImage } from '../services/adService';
 import { getAllEntities, saveEntity, deleteEntity, uploadLogo } from '../services/entityService';
 import { supabase } from '../../services/supabaseClient';
+import { CreditTypesService, CreditType } from '../../services/creditTypesService';
+import { EntityFieldsAssignment } from '../../components/EntityFieldsAssignment';
 
 export const AdminDashboard: React.FC = () => {
   // Data State
   const [adsData, setAdsData] = useState<AdConfig[]>([]);
   const [entitiesData, setEntitiesData] = useState<FinancialEntity[]>([]);
+  const [creditTypes, setCreditTypes] = useState<CreditType[]>([]);
+
+  useEffect(() => {
+    CreditTypesService.listAll().then(setCreditTypes).catch(() => setCreditTypes([]));
+  }, []);
   
   // UI State
   const [activeView, setActiveView] = useState<'entities' | 'edit_entity' | 'ads'>('entities');
@@ -762,11 +769,67 @@ export const AdminDashboard: React.FC = () => {
                             <p className="text-[10px] text-indigo-500 mt-1.5">Se agregarán automáticamente los parámetros: ?nombre=...&documento=...&telefono=...</p>
                           </div>
 
+                          {/* Tipos de Crédito que atiende */}
+                          <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
+                            <h5 className="text-xs font-bold text-purple-800 uppercase tracking-wide mb-2">Tipos de Crédito que Atiende</h5>
+                            <p className="text-[10px] text-purple-600 mb-3">Selecciona los tipos de crédito que esta entidad maneja. La entidad solo aparecerá al elegir uno de estos tipos.</p>
+                            <div className="flex flex-wrap gap-2">
+                              {creditTypes.length === 0 ? (
+                                <p className="text-[11px] text-slate-400 italic">No hay tipos de crédito definidos. Crea algunos en Admin → Tipos de Crédito.</p>
+                              ) : creditTypes.map(ct => {
+                                const checked = (editingEntity.creditTypeIds || []).includes(ct.id);
+                                return (
+                                  <label key={ct.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 cursor-pointer transition-all ${checked ? 'border-purple-500 bg-purple-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={e => {
+                                        const current = editingEntity.creditTypeIds || [];
+                                        const next = e.target.checked ? [...current, ct.id] : current.filter(id => id !== ct.id);
+                                        setEditingEntity({ ...editingEntity, creditTypeIds: next });
+                                      }}
+                                      className="w-3.5 h-3.5 accent-purple-500"
+                                    />
+                                    <span className={`text-xs font-bold ${checked ? 'text-purple-800' : 'text-slate-600'}`}>{ct.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Modo de Radicación */}
+                          <div className={`p-4 rounded-xl border ${editingEntity.requiresFullForm ? 'bg-orange-50 border-orange-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                            <h5 className={`text-xs font-bold uppercase tracking-wide mb-2 ${editingEntity.requiresFullForm ? 'text-orange-800' : 'text-emerald-800'}`}>Modo de Radicación</h5>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!editingEntity.requiresFullForm}
+                                onChange={e => setEditingEntity({...editingEntity, requiresFullForm: !e.target.checked})}
+                                className="w-4 h-4 mt-0.5 accent-emerald-500"
+                              />
+                              <div>
+                                <p className={`text-sm font-bold ${editingEntity.requiresFullForm ? 'text-orange-900' : 'text-emerald-900'}`}>
+                                  {editingEntity.requiresFullForm ? '🐢 Formulario Completo' : '⚡ Radicación Rápida'}
+                                </p>
+                                <p className={`text-[11px] ${editingEntity.requiresFullForm ? 'text-orange-700' : 'text-emerald-700'}`}>
+                                  {editingEntity.requiresFullForm
+                                    ? 'El gestor llena TODOS los datos antes de radicar. El cliente queda completo desde el inicio.'
+                                    : 'El gestor radica con datos mínimos (cédula + desprendible). El resto se llena después.'}
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+
                           <div className="pt-2">
                              <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 shadow-lg transition-all hover:-translate-y-0.5">Guardar Marca</button>
                           </div>
                       </form>
                   </div>
+
+                  {/* CAMPOS DEL FORMULARIO POR ENTIDAD */}
+                  {editingEntity.id && (
+                    <EntityFieldsAssignment entityId={editingEntity.id} entityName={editingEntity.name || ''} />
+                  )}
 
                   {/* POLÍTICA IA POR ENTIDAD */}
                   <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 shadow-sm">

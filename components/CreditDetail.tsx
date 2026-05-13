@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Credit, User, CreditState, UserRole, AuthorizationToken, PolicyAnalysis } from '../types';
 import { MockService } from '../services/mockService';
 import { ProductionService } from '../services/productionService';
+import { CreditTypesService } from '../services/creditTypesService';
 import { subscribeToComments, subscribeToCreditHistory } from '../services/realtimeService';
 import {
     Send, Paperclip, Check, X, Building, MessageSquare, FileText, Download, Pencil, Save,
@@ -23,6 +24,11 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [authLoading, setAuthLoading] = useState(false);
   const [manualRules, setManualRules] = useState<{id: string; name: string; description?: string}[]>([]);
   const [executingRuleId, setExecutingRuleId] = useState<string | null>(null);
+  const [stateBanners, setStateBanners] = useState<any[]>([]);
+  const [showRateModal, setShowRateModal] = useState(false);
+  const [rateInput, setRateInput] = useState<string>('');
+  const [savingRate, setSavingRate] = useState(false);
+  const [creditTypeMeta, setCreditTypeMeta] = useState<{ requires_entity: boolean; rate_commissions: any[] } | null>(null);
   const [authResending, setAuthResending] = useState(false);
   const [authValUrl, setAuthValUrl] = useState('');
   const [authValEditing, setAuthValEditing] = useState(false);
@@ -153,6 +159,18 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
       .catch(() => setManualRules([]));
   }, [credit?.id, currentUser?.id]);
 
+  // Cargar banners aplicables al estado/entidad/rol
+  useEffect(() => {
+    if (!credit?.statusId || !currentUser) return;
+    const stateName = currentStateObj?.name || credit.statusId;
+    const entityName = (credit as any).entityName || '';
+    import('../services/stateBannersService').then(({ StateBannersService }) => {
+      StateBannersService.getApplicable(stateName, entityName, currentUser.role)
+        .then(setStateBanners)
+        .catch(() => setStateBanners([]));
+    });
+  }, [credit?.statusId, credit?.id, currentUser?.id]);
+
   // Cargar estado de autorización siempre al abrir el crédito + polling en tiempo real
   useEffect(() => {
     if (!credit?.id) return;
@@ -200,11 +218,51 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
             setEditFormData({ ...c });
             // Actualizar los estados por si cambiaron
             setStates(await MockService.getStates());
+            // Cargar metadata del tipo de crédito (para saber si necesita captura manual de tasa)
+            if (c.creditTypeId) {
+                try {
+                    const types = await CreditTypesService.listAll();
+                    const t = types.find(tt => tt.id === c.creditTypeId);
+                    if (t) {
+                        setCreditTypeMeta({
+                            requires_entity: t.requires_entity ?? true,
+                            rate_commissions: t.rate_commissions || [],
+                        });
+                    }
+                } catch (_) {}
+            } else {
+                setCreditTypeMeta(null);
+            }
         }
     } catch (err) {
         console.error("Error refreshing credit data:", err);
     } finally {
         setLoading(false);
+    }
+  };
+
+  const handleSaveRate = async () => {
+    if (!credit) return;
+    const rate = Number(rateInput);
+    if (!rate || rate <= 0) {
+      window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Ingresa una tasa válida', type: 'error' } }));
+      return;
+    }
+    setSavingRate(true);
+    try {
+      const { commissionPercent, commissionEst } = await CreditTypesService.setCreditRate(credit.id, rate);
+      setCredit(prev => prev ? { ...prev, tasa: rate, commissionPercentage: commissionPercent, estimatedCommission: commissionEst } : prev);
+      setShowRateModal(false);
+      setRateInput('');
+      const matched = (creditTypeMeta?.rate_commissions || []).find((r: any) => Number(r.rate) === rate);
+      const msg = matched
+        ? `Tasa ${rate}% guardada. Comisión: ${commissionPercent}% ($${commissionEst.toLocaleString()})`
+        : `Tasa ${rate}% guardada. ⚠️ No hay configuración para esta tasa → comisión 0%`;
+      window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: msg, type: matched ? 'success' : 'info' } }));
+    } catch (e: any) {
+      window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'Error: ' + e.message, type: 'error' } }));
+    } finally {
+      setSavingRate(false);
     }
   };
 
@@ -612,6 +670,27 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                 <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Modo Subsanación Habilitado</p>
                                 <p className="text-xs text-amber-600 font-medium mt-0.5">El analista te habilitó la edición. Corrige los datos, guarda los cambios y usa el botón <strong>Subsanar Crédito</strong> para notificar.</p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* BANNERS INFORMATIVOS — según estado/entidad/rol */}
+                    {stateBanners.length > 0 && (
+                        <div className="space-y-2 -mb-8">
+                            {stateBanners.map((b: any) => {
+                                const colorClass =
+                                    b.banner_type === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' :
+                                    b.banner_type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                                    b.banner_type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                                    'bg-blue-50 border-blue-200 text-blue-800';
+                                return (
+                                    <div key={b.id} className={`flex items-start gap-3 border-2 rounded-2xl p-4 ${colorClass}`}>
+                                        <div className="text-xl shrink-0">
+                                            {b.banner_type === 'warning' ? '⚠️' : b.banner_type === 'success' ? '✓' : b.banner_type === 'error' ? '✕' : 'ℹ️'}
+                                        </div>
+                                        <p className="text-sm font-medium">{b.message}</p>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
 
@@ -1527,7 +1606,15 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                         <div className="text-right">
                             <p className="text-[9px] font-black text-slate-500 uppercase">Tasa Pactada</p>
-                            <p className="text-[11px] font-bold mt-1.5 text-primary">{credit.tasa}% NMV</p>
+                            <p className="text-[11px] font-bold mt-1.5 text-primary">{credit.tasa ? `${credit.tasa}% NMV` : 'Sin definir'}</p>
+                            {creditTypeMeta && creditTypeMeta.requires_entity === false && (currentUser.role === 'ADMIN' || currentUser.role === 'ANALISTA') && (
+                              <button
+                                onClick={() => { setRateInput(credit.tasa ? String(credit.tasa) : ''); setShowRateModal(true); }}
+                                className="mt-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 transition-colors"
+                              >
+                                {credit.tasa ? 'Editar tasa' : 'Capturar tasa'}
+                              </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1613,7 +1700,15 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                         <div className="text-right">
                             <p className="text-[9px] font-black text-slate-500 uppercase">Tasa Pactada</p>
-                            <p className="text-[11px] font-bold mt-1.5 text-primary">{credit.tasa}% NMV</p>
+                            <p className="text-[11px] font-bold mt-1.5 text-primary">{credit.tasa ? `${credit.tasa}% NMV` : 'Sin definir'}</p>
+                            {creditTypeMeta && creditTypeMeta.requires_entity === false && (currentUser.role === 'ADMIN' || currentUser.role === 'ANALISTA') && (
+                              <button
+                                onClick={() => { setRateInput(credit.tasa ? String(credit.tasa) : ''); setShowRateModal(true); }}
+                                className="mt-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 transition-colors"
+                              >
+                                {credit.tasa ? 'Editar tasa' : 'Capturar tasa'}
+                              </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1809,6 +1904,57 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                   </div>
               </div>
           </div>
+      )}
+
+      {/* Modal: Capturar tasa del aliado externo (hipotecario/vehículo) */}
+      {showRateModal && credit && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowRateModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-lg text-slate-800 mb-1">Capturar tasa del aliado</h3>
+            <p className="text-xs text-slate-500 mb-4">Ingresa la tasa que asignó el aliado externo. Se buscará en la tabla de comisiones del tipo de crédito y se recalculará automáticamente la comisión estimada.</p>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Tasa (% NMV)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={rateInput}
+                onChange={e => setRateInput(e.target.value)}
+                placeholder="Ej: 12.5"
+                className="mt-1 w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-base font-mono focus:border-primary outline-none"
+                autoFocus
+              />
+            </div>
+
+            {(creditTypeMeta?.rate_commissions || []).length > 0 && (
+              <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Tabla configurada</p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                  {(creditTypeMeta?.rate_commissions || []).map((rc: any, i: number) => (
+                    <div key={i} className="flex justify-between bg-white px-2 py-1 rounded">
+                      <span className="font-bold text-slate-600">{rc.rate}%</span>
+                      <span className="text-emerald-600 font-mono">→ {rc.commission}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(creditTypeMeta?.rate_commissions || []).length === 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-700">
+                ⚠️ No hay tabla de comisiones configurada para este tipo de crédito. Pide al admin que la configure en <strong>Admin → Tipos de Crédito</strong>.
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowRateModal(false)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+              <button onClick={handleSaveRate} disabled={savingRate || !rateInput} className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
+                {savingRate && <Loader2 size={14} className="animate-spin"/>}
+                Guardar tasa
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

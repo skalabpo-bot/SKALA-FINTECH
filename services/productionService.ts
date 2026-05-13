@@ -61,6 +61,8 @@ const mapCreditFromDB = (c: any): Credit => {
         estimatedCommission: Number(c.commission_est || 0),
         comisionPagada: c.comision_pagada || false,
         fechaPagoComision: c.fecha_pago_comision || undefined,
+        creditTypeId: c.credit_type_id || undefined,
+        formData: clientData,
         comments: [],
         documents: [],
         history: []
@@ -218,77 +220,90 @@ export const ProductionService = {
     },
 
     createCredit: async (formData: any, currentUser: User) => {
-        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, ...rest } = formData;
+        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, ...rest } = formData;
         const states = await ProductionService.getStates();
 
-        // Buscar comisión por PRODUCTO (determinado por tasa) en financial_entities
+        // Determinar si el tipo de crédito requiere entidad real (libranza) o es directo (hipotecario/vehículo)
+        let requiresEntity = true;
+        if (creditTypeId) {
+            try {
+                const { data: ct } = await supabase.from('credit_types').select('requires_entity').eq('id', creditTypeId).single();
+                if (ct && ct.requires_entity === false) requiresEntity = false;
+            } catch (_) {}
+        }
+
+        // Comisión y validación de cédula solo aplican para libranza
         let commPercent = 0;
-        try {
-            // 1. Buscar qué producto tiene esta tasa en los factores FPM
-            const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entidadAliada).eq('rate', Number(tasa)).limit(1).single();
-            const product = fpmRow?.product || '';
-            // 2. Buscar la comisión de ese producto en financial_entities
-            if (product) {
-                const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entidadAliada).single();
-                commPercent = finEntity?.commissions?.[product] || 0;
-            }
-            // 3. Fallback: buscar en allied_entities por tasa
-            if (!commPercent) {
-                const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entidadAliada).single();
-                const rateConfig = alliedEntity?.rates?.find((r: any) => r.rate === Number(tasa));
-                commPercent = rateConfig?.commission || 0;
-            }
-        } catch (_) {}
-        const commEst = (Number(monto) * commPercent) / 100;
+        if (requiresEntity) {
+            try {
+                const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entidadAliada).eq('rate', Number(tasa)).limit(1).single();
+                const product = fpmRow?.product || '';
+                if (product) {
+                    const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entidadAliada).single();
+                    commPercent = finEntity?.commissions?.[product] || 0;
+                }
+                if (!commPercent) {
+                    const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entidadAliada).single();
+                    const rateConfig = alliedEntity?.rates?.find((r: any) => r.rate === Number(tasa));
+                    commPercent = rateConfig?.commission || 0;
+                }
+            } catch (_) {}
+        }
+        const commEst = (Number(monto || 0) * commPercent) / 100;
 
         // Obtener el primer estado del flujo (orden más bajo)
         const initialState = states.sort((a, b) => a.order - b.order)[0];
         if (!initialState) throw new Error('No hay estados configurados en el sistema.');
 
-        // Validar cédula duplicada: bloquear si ya existe un crédito activo con la misma cédula
-        const cedula = (rest.numeroDocumento || '').toString().trim();
-        if (cedula) {
-            const { data: existingCredits } = await supabase
-                .from('credits')
-                .select('id, status_id, client_data')
-                .filter('client_data->>numeroDocumento', 'eq', cedula);
+        // Validar cédula duplicada SOLO para libranza (gate por pagaduría)
+        if (requiresEntity) {
+            const cedula = (rest.numeroDocumento || '').toString().trim();
+            if (cedula) {
+                const { data: existingCredits } = await supabase
+                    .from('credits')
+                    .select('id, status_id, client_data')
+                    .filter('client_data->>numeroDocumento', 'eq', cedula);
 
-            if (existingCredits && existingCredits.length > 0) {
-                const finalStateIds = states.filter(s => s.isFinal).map(s => s.id);
-                const activeCredits = existingCredits.filter((c: any) => !finalStateIds.includes(c.status_id));
-                if (activeCredits.length > 0) {
-                    const newPagaduria = (rest.pagaduria || '').toString().trim().toUpperCase();
-                    // Permitir si la pagaduría es diferente a TODOS los créditos activos
-                    const conflictCredit = activeCredits.find((c: any) => {
-                        const existingPagaduria = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
-                        // Bloquear si misma pagaduría, o si alguno no tiene pagaduría registrada
-                        return !existingPagaduria || !newPagaduria || existingPagaduria === newPagaduria;
-                    });
-                    if (conflictCredit) {
-                        const activeStateName = states.find(s => s.id === conflictCredit.status_id)?.name || 'en trámite';
-                        const existingPag = (conflictCredit.client_data?.pagaduria || '');
-                        throw new Error(
-                            `Ya existe un crédito activo para la cédula ${cedula}` +
-                            (existingPag ? ` con pagaduría ${existingPag}` : '') +
-                            ` (estado: ${activeStateName}). ` +
-                            `Solo puedes radicar otro crédito si es con una pagaduría diferente.`
-                        );
+                if (existingCredits && existingCredits.length > 0) {
+                    const finalStateIds = states.filter(s => s.isFinal).map(s => s.id);
+                    const activeCredits = existingCredits.filter((c: any) => !finalStateIds.includes(c.status_id));
+                    if (activeCredits.length > 0) {
+                        const newPagaduria = (rest.pagaduria || '').toString().trim().toUpperCase();
+                        const conflictCredit = activeCredits.find((c: any) => {
+                            const existingPagaduria = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
+                            return !existingPagaduria || !newPagaduria || existingPagaduria === newPagaduria;
+                        });
+                        if (conflictCredit) {
+                            const activeStateName = states.find(s => s.id === conflictCredit.status_id)?.name || 'en trámite';
+                            const existingPag = (conflictCredit.client_data?.pagaduria || '');
+                            throw new Error(
+                                `Ya existe un crédito activo para la cédula ${cedula}` +
+                                (existingPag ? ` con pagaduría ${existingPag}` : '') +
+                                ` (estado: ${activeStateName}). ` +
+                                `Solo puedes radicar otro crédito si es con una pagaduría diferente.`
+                            );
+                        }
                     }
                 }
             }
         }
 
+        const nombres = rest.nombres || '';
+        const apellidos = rest.apellidos || '';
+        const nombreCompleto = (nombres || apellidos) ? `${nombres} ${apellidos}`.trim() : (rest.nombreCompleto || '');
+
         const { data, error } = await supabase.from('credits').insert({
             assigned_gestor_id: currentUser.id,
             status_id: initialState.id,
-            amount: Number(monto),
+            amount: Number(monto || 0),
             disbursement_amount: Number(montoDesembolso || monto || 0),
-            term: Number(plazo),
+            term: Number(plazo || 0),
             entity_name: entidadAliada,
-            interest_rate: Number(tasa),
+            interest_rate: Number(tasa || 0),
             commission_percent: commPercent,
             commission_est: commEst,
-            client_data: { ...rest, nombreCompleto: `${rest.nombres} ${rest.apellidos}` }
+            credit_type_id: creditTypeId || null,
+            client_data: { ...rest, nombreCompleto }
         }).select().single();
 
         if (error) throw error;
@@ -1281,6 +1296,16 @@ export const ProductionService = {
     getEntities: async () => {
         const { data } = await supabase.from('allied_entities').select('*');
         return data || [];
+    },
+
+    getCreditTypes: async () => {
+        const { data } = await supabase.from('credit_types').select('*').eq('active', true).order('order_index');
+        return data || [];
+    },
+
+    getFinancialEntityByName: async (name: string) => {
+        const { data } = await supabase.from('financial_entities').select('*').eq('name', name).single();
+        return data;
     },
 
     getNews: async () => {

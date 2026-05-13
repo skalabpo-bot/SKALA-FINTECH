@@ -25,6 +25,7 @@ interface SimulatorViewProps {
   onCreditCreated: (creditId: string) => void;
   onFillForm: (prefilled: Record<string, any>) => void;
   onCancel: () => void;
+  creditTypeId?: string;
 }
 
 const PRODUCT_COLORS: Record<string, string> = {
@@ -78,7 +79,7 @@ const matchCity = (raw: string): string => {
 
 const inputCls = 'w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-primary focus:bg-white transition-all placeholder:text-slate-300';
 
-export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel }) => {
+export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel, creditTypeId }) => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.PAYSTUB_UPLOAD);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [loanConfig, setLoanConfig] = useState<LoanConfiguration | null>(null);
@@ -87,6 +88,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [selectedSimIdx, setSelectedSimIdx] = useState<number | null>(null);
+  const [entityRequiresFullForm, setEntityRequiresFullForm] = useState<boolean>(false);
 
   // Archivos capturados desde los componentes del simulador
   const [paystubFile, setPaystubFile] = useState<File | null>(null);
@@ -137,6 +139,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       const sim = simulations[selectedSimIdx];
       const suggested = PRODUCT_TO_LINE[sim.product] ?? '';
       if (suggested && !lineaCredito) setLineaCredito(suggested);
+      // Cargar el flag requires_full_form de la entidad seleccionada
+      if (sim.entityName) {
+        import('../simulador/services/supabaseClient').then(({ supabase }) => {
+          supabase.from('financial_entities').select('requires_full_form').eq('name', sim.entityName).single()
+            .then(({ data }: any) => setEntityRequiresFullForm(!!data?.requires_full_form))
+            .catch(() => setEntityRequiresFullForm(false));
+        });
+      }
     }
   }, [selectedSimIdx]);
 
@@ -512,6 +522,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           onSimulate={handleSimulate}
           onBack={() => setCurrentStep(AppStep.PAYSTUB_UPLOAD)}
           selectedPagaduria={selectedPagaduria}
+          selectedCreditTypeId={creditTypeId}
         />
       )}
 
@@ -837,6 +848,26 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               {/* Botones duales */}
               {canCreate && (
                 radicacionAbierta ? (
+                  entityRequiresFullForm ? (
+                    /* Solo formulario completo si la entidad lo requiere */
+                    <div className="pt-2">
+                      <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-3 mb-3 flex items-start gap-2">
+                        <FileText size={16} className="text-orange-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-orange-700 font-medium">
+                          <strong>Esta entidad requiere formulario completo.</strong> Llena todos los datos del cliente antes de radicar.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleCompletarFormulario}
+                        disabled={isCreating}
+                        className="w-full flex flex-col items-center gap-2 py-5 px-4 rounded-2xl bg-orange-500 hover:bg-orange-600 shadow-xl shadow-orange-500/30 transition-all text-white disabled:opacity-40"
+                      >
+                        <FileText size={22} />
+                        <span className="font-black text-sm uppercase tracking-wide">Completar Formulario</span>
+                        <span className="text-[10px] text-white/80 text-center leading-tight">Llena todos los datos del cliente para crear y radicar</span>
+                      </button>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                     {/* Opción 1: Radicar ahora */}
                     <button
@@ -866,6 +897,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                       <span className="text-[10px] text-slate-400 text-center leading-tight">Llena todos los datos del cliente antes de radicar</span>
                     </button>
                   </div>
+                  )
                 ) : (
                   <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5 text-center">
                     <span className="text-xl">🔒</span>
