@@ -142,6 +142,9 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
   const [signedPdfFile, setSignedPdfFile] = useState<File | null>(null);
   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
   const [uploadingSigned, setUploadingSigned] = useState(false);
+  const [cedulaFile, setCedulaFile] = useState<File | null>(null);
+  const [cedulaUrl, setCedulaUrl] = useState<string | null>(null);
+  const [uploadingCedula, setUploadingCedula] = useState(false);
   const isVehiculo = creditType.name?.toLowerCase().includes('vehículo') || creditType.name?.toLowerCase().includes('vehiculo');
   const isAdmin = currentUser.role === 'ADMIN';
 
@@ -214,6 +217,26 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
     }
   };
 
+  const handleCedulaUpload = async (file: File) => {
+    if (!file) return;
+    setUploadingCedula(true);
+    try {
+      const ced = (formData.numeroDocumento || 'sin-cedula').toString().replace(/\D/g, '');
+      const ext = file.name.split('.').pop() || 'pdf';
+      const path = `cedulas-150/${ced}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true, contentType: file.type || 'application/pdf' });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);
+      setCedulaFile(file);
+      setCedulaUrl(urlData.publicUrl);
+      dispatchAlert('✓ Cédula escaneada subida', 'success');
+    } catch (e: any) {
+      dispatchAlert('Error subiendo cédula: ' + e.message, 'error');
+    } finally {
+      setUploadingCedula(false);
+    }
+  };
+
   const handleSignedUpload = async (file: File) => {
     if (!file) return;
     setUploadingSigned(true);
@@ -235,6 +258,12 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
   };
 
   const submit = async () => {
+    // Cédula escaneada al 150% es obligatoria para ambos tipos
+    if (!cedulaUrl) {
+      dispatchAlert('Debes subir la cédula escaneada al 150% antes de radicar.', 'error');
+      setShowConfirm(false);
+      return;
+    }
     // Para vehículo el PDF firmado es obligatorio antes de radicar
     if (isVehiculo && !signedPdfUrl) {
       dispatchAlert('Debes subir el PDF firmado y huellado antes de radicar.', 'error');
@@ -244,11 +273,21 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
     setSubmitting(true);
     try {
       const montoSource = isVehiculo ? formData.valor_a_financiar : formData.monto_solicitado;
-      const documents = signedPdfUrl ? [{
-        name: signedPdfFile?.name || 'VehiCredi_firmado.pdf',
-        url: signedPdfUrl,
-        type: 'VEHICREDI_FIRMADO',
-      }] : undefined;
+      const documents: any[] = [];
+      if (cedulaUrl) {
+        documents.push({
+          name: cedulaFile?.name || 'Cedula_150.pdf',
+          url: cedulaUrl,
+          type: 'CEDULA_150',
+        });
+      }
+      if (signedPdfUrl) {
+        documents.push({
+          name: signedPdfFile?.name || 'VehiCredi_firmado.pdf',
+          url: signedPdfUrl,
+          type: 'VEHICREDI_FIRMADO',
+        });
+      }
       const payload: any = {
         ...formData,
         creditTypeId: creditType.id,
@@ -259,7 +298,7 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
         nombres: formData.nombres || '',
         apellidos: formData.apellidos || '',
         numeroDocumento: formData.numeroDocumento || '',
-        documents,
+        documents: documents.length > 0 ? documents : undefined,
       };
       await MockService.createCredit(payload, currentUser);
       dispatchAlert(`${creditType.name} radicado exitosamente.`, 'success');
@@ -319,37 +358,72 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
                   : <>Faltan {missingRequired.length} campo(s) obligatorio(s)</>}
               </div>
 
-              {isVehiculo ? (
-                // Flujo vehículo: PDF → firma → escaneo → radicar
-                <div className="space-y-4">
-                  {/* Stepper visual */}
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider overflow-x-auto pb-1">
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${missingRequired.length === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                      {missingRequired.length === 0 ? <CheckCircle2 size={12}/> : <span className="w-3 h-3 rounded-full border-2 border-current"/>}
-                      1. Datos
-                    </div>
+              <div className="space-y-4">
+                {/* Stepper visual */}
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider overflow-x-auto pb-1">
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${missingRequired.length === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {missingRequired.length === 0 ? <CheckCircle2 size={12}/> : <span className="w-3 h-3 rounded-full border-2 border-current"/>}
+                    1. Datos
+                  </div>
+                  <span className="text-slate-300">›</span>
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${cedulaUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {cedulaUrl ? <CheckCircle2 size={12}/> : <Upload size={12}/>}
+                    2. Cédula 150%
+                  </div>
+                  {isVehiculo && (<>
                     <span className="text-slate-300">›</span>
                     <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${pdfGenerated ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
                       {pdfGenerated ? <CheckCircle2 size={12}/> : <Download size={12}/>}
-                      2. PDF
+                      3. PDF
                     </div>
                     <span className="text-slate-300">›</span>
                     <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${signedPdfUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
                       {signedPdfUrl ? <CheckCircle2 size={12}/> : <FileSignature size={12}/>}
-                      3. Firma + Huella
+                      4. Firma + Huella
                     </div>
-                    <span className="text-slate-300">›</span>
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${signedPdfUrl ? 'bg-primary/15 text-primary' : 'bg-slate-100 text-slate-400'}`}>
-                      <Send size={12}/>
-                      4. Radicar
-                    </div>
+                  </>)}
+                  <span className="text-slate-300">›</span>
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap ${(cedulaUrl && (!isVehiculo || signedPdfUrl)) ? 'bg-primary/15 text-primary' : 'bg-slate-100 text-slate-400'}`}>
+                    <Send size={12}/>
+                    {isVehiculo ? '5. Radicar' : '3. Radicar'}
                   </div>
+                </div>
 
-                  {/* Paso 2: Generar PDF */}
+                {/* Paso compartido: Subir cédula al 150% */}
+                <div className={`p-4 rounded-2xl border ${cedulaUrl ? 'bg-emerald-50 border-emerald-200' : missingRequired.length === 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black text-slate-800">Cédula del cliente — escaneada al 150%</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {cedulaUrl
+                          ? <span className="text-emerald-700">✓ {cedulaFile?.name} subida — listo</span>
+                          : 'Sube la cédula escaneada al 150% (ambas caras en PDF o JPG). Es obligatorio para radicar.'}
+                      </p>
+                    </div>
+                    <label className={`cursor-pointer px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition ${
+                      missingRequired.length > 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' :
+                      cedulaUrl ? 'bg-emerald-600 text-white hover:bg-emerald-700' :
+                      'bg-amber-500 text-white hover:bg-amber-600 shadow'
+                    }`}>
+                      {uploadingCedula ? <Loader2 size={16} className="animate-spin"/> : cedulaUrl ? <FileCheck2 size={16}/> : <Upload size={16}/>}
+                      {uploadingCedula ? 'Subiendo...' : cedulaUrl ? 'Cambiar archivo' : 'Subir cédula'}
+                      <input
+                        type="file"
+                        accept="application/pdf,image/*"
+                        className="hidden"
+                        disabled={missingRequired.length > 0 || uploadingCedula}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleCedulaUpload(f); }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Pasos solo de vehículo: PDF + escaneo firmado */}
+                {isVehiculo && (<>
                   <div className={`p-4 rounded-2xl border ${pdfGenerated ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div>
-                        <p className="text-sm font-black text-slate-800">Paso 2 — Generar PDF prellenado</p>
+                        <p className="text-sm font-black text-slate-800">Generar PDF prellenado</p>
                         <p className="text-[11px] text-slate-500 mt-0.5">Descarga el formulario VehiCredi con los datos. Imprímelo y entrégaselo al cliente.</p>
                       </div>
                       <button
@@ -357,21 +431,20 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
                         disabled={downloadingPdf || missingRequired.length > 0}
                         className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow"
                       >
-                        {downloadingPdf ? <Loader2 size={16} className="animate-spin"/> : pdfGenerated ? <Download size={16}/> : <Download size={16}/>}
+                        {downloadingPdf ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
                         {pdfGenerated ? 'Descargar de nuevo' : 'Descargar PDF'}
                       </button>
                     </div>
                   </div>
 
-                  {/* Paso 3: Subir escaneo firmado */}
-                  <div className={`p-4 rounded-2xl border ${signedPdfUrl ? 'bg-emerald-50 border-emerald-200' : pdfGenerated ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200 opacity-50'}`}>
+                  <div className={`p-4 rounded-2xl border ${signedPdfUrl ? 'bg-emerald-50 border-emerald-200' : pdfGenerated ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-slate-800">Paso 3 — Subir documento firmado y huellado</p>
+                        <p className="text-sm font-black text-slate-800">Subir documento firmado y huellado</p>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           {signedPdfUrl
-                            ? <span className="text-emerald-700">✓ {signedPdfFile?.name} subido — listo para radicar</span>
-                            : 'Sube el PDF escaneado con firma y huella del cliente. Es obligatorio antes de radicar.'}
+                            ? <span className="text-emerald-700">✓ {signedPdfFile?.name} subido — listo</span>
+                            : 'Sube el PDF escaneado con firma y huella del cliente.'}
                         </p>
                       </div>
                       <label className={`cursor-pointer px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition ${
@@ -391,33 +464,21 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
                       </label>
                     </div>
                   </div>
+                </>)}
 
-                  {/* Paso 4: Radicar */}
-                  <div className="flex justify-end pt-2">
-                    <button
-                      onClick={() => setShowConfirm(true)}
-                      disabled={submitting || missingRequired.length > 0 || !signedPdfUrl}
-                      className="bg-primary text-white px-7 py-3 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
-                      title={!signedPdfUrl ? 'Sube primero el documento firmado' : ''}
-                    >
-                      {submitting ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
-                      Radicar Crédito
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Flujo hipotecario / otros: directo a radicar
-                <div className="flex justify-end">
+                {/* Radicar */}
+                <div className="flex justify-end pt-2">
                   <button
                     onClick={() => setShowConfirm(true)}
-                    disabled={submitting || missingRequired.length > 0}
-                    className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                    disabled={submitting || missingRequired.length > 0 || !cedulaUrl || (isVehiculo && !signedPdfUrl)}
+                    className="bg-primary text-white px-7 py-3 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+                    title={!cedulaUrl ? 'Sube primero la cédula escaneada al 150%' : (isVehiculo && !signedPdfUrl) ? 'Sube primero el documento firmado' : ''}
                   >
                     {submitting ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
                     Radicar Crédito
                   </button>
                 </div>
-              )}
+              </div>
             </div>
           </>
         ) : null}
