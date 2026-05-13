@@ -4,6 +4,7 @@ import { AnalysisResult, SimulationResult, ProductType, LoanConfiguration, Payme
 import { AdBanner } from './AdBanner';
 import { calculateDisbursement } from '../services/calculatorService';
 import { analyzeCedulaDocument, CedulaImage } from '../services/geminiService';
+import { pdfToImages } from '../services/pdfToImage';
 
 interface SimulationResultsProps {
   analysis: AnalysisResult;
@@ -74,12 +75,19 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     }
   };
 
-  const readFileAsBase64 = (file: File): Promise<CedulaImage> => {
+  // Devuelve una o varias imágenes JPEG en base64.
+  // Si el archivo es PDF lo convierte a imágenes (OpenAI/Groq no aceptan PDFs).
+  // Si es imagen lo manda como está.
+  const readFileAsBase64 = async (file: File): Promise<CedulaImage[]> => {
+    if (file.type === 'application/pdf') {
+      const imgs = await pdfToImages(file, 2, 3); // primeras 2 páginas, scale 3 para OCR
+      return imgs.map(i => ({ base64: i.base64, mimeType: i.mimeType }));
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
-        resolve({ base64: result.split(',')[1], mimeType: file.type });
+        resolve([{ base64: result.split(',')[1], mimeType: file.type }]);
       };
       reader.onerror = () => reject(new Error('Error leyendo el archivo.'));
       reader.readAsDataURL(file);
@@ -110,8 +118,8 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     onClientDataChange(null);
     try {
       const images: CedulaImage[] = [];
-      if (frontFile) images.push(await readFileAsBase64(frontFile));
-      if (backFile) images.push(await readFileAsBase64(backFile));
+      if (frontFile) images.push(...(await readFileAsBase64(frontFile)));
+      if (backFile) images.push(...(await readFileAsBase64(backFile)));
       const data = await analyzeCedulaDocument(images);
 
       // Detectar cédula ilegible — campos críticos vacíos
