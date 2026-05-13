@@ -162,14 +162,17 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   // Cargar banners aplicables al estado/entidad/rol
   useEffect(() => {
     if (!credit?.statusId || !currentUser) return;
-    const stateName = currentStateObj?.name || credit.statusId;
+    // No usar `currentStateObj` aquí: se declara más abajo en el cuerpo del
+    // componente y caería en el temporal dead zone (TDZ) del const.
+    const stateObj = states.find(s => s.id === credit.statusId);
+    const stateName = stateObj?.name || credit.statusId;
     const entityName = (credit as any).entityName || '';
     import('../services/stateBannersService').then(({ StateBannersService }) => {
       StateBannersService.getApplicable(stateName, entityName, currentUser.role)
         .then(setStateBanners)
         .catch(() => setStateBanners([]));
     });
-  }, [credit?.statusId, credit?.id, currentUser?.id]);
+  }, [credit?.statusId, credit?.id, currentUser?.id, states]);
 
   // Cargar estado de autorización siempre al abrir el crédito + polling en tiempo real
   useEffect(() => {
