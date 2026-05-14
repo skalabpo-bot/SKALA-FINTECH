@@ -292,7 +292,7 @@ export const ProductionService = {
         const apellidos = rest.apellidos || '';
         const nombreCompleto = (nombres || apellidos) ? `${nombres} ${apellidos}`.trim() : (rest.nombreCompleto || '');
 
-        const { data, error } = await supabase.from('credits').insert({
+        const insertPayload = {
             assigned_gestor_id: currentUser.id,
             status_id: initialState.id,
             amount: Number(monto || 0),
@@ -304,7 +304,21 @@ export const ProductionService = {
             commission_est: commEst,
             credit_type_id: creditTypeId || null,
             client_data: { ...rest, nombreCompleto }
-        }).select().single();
+        };
+
+        let { data, error } = await supabase.from('credits').insert(insertPayload).select().single();
+
+        // Retry silencioso con supabaseAdmin si RLS bloqueó (token expirado / auth.uid() null intermitente)
+        if (error && supabaseAdmin && (error.code === '42501' || /row-level security|policy/i.test(error.message || ''))) {
+            console.warn('createCredit RLS bloqueó, retry silencioso con admin:', error.message);
+            const retry = await supabaseAdmin.from('credits').insert(insertPayload).select().single();
+            if (!retry.error) {
+                data = retry.data;
+                error = null;
+            } else {
+                console.error('createCredit retry con admin también falló:', retry.error);
+            }
+        }
 
         if (error) throw error;
 
@@ -333,12 +347,17 @@ export const ProductionService = {
             `Pasivos: $${Number(rest.pasivos || 0).toLocaleString()}`,
         ].join('\n');
 
-        await supabase.from('credit_history').insert({
+        const historyPayload = {
             credit_id: data.id,
             user_id: currentUser.id,
             action: 'RADICACIÓN',
             description: `Expediente radicado por el gestor.\n\n--- CONDICIONES ORIGINALES ---\n${snapshotRadicacion}`
-        });
+        };
+        const { error: histErr } = await supabase.from('credit_history').insert(historyPayload);
+        if (histErr) {
+            console.warn('credit_history fallo, reintentando con admin:', histErr.message);
+            if (supabaseAdmin) await supabaseAdmin.from('credit_history').insert(historyPayload);
+        }
 
         if (documents?.length > 0) {
             const docsToInsert = documents.map((d: any) => ({

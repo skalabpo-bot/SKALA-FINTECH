@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { MockService } from '../services/mockService';
 import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '../types';
-import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap, FileText, Save } from 'lucide-react';
+import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap, FileText, Save, ChevronRight, ChevronDown } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
 import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
 import { CreditTypesAdmin } from './CreditTypesAdmin';
@@ -152,6 +152,43 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
 
     const availableRoleNames = roles.map(r => r.name);
 
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+    const toggleSection = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+    const AccordionSection = ({
+        id, title, subtitle, icon: Icon, iconColor = 'text-slate-600', iconBg = 'bg-slate-100', badge, children,
+    }: any) => {
+        const isOpen = !!openSections[id];
+        return (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => toggleSection(id)}
+                    className="w-full flex items-center justify-between gap-3 px-6 py-4 hover:bg-slate-50 transition-colors"
+                >
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`p-2 ${iconBg} rounded-xl shrink-0`}>
+                            <Icon size={20} className={iconColor} />
+                        </div>
+                        <div className="text-left min-w-0">
+                            <h2 className="text-base md:text-lg font-bold text-slate-800 truncate">{title}</h2>
+                            {subtitle && <p className="text-[11px] text-slate-500 truncate">{subtitle}</p>}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {badge && <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 rounded text-slate-500 hidden sm:inline">{badge}</span>}
+                        {isOpen ? <ChevronDown size={20} className="text-slate-400"/> : <ChevronRight size={20} className="text-slate-400"/>}
+                    </div>
+                </button>
+                {isOpen && (
+                    <div className="border-t border-slate-100 p-6 animate-fade-in">
+                        {children}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const QuickStat = ({ label, value, icon: Icon, colorClass, bgClass }: any) => (
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
@@ -181,9 +218,18 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </div>
 
             {/* FLUJO DE CRÉDITO + ZONAS */}
+            <AccordionSection
+                id="flujo-supervisores"
+                title="Flujo de Crédito y Supervisores"
+                subtitle="Estados del proceso, acciones rápidas, supervisores de zona"
+                icon={Workflow}
+                iconColor="text-primary"
+                iconBg="bg-orange-50"
+                badge={`${states.length} estados · ${zones.length} supervisores`}
+            >
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
                 <div className="xl:col-span-7 flex flex-col gap-6 min-w-0">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-full">
+                    <div className="bg-white rounded-2xl border border-slate-100 h-full">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Workflow size={20} className="text-primary"/> Flujo de Crédito</h3>
                             <span className="text-xs font-bold px-2 py-1 bg-slate-100 rounded text-slate-500">{states.length} Pasos</span>
@@ -347,7 +393,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
 
                 <div className="xl:col-span-5 flex flex-col gap-6 min-w-0">
                     {/* ZONES */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="bg-white rounded-2xl border border-slate-100">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Map size={20} className="text-indigo-500"/> Supervisores</h3>
                         </div>
@@ -428,9 +474,19 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     </div>
                 </div>
             </div>
+            </AccordionSection>
 
             {/* ROLES SECTION */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <AccordionSection
+                id="roles"
+                title="Roles y Permisos"
+                subtitle="Permisos por cada rol del sistema"
+                icon={Shield}
+                iconColor="text-violet-500"
+                iconBg="bg-violet-50"
+                badge={`${roles.length} Roles`}
+            >
+            <div>
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Shield size={20} className="text-violet-500"/> Roles y Permisos</h3>
                     <span className="text-xs font-bold px-2 py-1 bg-violet-50 rounded text-violet-500">{roles.length} Roles</span>
@@ -499,18 +555,17 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     ))}
                 </div>
             </div>
+            </AccordionSection>
 
             {/* FUNCIONALIDADES — Feature flags */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-                <div className="flex items-center gap-3 mb-5">
-                    <div className="p-2 bg-violet-100 rounded-xl">
-                        <Layers size={20} className="text-violet-600" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Funcionalidades</h2>
-                        <p className="text-xs text-slate-500">Activa o desactiva módulos del sistema sin necesidad de código.</p>
-                    </div>
-                </div>
+            <AccordionSection
+                id="funcionalidades"
+                title="Funcionalidades"
+                subtitle="Activa o desactiva módulos del sistema sin código"
+                icon={Layers}
+                iconColor="text-violet-600"
+                iconBg="bg-violet-100"
+            >
                 <div className="divide-y divide-slate-100">
                     <div className="flex items-center justify-between py-4">
                         <div>
@@ -550,65 +605,66 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                         </button>
                     </div>
                 </div>
-            </div>
+            </AccordionSection>
 
             {/* TIPOS DE CRÉDITO */}
-            <div>
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-purple-100 rounded-xl">
-                        <CreditCard size={20} className="text-purple-600" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Tipos de Crédito</h2>
-                        <p className="text-xs text-slate-500">Define los tipos de crédito (Libranza, Hipotecario, Vehículo, etc.).</p>
-                    </div>
-                </div>
+            <AccordionSection
+                id="tipos-credito"
+                title="Tipos de Crédito"
+                subtitle="Libranza, Hipotecario, Vehículo, etc."
+                icon={CreditCard}
+                iconColor="text-purple-600"
+                iconBg="bg-purple-100"
+            >
                 <CreditTypesAdmin />
-            </div>
+            </AccordionSection>
 
             {/* BANNERS POR ESTADO */}
-            <div>
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-amber-100 rounded-xl">
-                        <Layers size={20} className="text-amber-600" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Banners Informativos</h2>
-                        <p className="text-xs text-slate-500">Mensajes que aparecen al usuario según el estado del crédito y la entidad.</p>
-                    </div>
-                </div>
+            <AccordionSection
+                id="banners"
+                title="Banners Informativos"
+                subtitle="Mensajes que aparecen al usuario según estado y entidad"
+                icon={Layers}
+                iconColor="text-amber-600"
+                iconBg="bg-amber-100"
+            >
                 <StateBannersAdmin />
-            </div>
+            </AccordionSection>
 
             {/* BIBLIOTECA DE CAMPOS */}
-            <div>
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-indigo-100 rounded-xl">
-                        <CreditCard size={20} className="text-indigo-600" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Biblioteca de Campos</h2>
-                        <p className="text-xs text-slate-500">Define todos los campos posibles del formulario. Después se asignan a cada entidad desde el admin de entidades.</p>
-                    </div>
-                </div>
+            <AccordionSection
+                id="biblioteca"
+                title="Biblioteca de Campos"
+                subtitle="Campos disponibles para formularios dinámicos"
+                icon={CreditCard}
+                iconColor="text-indigo-600"
+                iconBg="bg-indigo-100"
+            >
                 <FieldLibraryAdmin />
-            </div>
+            </AccordionSection>
 
             {/* SIMULADOR — Entidades & Factores FPM */}
-            <div>
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-orange-100 rounded-xl">
-                        <CreditCard size={20} className="text-orange-600" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Simulador de Crédito</h2>
-                        <p className="text-xs text-slate-500">Gestiona entidades financieras, factores FPM y pagadurías del simulador.</p>
-                    </div>
-                </div>
+            <AccordionSection
+                id="simulador"
+                title="Simulador de Crédito"
+                subtitle="Entidades financieras, factores FPM, comisiones, pagadurías"
+                icon={CreditCard}
+                iconColor="text-orange-600"
+                iconBg="bg-orange-100"
+            >
                 <SimuladorAdminDashboard />
-            </div>
+            </AccordionSection>
 
             {/* LISTS ROW */}
+            <AccordionSection
+                id="listas"
+                title="Listas Generales"
+                subtitle="Pagadurías, ciudades y bancos del sistema"
+                icon={Briefcase}
+                iconColor="text-blue-600"
+                iconBg="bg-blue-100"
+                badge={`${pagadurias.length} · ${cities.length} · ${banks.length}`}
+            >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <ConfigCard
                     title="Pagadurías"
@@ -644,6 +700,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                 />
 
             </div>
+            </AccordionSection>
 
         </div>
     );

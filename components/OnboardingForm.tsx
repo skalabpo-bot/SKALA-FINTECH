@@ -193,7 +193,16 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
       dispatchAlert("Crédito radicado exitosamente.", "success");
       setTimeout(() => dispatchAlert("Se envió la autorización de consulta y validación de identidad al cliente.", "info"), 1500);
       onSuccess();
-    } catch (err: any) { dispatchAlert(err.message, "error"); } finally { setIsSubmitting(false); }
+    } catch (err: any) {
+      const msg = err?.message || '';
+      const isBusinessRule = /crédito activo|pagaduría|cuota|monto/i.test(msg);
+      if (isBusinessRule) {
+        dispatchAlert(msg, 'error');
+      } else {
+        console.error('Error técnico al radicar:', err);
+        dispatchAlert('No pudimos guardar el crédito. Por favor intenta nuevamente en unos segundos.', 'error');
+      }
+    } finally { setIsSubmitting(false); }
   };
 
   return (

@@ -304,7 +304,16 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
       dispatchAlert(`${creditType.name} radicado exitosamente.`, 'success');
       onSuccess();
     } catch (err: any) {
-      dispatchAlert(err.message || 'Error al radicar', 'error');
+      const msg = err?.message || '';
+      // Errores de validación de negocio se muestran tal cual (ej: cédula duplicada)
+      const isBusinessRule = /crédito activo|pagaduría|cuota|monto/i.test(msg);
+      if (isBusinessRule) {
+        dispatchAlert(msg, 'error');
+      } else {
+        // Errores técnicos (RLS, red, etc.) → mensaje amigable + log a consola
+        console.error('Error técnico al radicar:', err);
+        dispatchAlert('No pudimos guardar el crédito. Por favor intenta nuevamente en unos segundos.', 'error');
+      }
     } finally {
       setSubmitting(false);
       setShowConfirm(false);
