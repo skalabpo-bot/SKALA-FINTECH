@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MockService } from '../services/mockService';
 import { NewsItem } from '../types';
-import { Megaphone, Plus, Trash, Upload, Loader2, Download } from 'lucide-react';
+import { Megaphone, Plus, Trash, Upload, Loader2, Download, Eye, EyeOff } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 export const NewsPanel = () => {
@@ -14,12 +14,23 @@ export const NewsPanel = () => {
     const refreshNews = async () => {
         setLoading(true);
         try {
-            const data = await MockService.getNews();
+            // En admin queremos ver las inactivas también para poder reactivarlas
+            const data = await MockService.getNews(true);
             setNews(data);
         } catch (err) {
             console.error("Error loading news:", err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleToggleActive = async (item: NewsItem) => {
+        const next = !(item.isActive !== false);
+        try {
+            await MockService.toggleNewsActive(item.id, next);
+            setNews(prev => prev.map(n => n.id === item.id ? { ...n, isActive: next } : n));
+        } catch (err: any) {
+            console.error('Error toggle news:', err);
         }
     };
 
@@ -153,15 +164,27 @@ export const NewsPanel = () => {
 
             <div className="space-y-4">
                 {news.length === 0 && <p className="text-center text-slate-500 py-10">No hay noticias publicadas.</p>}
-                {news.map(n => (
-                    <div key={n.id} className="flex gap-4 items-center p-4 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
-                        <img src={n.imageUrl} alt="" className="w-20 h-20 rounded-lg object-cover" />
+                {news.map(n => {
+                    const active = n.isActive !== false;
+                    return (
+                    <div key={n.id} className={`flex gap-4 items-center p-4 border rounded-xl transition-colors ${active ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                        <img src={n.imageUrl} alt="" className={`w-20 h-20 rounded-lg object-cover ${!active && 'grayscale'}`} />
                         <div className="flex-1">
-                            <p className="font-bold text-lg text-slate-800">{n.title}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="font-bold text-lg text-slate-800">{n.title}</p>
+                                {!active && <span className="text-[9px] px-2 py-0.5 bg-slate-300 text-slate-700 rounded font-bold uppercase">Oculta</span>}
+                            </div>
                             <p className="text-sm text-slate-500">{n.description}</p>
                             <p className="text-xs text-slate-400 mt-1">{new Date(n.createdAt).toLocaleDateString()}</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                            <button
+                                onClick={() => handleToggleActive(n)}
+                                title={active ? 'Ocultar novedad (no se elimina)' : 'Mostrar de nuevo'}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${active ? 'translate-x-6' : 'translate-x-1'}`}/>
+                            </button>
                             <button
                                 onClick={() => handleDownloadImage(n)}
                                 className="text-primary hover:bg-orange-50 p-2 rounded-full transition-colors"
@@ -169,10 +192,11 @@ export const NewsPanel = () => {
                             >
                                 <Download size={18}/>
                             </button>
-                            <button onClick={() => handleDelete(n.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash size={18}/></button>
+                            <button onClick={() => handleDelete(n.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-full" title="Eliminar permanentemente"><Trash size={18}/></button>
                         </div>
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

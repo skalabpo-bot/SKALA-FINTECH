@@ -1327,13 +1327,21 @@ export const ProductionService = {
         return data;
     },
 
-    getNews: async () => {
-        const { data } = await supabase.from('news').select('*').order('created_at', { ascending: false });
+    getNews: async (includeInactive = false) => {
+        let q = supabase.from('news').select('*').order('created_at', { ascending: false });
+        if (!includeInactive) q = q.eq('is_active', true);
+        const { data } = await q;
         return (data || []).map(n => ({
             ...n,
             imageUrl: n.image_url,
+            isActive: n.is_active !== false,
             createdAt: new Date(n.created_at)
         }));
+    },
+
+    toggleNewsActive: async (id: string, isActive: boolean) => {
+        const { error } = await supabase.from('news').update({ is_active: isActive }).eq('id', id);
+        if (error) throw error;
     },
 
     getNotifications: async (userId: string) => {

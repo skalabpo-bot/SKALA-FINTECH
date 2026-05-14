@@ -87,6 +87,7 @@ export interface NewsItem {
   title: string;
   description: string;
   imageUrl: string;
+  isActive?: boolean;
   createdAt: Date;
 }
 

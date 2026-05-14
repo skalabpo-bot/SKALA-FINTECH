@@ -13,9 +13,14 @@ export const AdminDashboard: React.FC = () => {
   const [adsData, setAdsData] = useState<AdConfig[]>([]);
   const [entitiesData, setEntitiesData] = useState<FinancialEntity[]>([]);
   const [creditTypes, setCreditTypes] = useState<CreditType[]>([]);
+  const [allPagadurias, setAllPagadurias] = useState<string[]>([]);
 
   useEffect(() => {
     CreditTypesService.listAll().then(setCreditTypes).catch(() => setCreditTypes([]));
+    // Cargar lista global de pagadurías para asignar a las entidades
+    supabase.from('pagadurias').select('name').order('name').then(({ data }) => {
+      if (data) setAllPagadurias(data.map((p: any) => p.name));
+    }).catch(() => {});
   }, []);
   
   // UI State
@@ -688,6 +693,45 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
                             <p className="text-[10px] text-slate-400 mt-1.5">Costos que se descuentan al calcular el monto a desembolsar</p>
+                          </div>
+
+                          {/* Pagadurías que sirve esta entidad */}
+                          <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                            <h5 className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-2">Pagadurías que atiende esta entidad</h5>
+                            <p className="text-[10px] text-blue-600 mb-3">Marca las pagadurías a las que esta entidad presta servicio. Si dejas todas desmarcadas, NO aparece en ninguna pagaduría del simulador.</p>
+                            {allPagadurias.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 italic">No hay pagadurías cargadas en el sistema. Agrégalas en Admin → Listas → Pagadurías.</p>
+                            ) : (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                {allPagadurias.map(p => {
+                                  const checked = (editingEntity.pagadurias || []).map(x => x.toUpperCase().trim()).includes(p.toUpperCase().trim());
+                                  return (
+                                    <label key={p} className={`flex items-center gap-1.5 text-[11px] font-bold px-2 py-1.5 rounded-lg border cursor-pointer transition ${checked ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
+                                      <input
+                                        type="checkbox"
+                                        className="w-3 h-3 accent-white"
+                                        checked={checked}
+                                        onChange={() => {
+                                          const current = editingEntity.pagadurias || [];
+                                          const normalized = p.toUpperCase().trim();
+                                          const next = checked
+                                            ? current.filter(x => x.toUpperCase().trim() !== normalized)
+                                            : [...current, p];
+                                          setEditingEntity({ ...editingEntity, pagadurias: next });
+                                        }}
+                                      />
+                                      <span className="truncate">{p}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <div className="mt-2 flex items-center justify-between text-[10px] text-blue-600 font-bold">
+                              <span>{(editingEntity.pagadurias || []).length} pagaduría(s) seleccionada(s)</span>
+                              {(editingEntity.pagadurias || []).length > 0 && (
+                                <button type="button" onClick={() => setEditingEntity({ ...editingEntity, pagadurias: [] })} className="hover:text-blue-800 underline">Limpiar</button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Políticas de Cartera */}
