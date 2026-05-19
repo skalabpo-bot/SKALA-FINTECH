@@ -80,6 +80,7 @@ export interface User {
   tipoCuenta?: 'AHORROS' | 'CORRIENTE';
   numeroCuenta?: string;
   assignedEntities?: string[];
+  createdAt?: Date;
 }
 
 export interface NewsItem {

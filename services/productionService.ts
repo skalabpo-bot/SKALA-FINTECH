@@ -85,7 +85,8 @@ const mapUserFromDB = (p: any): User => ({
     numeroCuenta: p.bank_details?.numeroCuenta,
     permissions: p.permissions || [],
     documents: p.registration_docs || [],
-    assignedEntities: Array.isArray(p.assigned_entities) ? p.assigned_entities : []
+    assignedEntities: Array.isArray(p.assigned_entities) ? p.assigned_entities : [],
+    createdAt: p.created_at ? new Date(p.created_at) : undefined,
 });
 
 export const ProductionService = {
