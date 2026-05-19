@@ -2849,11 +2849,18 @@ export const ProductionService = {
     },
 
     exportUsersCSV: async () => {
-        const users = await ProductionService.getUsers();
-        const headers = ['Nombre', 'Email', 'Cédula', 'Rol', 'Teléfono', 'Ciudad', 'Estado', 'Fecha Creación'];
+        const [users, zones] = await Promise.all([
+            ProductionService.getUsers(),
+            ProductionService.getZones(),
+        ]);
+        const zoneMap: Record<string, string> = {};
+        (zones || []).forEach((z: any) => { if (z?.id) zoneMap[z.id] = z.name || ''; });
+        const headers = ['Nombre', 'Email', 'Cédula', 'Rol', 'Teléfono', 'Ciudad', 'Supervisor', 'Estado', 'Fecha Creación'];
         const rows = users.map((u: any) => [
             u.name || '', u.email || '', u.cedula || '', u.role || '',
-            u.phone || '', u.city || '', u.status || '',
+            u.phone || '', u.city || '',
+            zoneMap[u.zoneId || ''] || '',
+            u.status || '',
             u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CO') : '',
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
         return '\uFEFF' + [headers.join(','), ...rows].join('\n');
