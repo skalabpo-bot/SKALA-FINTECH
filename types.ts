@@ -101,6 +101,7 @@ export interface CreditState {
   isFinal?: boolean;
   enableTasks?: boolean;
   enableEdit?: boolean;
+  slaHours?: number | null;
 }
 
 export interface Comment {

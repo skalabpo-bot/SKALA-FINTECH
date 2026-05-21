@@ -120,7 +120,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     // --- State Edit ---
     const startEditState = async (s: CreditState) => {
         setEditingStateId(s.id);
-        setEditStateData({ name: s.name, color: s.color, role_responsible: s.roleResponsible, is_final: s.isFinal || false, enable_tasks: s.enableTasks || false, enable_edit: s.enableEdit || false });
+        setEditStateData({ name: s.name, color: s.color, role_responsible: s.roleResponsible, is_final: s.isFinal || false, enable_tasks: s.enableTasks || false, enable_edit: s.enableEdit || false, sla_hours: s.slaHours ?? null });
         setNewActionLabel(''); setNewActionRole(''); setNewActionResultAction('none'); setNewActionResultStateId('');
         const actions = await MockService.getStateActions?.(s.id) ?? [];
         setEditingStateActions(actions);
@@ -266,6 +266,18 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                         {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
                                                     </select>
                                                 </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Alerta si lleva (horas)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        placeholder="Vacío = no alertar"
+                                                        value={editStateData.sla_hours ?? ''}
+                                                        onChange={e => setEditStateData({...editStateData, sla_hours: e.target.value === '' ? null : Number(e.target.value)})}
+                                                        className="w-full text-xs px-3 py-2 border rounded-lg bg-white text-slate-900 font-bold"
+                                                    />
+                                                    <p className="text-[9px] text-slate-400 mt-0.5">Horas sin moverse antes de alertar al gestor/supervisor. Vacío = sin vigilancia.</p>
+                                                </div>
                                                 <div className="flex items-end pb-1 gap-4">
                                                     <label className="flex items-center gap-2 cursor-pointer">
                                                         <input type="checkbox" checked={editStateData.is_final} onChange={e => setEditStateData({...editStateData, is_final: e.target.checked})} className="rounded"/>
@@ -378,6 +390,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                     {s.isFinal && <span className="text-[8px] px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded font-bold">FINAL</span>}
                                                     {s.enableTasks && <span className="text-[8px] px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded font-bold">TAREAS</span>}
                                                     {s.enableEdit && <span className="text-[8px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded font-bold">EDICIÓN</span>}
+                                                    {s.slaHours != null && <span className="text-[8px] px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-100 rounded font-bold">⏰ {s.slaHours}h</span>}
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 font-medium mt-0.5 uppercase tracking-wide">Resp: {s.roleResponsible.replace(/_/g, ' ')}</p>
                                             </div>

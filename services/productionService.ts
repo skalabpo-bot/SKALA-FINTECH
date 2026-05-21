@@ -1159,30 +1159,38 @@ export const ProductionService = {
         let url = null;
         if (file) url = await ProductionService.uploadImage(file);
 
-        const { error: insertErr } = await supabase.from('comments').insert({
+        const payload = {
             credit_id: creditId,
             user_id: user.id,
             text,
             attachment_name: file?.name,
-            attachment_url: url
-        });
+            attachment_url: url,
+            is_system: false,
+        };
+
+        let { error: insertErr } = await supabase.from('comments').insert(payload);
+
         if (insertErr) {
-            console.error('addComment INSERT error:', insertErr);
-            // Reintentar con supabaseAdmin si falla por RLS u otro motivo
-            try {
-                const { supabaseAdmin } = await import('./supabaseClient');
-                const { error: adminErr } = await (supabaseAdmin as any).from('comments').insert({
-                    credit_id: creditId,
-                    user_id: user.id,
-                    text,
-                    attachment_name: file?.name,
-                    attachment_url: url
-                });
-                if (adminErr) {
-                    console.error('addComment admin retry failed:', adminErr);
-                    throw adminErr;
-                }
-            } catch (e) {
+            console.warn('addComment insert falló, refrescando sesión y reintentando:', insertErr.message);
+            // 1) El token pudo expirar silenciosamente → refrescar sesión y reintentar
+            try { await supabase.auth.refreshSession(); } catch (_) {}
+            const retry1 = await supabase.from('comments').insert(payload);
+            insertErr = retry1.error;
+
+            // 2) Último recurso: supabaseAdmin (bypassa RLS) — no se pierde el comentario
+            if (insertErr) {
+                console.warn('addComment retry tras refresh también falló, intentando admin:', insertErr.message);
+                try {
+                    const { supabaseAdmin } = await import('./supabaseClient');
+                    if (supabaseAdmin) {
+                        const retry2 = await supabaseAdmin.from('comments').insert(payload);
+                        insertErr = retry2.error;
+                    }
+                } catch (e) { /* conservar insertErr */ }
+            }
+
+            if (insertErr) {
+                console.error('addComment: no se pudo guardar el comentario tras todos los reintentos:', insertErr);
                 throw insertErr;
             }
         }
@@ -1882,7 +1890,8 @@ export const ProductionService = {
                     roleResponsible: s.role_responsible as UserRole,
                     isFinal: s.is_final || false,
                     enableTasks: s.enable_tasks || false,
-                    enableEdit: s.enable_edit || false
+                    enableEdit: s.enable_edit || false,
+                    slaHours: s.sla_hours ?? null
                 }));
             }
         } catch (e) { /* fallback */ }
@@ -2332,7 +2341,7 @@ export const ProductionService = {
         const nextOrder = (existing?.[0]?.order_index || 0) + 1;
         await supabase.from('credit_states_config').insert({ name, role_responsible: role, color: 'bg-gray-500', order_index: nextOrder, is_final: false });
     },
-    updateState: async (id: string, updates: { name?: string; color?: string; role_responsible?: string; is_final?: boolean; enable_tasks?: boolean; enable_edit?: boolean }) => {
+    updateState: async (id: string, updates: { name?: string; color?: string; role_responsible?: string; is_final?: boolean; enable_tasks?: boolean; enable_edit?: boolean; sla_hours?: number | null }) => {
         const { error } = await supabase.from('credit_states_config').update(updates).eq('id', id);
         if (error) throw error;
     },
