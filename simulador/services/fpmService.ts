@@ -18,18 +18,31 @@ const mapFromDb = (row: any): FPMEntry => ({
 export const loadFPMData = async (): Promise<FPMEntry[]> => {
   if (!isConfigured) return [];
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select('*')
-    .order('entity_name', { ascending: true })
-    .order('term_months', { ascending: true });
+  // Paginar en lotes para superar el límite por defecto de Supabase (1000 filas).
+  // Con varias entidades los factores superan fácilmente las 1000 filas.
+  const PAGE = 1000;
+  let from = 0;
+  const all: any[] = [];
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select('*')
+      .order('entity_name', { ascending: true })
+      .order('term_months', { ascending: true })
+      .range(from, from + PAGE - 1);
 
-  if (error) {
-    console.error("Error cargando FPM:", error);
-    return [];
+    if (error) {
+      console.error("Error cargando FPM:", error);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break; // última página
+    from += PAGE;
   }
 
-  cachedData = data.map(mapFromDb);
+  cachedData = all.map(mapFromDb);
   return cachedData;
 };
 
