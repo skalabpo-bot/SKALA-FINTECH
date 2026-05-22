@@ -14,6 +14,7 @@ export const AdminDashboard: React.FC = () => {
   const [entitiesData, setEntitiesData] = useState<FinancialEntity[]>([]);
   const [creditTypes, setCreditTypes] = useState<CreditType[]>([]);
   const [allPagadurias, setAllPagadurias] = useState<string[]>([]);
+  const [pagaduriaSearch, setPagaduriaSearch] = useState('');
 
   useEffect(() => {
     CreditTypesService.listAll().then(setCreditTypes).catch(() => setCreditTypes([]));
@@ -733,29 +734,41 @@ export const AdminDashboard: React.FC = () => {
                             {allPagadurias.length === 0 ? (
                               <p className="text-[11px] text-slate-400 italic">No hay pagadurías cargadas en el sistema. Agrégalas en Admin → Listas → Pagadurías.</p>
                             ) : (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                                {allPagadurias.map(p => {
-                                  const checked = (editingEntity.pagadurias || []).map(x => x.toUpperCase().trim()).includes(p.toUpperCase().trim());
-                                  return (
-                                    <label key={p} className={`flex items-center gap-1.5 text-[11px] font-bold px-2 py-1.5 rounded-lg border cursor-pointer transition ${checked ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
-                                      <input
-                                        type="checkbox"
-                                        className="w-3 h-3 accent-white"
-                                        checked={checked}
-                                        onChange={() => {
-                                          const current = editingEntity.pagadurias || [];
-                                          const normalized = p.toUpperCase().trim();
-                                          const next = checked
-                                            ? current.filter(x => x.toUpperCase().trim() !== normalized)
-                                            : [...current, p];
-                                          setEditingEntity({ ...editingEntity, pagadurias: next });
-                                        }}
-                                      />
-                                      <span className="truncate">{p}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
+                              <>
+                                {/* Buscador para filtrar pagadurías (útil cuando hay muchas similares) */}
+                                <input
+                                  type="text"
+                                  value={pagaduriaSearch}
+                                  onChange={e => setPagaduriaSearch(e.target.value)}
+                                  placeholder="Buscar pagaduría..."
+                                  className="w-full mb-2 px-3 py-2 text-xs border border-blue-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-72 overflow-y-auto pr-1">
+                                  {allPagadurias
+                                    .filter(p => p.toLowerCase().includes(pagaduriaSearch.toLowerCase().trim()))
+                                    .map(p => {
+                                      const checked = (editingEntity.pagadurias || []).map(x => x.toUpperCase().trim()).includes(p.toUpperCase().trim());
+                                      return (
+                                        <label key={p} title={p} className={`flex items-start gap-1.5 text-[11px] font-bold px-2 py-1.5 rounded-lg border cursor-pointer transition ${checked ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
+                                          <input
+                                            type="checkbox"
+                                            className="w-3 h-3 accent-white mt-0.5 shrink-0"
+                                            checked={checked}
+                                            onChange={() => {
+                                              const current = editingEntity.pagadurias || [];
+                                              const normalized = p.toUpperCase().trim();
+                                              const next = checked
+                                                ? current.filter(x => x.toUpperCase().trim() !== normalized)
+                                                : [...current, p];
+                                              setEditingEntity({ ...editingEntity, pagadurias: next });
+                                            }}
+                                          />
+                                          <span className="leading-tight break-words">{p}</span>
+                                        </label>
+                                      );
+                                    })}
+                                </div>
+                              </>
                             )}
                             <div className="mt-2 flex items-center justify-between text-[10px] text-blue-600 font-bold">
                               <span>{(editingEntity.pagadurias || []).length} pagaduría(s) seleccionada(s)</span>
