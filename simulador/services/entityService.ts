@@ -31,12 +31,20 @@ export const getAllEntities = async (): Promise<FinancialEntity[]> => {
     .from(TABLE_NAME)
     .select('*')
     .order('name');
-    
+
   if (error) {
     console.error("Error cargando entidades:", error);
     return [];
   }
-  return data.map(mapFromDb);
+  const mapped = data.map(mapFromDb);
+  // CrediAlianza siempre de primera; el resto alfabético
+  return mapped.sort((a, b) => {
+    const aCredi = a.name.toUpperCase().includes('CREDIALIANZA');
+    const bCredi = b.name.toUpperCase().includes('CREDIALIANZA');
+    if (aCredi && !bCredi) return -1;
+    if (bCredi && !aCredi) return 1;
+    return a.name.localeCompare(b.name);
+  });
 };
 
 export const uploadLogo = async (file: File): Promise<string> => {

@@ -89,7 +89,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [selectedSimIdx, setSelectedSimIdx] = useState<number | null>(null);
   const [entityRequiresFullForm, setEntityRequiresFullForm] = useState<boolean>(false);
-  const [entityCalc, setEntityCalc] = useState<{ aplica4x1000: boolean; cashFee: number; bankFee: number }>({ aplica4x1000: true, cashFee: 15157, bankFee: 7614 });
+  const [entityCalc, setEntityCalc] = useState<{ aplica4x1000: boolean; cashFee: number; bankFee: number; primaryColor: string; secondaryColor: string }>({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b' });
 
   // Archivos capturados desde los componentes del simulador
   const [paystubFile, setPaystubFile] = useState<File | null>(null);
@@ -143,16 +143,18 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       // Cargar el flag requires_full_form de la entidad seleccionada
       if (sim.entityName) {
         import('../simulador/services/supabaseClient').then(({ supabase }) => {
-          supabase.from('financial_entities').select('requires_full_form, aplica_cuatro_x_mil, cash_fee, bank_fee').eq('name', sim.entityName).single()
+          supabase.from('financial_entities').select('requires_full_form, aplica_cuatro_x_mil, cash_fee, bank_fee, primary_color, secondary_color').eq('name', sim.entityName).single()
             .then(({ data }: any) => {
               setEntityRequiresFullForm(!!data?.requires_full_form);
               setEntityCalc({
                 aplica4x1000: data?.aplica_cuatro_x_mil ?? true,
                 cashFee: Number(data?.cash_fee ?? 15157),
                 bankFee: Number(data?.bank_fee ?? 7614),
+                primaryColor: data?.primary_color || '#475569',
+                secondaryColor: data?.secondary_color || '#1e293b',
               });
             })
-            .catch(() => { setEntityRequiresFullForm(false); setEntityCalc({ aplica4x1000: true, cashFee: 15157, bankFee: 7614 }); });
+            .catch(() => { setEntityRequiresFullForm(false); setEntityCalc({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b' }); });
         });
       }
     }
@@ -580,14 +582,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               {/* Tarjeta única de la mejor oferta */}
               {selectedSimIdx !== null && (() => {
                 const sim = simulations[selectedSimIdx];
-                const gradient = PRODUCT_COLORS[sim.product] ?? 'from-slate-500 to-slate-700';
                 const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
                 const base = sim.maxAmount - seguroAval;
                 const cuatroXMil = entityCalc.aplica4x1000 ? Math.floor(base * 0.004) : 0;
                 const gastos = paymentMethod === 'bancaria' ? entityCalc.bankFee : entityCalc.cashFee;
+                const cardBg = `linear-gradient(135deg, ${entityCalc.primaryColor}, ${entityCalc.secondaryColor})`;
                 return (
-                  <div className={`relative rounded-2xl p-6 bg-gradient-to-br ${gradient} text-white shadow-xl`}>
+                  <div style={{ background: cardBg }} className="relative rounded-2xl p-6 text-white shadow-xl">
                     <div className="absolute top-4 right-4">
                       <CheckCircle2 size={22} className="text-white/80" />
                     </div>
