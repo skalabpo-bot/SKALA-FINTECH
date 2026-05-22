@@ -173,6 +173,27 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     if(!formData.monto || !formData.plazo || !formData.numeroDocumento) {
         return dispatchAlert("Monto, Plazo y Cédula son obligatorios.", "error");
     }
+    // Referencias obligatorias (ambas, datos clave)
+    const refFaltante = (n: 1 | 2) => {
+        const p = `ref${n}`;
+        return !formData[`${p}Nombre`]?.trim() || !formData[`${p}Telefono`]?.trim()
+            || !formData[`${p}Parentesco`]?.trim() || !formData[`${p}Ciudad`]?.trim();
+    };
+    if (refFaltante(1)) {
+        return dispatchAlert("La Referencia 1 está incompleta (nombre, teléfono, parentesco y ciudad son obligatorios).", "error");
+    }
+    if (refFaltante(2)) {
+        return dispatchAlert("La Referencia 2 está incompleta (nombre, teléfono, parentesco y ciudad son obligatorios).", "error");
+    }
+    // Desembolso obligatorio
+    if (!formData.tipoDesembolso?.trim()) {
+        return dispatchAlert("Debes seleccionar la Forma de Desembolso.", "error");
+    }
+    if (formData.tipoDesembolso === 'CUENTA_BANCARIA') {
+        if (!formData.banco?.trim() || !formData.numeroCuenta?.trim() || !formData.tipoCuenta?.trim()) {
+            return dispatchAlert("Para desembolso a cuenta debes diligenciar Banco, Número de Cuenta y Tipo de Cuenta.", "error");
+        }
+    }
     if (uploadingType) {
         return dispatchAlert("Espera a que termine de subir el archivo antes de radicar.", "error");
     }
