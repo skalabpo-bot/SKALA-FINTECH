@@ -368,11 +368,15 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                 const gastos = paymentMethod === 'efectivo' ? config.cashFee : config.bankFee;
                 const isSelected = selectedSimulations.has(idx);
 
+                const entityGradient = (config.primaryColor || config.secondaryColor)
+                  ? `linear-gradient(135deg, ${config.primaryColor || '#475569'}, ${config.secondaryColor || '#1e293b'})`
+                  : undefined;
                 return (
                   <div
                     key={`${sim.product}-${idx}`}
                     onClick={() => toggleSimulation(idx)}
-                    className={`relative rounded-2xl p-6 ${styles.gradient} ${styles.shadowColor} shadow-2xl border-t ${styles.borderColor} flex flex-col justify-between h-auto transform transition-all duration-300 group overflow-hidden cursor-pointer
+                    style={entityGradient ? { background: entityGradient } : undefined}
+                    className={`relative rounded-2xl p-6 ${entityGradient ? '' : styles.gradient} ${styles.shadowColor} shadow-2xl border-t ${styles.borderColor} flex flex-col justify-between h-auto transform transition-all duration-300 group overflow-hidden cursor-pointer
                       animate-fade-in
                       ${isSelected
                         ? `scale-105 -translate-y-2 ring-4 ring-white ring-offset-2`

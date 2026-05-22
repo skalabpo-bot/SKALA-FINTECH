@@ -108,6 +108,8 @@ export interface LoanConfiguration {
   customQuota?: number; // Cuota personalizada (override de availableQuota del análisis)
   commissions?: Record<string, number>; // Comisiones por producto, pasadas desde la entidad
   aplicaCuatroXMil?: boolean; // Si la entidad descuenta el 4x1000 (default true)
+  primaryColor?: string; // Color de marca de la entidad (para las tarjetas)
+  secondaryColor?: string;
 }
 
 export interface SimulationResult {

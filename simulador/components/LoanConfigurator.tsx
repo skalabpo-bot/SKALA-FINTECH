@@ -146,6 +146,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         customQuota: customQuota < analysis.availableQuota ? customQuota : undefined,
         commissions: selectedEntity.commissions,
         aplicaCuatroXMil: selectedEntity.aplicaCuatroXMil ?? true,
+        primaryColor: selectedEntity.primaryColor,
+        secondaryColor: selectedEntity.secondaryColor,
       });
     }
   };
