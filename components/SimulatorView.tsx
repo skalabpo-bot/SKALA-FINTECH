@@ -89,6 +89,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [selectedSimIdx, setSelectedSimIdx] = useState<number | null>(null);
   const [entityRequiresFullForm, setEntityRequiresFullForm] = useState<boolean>(false);
+  const [entityCalc, setEntityCalc] = useState<{ aplica4x1000: boolean; cashFee: number; bankFee: number }>({ aplica4x1000: true, cashFee: 15157, bankFee: 7614 });
 
   // Archivos capturados desde los componentes del simulador
   const [paystubFile, setPaystubFile] = useState<File | null>(null);
@@ -142,9 +143,16 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       // Cargar el flag requires_full_form de la entidad seleccionada
       if (sim.entityName) {
         import('../simulador/services/supabaseClient').then(({ supabase }) => {
-          supabase.from('financial_entities').select('requires_full_form').eq('name', sim.entityName).single()
-            .then(({ data }: any) => setEntityRequiresFullForm(!!data?.requires_full_form))
-            .catch(() => setEntityRequiresFullForm(false));
+          supabase.from('financial_entities').select('requires_full_form, aplica_cuatro_x_mil, cash_fee, bank_fee').eq('name', sim.entityName).single()
+            .then(({ data }: any) => {
+              setEntityRequiresFullForm(!!data?.requires_full_form);
+              setEntityCalc({
+                aplica4x1000: data?.aplica_cuatro_x_mil ?? true,
+                cashFee: Number(data?.cash_fee ?? 15157),
+                bankFee: Number(data?.bank_fee ?? 7614),
+              });
+            })
+            .catch(() => { setEntityRequiresFullForm(false); setEntityCalc({ aplica4x1000: true, cashFee: 15157, bankFee: 7614 }); });
         });
       }
     }
@@ -253,7 +261,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     const fromSim: Record<string, any> = sim
       ? {
           monto: sim.maxAmount,
-          montoDesembolso: calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod),
+          montoDesembolso: calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000),
           plazo: sim.term,
           tasa: sim.rate,
           entidadAliada: sim.entityName,
@@ -262,7 +270,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       : loanConfig
       ? {
           monto: simulations[0]?.maxAmount || 0,
-          montoDesembolso: simulations[0] ? calculateDisbursement(simulations[0].maxAmount, simulations[0].discountPct, paymentMethod) : 0,
+          montoDesembolso: simulations[0] ? calculateDisbursement(simulations[0].maxAmount, simulations[0].discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000) : 0,
           plazo: loanConfig.termMonths,
           tasa: simulations[0]?.rate || 0,
           entidadAliada: loanConfig.entityName,
@@ -573,11 +581,11 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               {selectedSimIdx !== null && (() => {
                 const sim = simulations[selectedSimIdx];
                 const gradient = PRODUCT_COLORS[sim.product] ?? 'from-slate-500 to-slate-700';
-                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod);
+                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
                 const base = sim.maxAmount - seguroAval;
-                const cuatroXMil = Math.floor(base * 0.004);
-                const gastos = paymentMethod === 'bancaria' ? 7614 : 15157;
+                const cuatroXMil = entityCalc.aplica4x1000 ? Math.floor(base * 0.004) : 0;
+                const gastos = paymentMethod === 'bancaria' ? entityCalc.bankFee : entityCalc.cashFee;
                 return (
                   <div className={`relative rounded-2xl p-6 bg-gradient-to-br ${gradient} text-white shadow-xl`}>
                     <div className="absolute top-4 right-4">
@@ -923,7 +931,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       {/* Modal de confirmación antes de radicar */}
       {showConfirmRadicar && selectedSimIdx !== null && (() => {
         const sim = simulations[selectedSimIdx];
-        const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod);
+        const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
         return (
           <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-4 backdrop-blur-lg animate-fade-in">
             <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">

@@ -184,11 +184,12 @@ export const calculateDisbursement = (
   discountPct: number,
   paymentMethod: PaymentMethod,
   cashFee: number = 15157,
-  bankFee: number = 7614
+  bankFee: number = 7614,
+  aplica4x1000: boolean = true
 ): number => {
   const seguroAval = Math.floor(maxAmount * (discountPct / 100));
   const base = maxAmount - seguroAval;
-  const cuatroXMil = Math.floor(base * 0.004);
+  const cuatroXMil = aplica4x1000 ? Math.floor(base * 0.004) : 0;
   const gastos = paymentMethod === 'efectivo' ? cashFee : bankFee;
   return Math.floor(base - cuatroXMil - gastos);
 };

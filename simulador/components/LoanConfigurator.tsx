@@ -145,6 +145,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         carteraItems: carteraItems.length > 0 ? carteraItems : undefined,
         customQuota: customQuota < analysis.availableQuota ? customQuota : undefined,
         commissions: selectedEntity.commissions,
+        aplicaCuatroXMil: selectedEntity.aplicaCuatroXMil ?? true,
       });
     }
   };
@@ -367,7 +368,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {viableLive.map((sim, i) => {
                       const gradient = getCardColor(sim.product);
-                      const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, 'bancaria', selectedEntity?.cashFee ?? 15157, selectedEntity?.bankFee ?? 7614);
+                      const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, 'bancaria', selectedEntity?.cashFee ?? 15157, selectedEntity?.bankFee ?? 7614, selectedEntity?.aplicaCuatroXMil ?? true);
                       return (
                         <div key={i} className={`bg-gradient-to-br ${gradient} rounded-xl p-4 text-white shadow-lg transition-all duration-300`}>
                           <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">{sim.product}</p>

@@ -161,10 +161,11 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     ).join('') || '';
 
     const offersHtml = toExport.map(sim => {
-      const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod);
+      const aplica4x1000 = config.aplicaCuatroXMil ?? true;
+      const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee, aplica4x1000);
       const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
       const base = sim.maxAmount - seguroAval;
-      const cuatroXMil = Math.floor(base * 0.004);
+      const cuatroXMil = aplica4x1000 ? Math.floor(base * 0.004) : 0;
       const gastos = paymentMethod === 'efectivo' ? config.cashFee : config.bankFee;
       return `
         <div class="offer-card">
@@ -359,10 +360,11 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
               {viableSims.map((sim, viableIdx) => {
                 const idx = simulations.indexOf(sim);
                 const styles = getCardStyles(sim.product);
-                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee);
+                const aplica4x1000Card = config.aplicaCuatroXMil ?? true;
+                const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee, aplica4x1000Card);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
                 const base = sim.maxAmount - seguroAval;
-                const cuatroXMil = Math.floor(base * 0.004);
+                const cuatroXMil = aplica4x1000Card ? Math.floor(base * 0.004) : 0;
                 const gastos = paymentMethod === 'efectivo' ? config.cashFee : config.bankFee;
                 const isSelected = selectedSimulations.has(idx);
 

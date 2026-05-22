@@ -19,6 +19,7 @@ const mapFromDb = (row: any): FinancialEntity => ({
   pagaduriaMaxCartera: row.pagaduria_max_cartera ?? undefined,
   commissions: row.commissions ?? undefined,
   requiresFullForm: row.requires_full_form ?? false,
+  aplicaCuatroXMil: row.aplica_cuatro_x_mil ?? true,
   creditTypeIds: Array.isArray(row.credit_type_ids) ? row.credit_type_ids : [],
   validationUrl: row.validation_url ?? undefined,
 });
@@ -74,6 +75,7 @@ export const saveEntity = async (entity: Omit<FinancialEntity, 'id'>, id?: strin
     commissions: entity.commissions ?? {},
     validation_url: entity.validationUrl ?? null,
     requires_full_form: entity.requiresFullForm ?? false,
+    aplica_cuatro_x_mil: entity.aplicaCuatroXMil ?? true,
     credit_type_ids: entity.creditTypeIds ?? [],
   };
 

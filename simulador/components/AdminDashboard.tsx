@@ -725,6 +725,20 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
                             <p className="text-[10px] text-slate-400 mt-1.5">Costos que se descuentan al calcular el monto a desembolsar</p>
+
+                            {/* Toggle 4x1000 */}
+                            <label className="mt-3 flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer">
+                              <div>
+                                <p className="text-xs font-bold text-slate-700">Aplica 4×1000</p>
+                                <p className="text-[10px] text-slate-400">Si esta entidad descuenta el 4×1000 al desembolsar (ej: CrediAlianza sí, Vantage no).</p>
+                              </div>
+                              <input
+                                type="checkbox"
+                                className="w-5 h-5 accent-emerald-500 shrink-0"
+                                checked={editingEntity.aplicaCuatroXMil ?? true}
+                                onChange={e => setEditingEntity({ ...editingEntity, aplicaCuatroXMil: e.target.checked })}
+                              />
+                            </label>
                           </div>
 
                           {/* Pagadurías que sirve esta entidad */}
@@ -909,7 +923,7 @@ export const AdminDashboard: React.FC = () => {
                           </div>
 
                           <div className="pt-2">
-                             <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 shadow-lg transition-all hover:-translate-y-0.5">Guardar Marca</button>
+                             <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-50">{isLoading ? 'Guardando...' : '💾 Guardar Entidad (marca, gastos y pagadurías)'}</button>
                           </div>
                       </form>
                   </div>

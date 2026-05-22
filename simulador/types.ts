@@ -22,6 +22,7 @@ export interface FinancialEntity {
   pagaduriaMaxCartera?: Record<string, number>; // Override por pagaduría, ej: {"MINDEFENSA": 1}
   commissions?: Record<string, number>; // Comisión (%) por producto, ej: {"Libre Inversión": 3.5, "Compra de Cartera": 2.8}
   requiresFullForm?: boolean; // Si true, requiere formulario completo (no radicación rápida)
+  aplicaCuatroXMil?: boolean; // Si true, descuenta el 4x1000 al calcular el desembolso (default true)
   creditTypeIds?: string[]; // Tipos de crédito que atiende (UUIDs de credit_types)
   validationUrl?: string; // URL de validación de identidad del cliente (centrales de riesgo)
 }
@@ -106,6 +107,7 @@ export interface LoanConfiguration {
   carteraItems?: CarteraItem[]; // Detalle de carteras a recoger (entidad + cuota)
   customQuota?: number; // Cuota personalizada (override de availableQuota del análisis)
   commissions?: Record<string, number>; // Comisiones por producto, pasadas desde la entidad
+  aplicaCuatroXMil?: boolean; // Si la entidad descuenta el 4x1000 (default true)
 }
 
 export interface SimulationResult {
