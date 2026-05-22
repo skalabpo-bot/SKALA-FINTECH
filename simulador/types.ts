@@ -23,6 +23,7 @@ export interface FinancialEntity {
   commissions?: Record<string, number>; // Comisión (%) por producto, ej: {"Libre Inversión": 3.5, "Compra de Cartera": 2.8}
   requiresFullForm?: boolean; // Si true, requiere formulario completo (no radicación rápida)
   aplicaCuatroXMil?: boolean; // Si true, descuenta el 4x1000 al calcular el desembolso (default true)
+  cardFrameColor?: string; // 3er color: marcos/paneles internos de las tarjetas
   creditTypeIds?: string[]; // Tipos de crédito que atiende (UUIDs de credit_types)
   validationUrl?: string; // URL de validación de identidad del cliente (centrales de riesgo)
 }
@@ -110,6 +111,7 @@ export interface LoanConfiguration {
   aplicaCuatroXMil?: boolean; // Si la entidad descuenta el 4x1000 (default true)
   primaryColor?: string; // Color de marca de la entidad (para las tarjetas)
   secondaryColor?: string;
+  cardFrameColor?: string; // 3er color: marcos internos
 }
 
 export interface SimulationResult {

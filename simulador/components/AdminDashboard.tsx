@@ -693,6 +693,14 @@ export const AdminDashboard: React.FC = () => {
                                   </div>
                               </div>
                           </div>
+                          <div className={inputContainerClass}>
+                              <label className={labelClass}>Color de Marcos / Paneles (dentro de la tarjeta)</label>
+                              <div className="flex items-center gap-2 border border-slate-200 p-2 rounded-xl bg-slate-50">
+                                 <input type="color" className="h-8 w-8 rounded-lg cursor-pointer border-0 p-0" value={editingEntity.cardFrameColor || '#0f172a'} onChange={e => setEditingEntity({...editingEntity, cardFrameColor: e.target.value})} />
+                                 <span className="text-xs font-mono text-slate-500">{editingEntity.cardFrameColor || '#0f172a'}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-1">Color del panel de descuentos y comisión dentro de la tarjeta de simulación.</p>
+                          </div>
                           
                           {/* Costos de Desembolso */}
                           <div className="pt-2 border-t border-slate-100">

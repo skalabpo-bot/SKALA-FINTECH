@@ -149,6 +149,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         aplicaCuatroXMil: selectedEntity.aplicaCuatroXMil ?? true,
         primaryColor: selectedEntity.primaryColor,
         secondaryColor: selectedEntity.secondaryColor,
+        cardFrameColor: selectedEntity.cardFrameColor,
       });
     }
   };

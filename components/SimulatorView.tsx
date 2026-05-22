@@ -15,6 +15,7 @@ import {
   ProductType,
 } from '../simulador/types';
 import { simulateLoan, calculateDisbursement } from '../simulador/services/calculatorService';
+import { frameBg } from '../simulador/services/colorUtils';
 import { getFPMTable } from '../simulador/services/fpmService';
 import { MockService, COLOMBIAN_CITIES } from '../services/mockService';
 import { User } from '../types';
@@ -89,7 +90,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [selectedSimIdx, setSelectedSimIdx] = useState<number | null>(null);
   const [entityRequiresFullForm, setEntityRequiresFullForm] = useState<boolean>(false);
-  const [entityCalc, setEntityCalc] = useState<{ aplica4x1000: boolean; cashFee: number; bankFee: number; primaryColor: string; secondaryColor: string }>({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b' });
+  const [entityCalc, setEntityCalc] = useState<{ aplica4x1000: boolean; cashFee: number; bankFee: number; primaryColor: string; secondaryColor: string; frameColor: string }>({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b', frameColor: '#0f172a' });
 
   // Archivos capturados desde los componentes del simulador
   const [paystubFile, setPaystubFile] = useState<File | null>(null);
@@ -143,7 +144,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       // Cargar el flag requires_full_form de la entidad seleccionada
       if (sim.entityName) {
         import('../simulador/services/supabaseClient').then(({ supabase }) => {
-          supabase.from('financial_entities').select('requires_full_form, aplica_cuatro_x_mil, cash_fee, bank_fee, primary_color, secondary_color').eq('name', sim.entityName).single()
+          supabase.from('financial_entities').select('requires_full_form, aplica_cuatro_x_mil, cash_fee, bank_fee, primary_color, secondary_color, card_frame_color').eq('name', sim.entityName).single()
             .then(({ data }: any) => {
               setEntityRequiresFullForm(!!data?.requires_full_form);
               setEntityCalc({
@@ -152,9 +153,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 bankFee: Number(data?.bank_fee ?? 7614),
                 primaryColor: data?.primary_color || '#475569',
                 secondaryColor: data?.secondary_color || '#1e293b',
+                frameColor: data?.card_frame_color || '#0f172a',
               });
             })
-            .catch(() => { setEntityRequiresFullForm(false); setEntityCalc({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b' }); });
+            .catch(() => { setEntityRequiresFullForm(false); setEntityCalc({ aplica4x1000: true, cashFee: 15157, bankFee: 7614, primaryColor: '#475569', secondaryColor: '#1e293b', frameColor: '#0f172a' }); });
         });
       }
     }
@@ -588,6 +590,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 const cuatroXMil = entityCalc.aplica4x1000 ? Math.floor(base * 0.004) : 0;
                 const gastos = paymentMethod === 'bancaria' ? entityCalc.bankFee : entityCalc.cashFee;
                 const cardBg = `linear-gradient(135deg, ${entityCalc.primaryColor}, ${entityCalc.secondaryColor})`;
+                const framePanelBg = frameBg(entityCalc.frameColor, 0.82);
                 return (
                   <div style={{ background: cardBg }} className="relative rounded-2xl p-6 text-white shadow-xl">
                     <div className="absolute top-4 right-4">
@@ -601,7 +604,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                       <p className="text-4xl font-mono font-extrabold">{fmt(sim.maxAmount)}</p>
                     </div>
 
-                    <div className="bg-black/20 rounded-xl p-4 space-y-2 text-[11px] font-bold mb-4">
+                    <div style={{ background: framePanelBg }} className="rounded-xl p-4 space-y-2 text-[11px] font-bold mb-4">
                       <div className="flex justify-between opacity-80">
                         <span>Seguro y Aval ({sim.discountPct}%)</span>
                         <span>- {fmt(seguroAval)}</span>

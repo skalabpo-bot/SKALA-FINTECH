@@ -1,22 +1,30 @@
-// Utilidades de color para tarjetas con la marca de la entidad.
-// Oscurece los colores de marca para que el texto blanco siempre sea legible,
-// sin importar si la entidad eligió un color claro (amarillo) u oscuro.
+// Utilidades de color para las tarjetas del simulador con la marca de la entidad.
 
-const darken = (hex: string, amount: number): string => {
+const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
   const h = (hex || '').replace('#', '').trim();
-  if (h.length !== 6) return hex || '#1e293b';
-  const r = Math.round(parseInt(h.slice(0, 2), 16) * (1 - amount));
-  const g = Math.round(parseInt(h.slice(2, 4), 16) * (1 - amount));
-  const b = Math.round(parseInt(h.slice(4, 6), 16) * (1 - amount));
-  return `rgb(${r}, ${g}, ${b})`;
+  if (h.length !== 6) return null;
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
 };
 
 /**
- * Devuelve un gradiente CSS oscurecido a partir de los colores de marca,
- * apto para tarjetas con texto blanco. Mantiene el tono de la entidad.
+ * Gradiente de la tarjeta con los 2 colores de marca, SIN oscurecer.
  */
 export const entityCardGradient = (primary?: string, secondary?: string): string => {
   const p = primary || '#475569';
   const s = secondary || p || '#1e293b';
-  return `linear-gradient(135deg, ${darken(p, 0.42)}, ${darken(s, 0.55)})`;
+  return `linear-gradient(135deg, ${p}, ${s})`;
+};
+
+/**
+ * Devuelve un color con opacidad (rgba) para los marcos/paneles internos.
+ * `frame` es el 3er color configurable de la entidad.
+ */
+export const frameBg = (frame?: string, alpha = 0.85): string => {
+  const rgb = hexToRgb(frame || '#0f172a');
+  if (!rgb) return `rgba(15, 23, 42, ${alpha})`;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 };

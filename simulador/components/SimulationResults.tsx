@@ -3,7 +3,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { AnalysisResult, SimulationResult, ProductType, LoanConfiguration, PaymentMethod, ClientData } from '../types';
 import { AdBanner } from './AdBanner';
 import { calculateDisbursement } from '../services/calculatorService';
-import { entityCardGradient } from '../services/colorUtils';
+import { entityCardGradient, frameBg } from '../services/colorUtils';
 import { analyzeCedulaDocument, CedulaImage } from '../services/geminiService';
 import { pdfToImages } from '../services/pdfToImage';
 
@@ -364,8 +364,9 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                 const useEntityColor = !!(config.primaryColor || config.secondaryColor);
                 // Con color de entidad forzamos texto blanco legible y panel oscuro sutil
                 const styles = useEntityColor
-                  ? { ...baseStyles, textColor: 'text-white', accentColor: 'text-white/75', disburseBg: 'bg-black/25' }
+                  ? { ...baseStyles, textColor: 'text-white', accentColor: 'text-white/80', disburseBg: '' }
                   : baseStyles;
+                const framePanelBg = useEntityColor ? frameBg(config.cardFrameColor, 0.82) : undefined;
                 const aplica4x1000Card = config.aplicaCuatroXMil ?? true;
                 const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee, aplica4x1000Card);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
@@ -425,7 +426,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
 
                     {/* Desglose Desembolso */}
                     {sim.discountPct > 0 && (
-                      <div className={`relative z-10 rounded-xl p-3 mb-4 ${styles.disburseBg} space-y-1`}>
+                      <div style={framePanelBg ? { background: framePanelBg } : undefined} className={`relative z-10 rounded-xl p-3 mb-4 ${styles.disburseBg} space-y-1`}>
                         <div className={`flex justify-between text-[10px] ${styles.accentColor}`}>
                           <span>Seg. y Aval ({sim.discountPct}%)</span>
                           <span>- {formatCurrency(seguroAval)}</span>
@@ -458,7 +459,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                           </div>
                        </div>
                        {sim.commissionPct != null && sim.commissionPct > 0 && (
-                         <div className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
+                         <div style={framePanelBg ? { background: framePanelBg } : undefined} className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
                            <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comision Gestor</span>
                            <span className={`font-mono font-bold text-sm ${styles.textColor}`}>
                              {sim.commissionPct}% = {formatCurrency(Math.floor(sim.maxAmount * sim.commissionPct / 100))}
