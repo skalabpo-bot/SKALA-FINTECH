@@ -312,14 +312,31 @@ export const AdminDashboard: React.FC = () => {
               const separator = firstLine && firstLine.includes(';') ? ';' : ',';
               const isLatAmFormat = separator === ';';
 
+              // Parser robusto: detecta el decimal por valor, sin importar el separador de columnas.
               const parseNum = (val: string) => {
                   if (!val) return 0;
-                  let clean = val.replace(/[$\s]/g, '');
-                  if (isLatAmFormat) { clean = clean.replace(/\./g, ''); clean = clean.replace(',', '.'); }
-                  else { clean = clean.replace(/,/g, ''); }
+                  let clean = val.replace(/[$%\s]/g, '').trim();
+                  if (!clean) return 0;
+                  const hasDot = clean.includes('.');
+                  const hasComma = clean.includes(',');
+                  if (hasDot && hasComma) {
+                      // El último separador que aparece es el decimal
+                      if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+                          clean = clean.replace(/\./g, '').replace(',', '.'); // coma decimal
+                      } else {
+                          clean = clean.replace(/,/g, ''); // punto decimal, comas = miles
+                      }
+                  } else if (hasComma) {
+                      clean = clean.replace(',', '.'); // solo coma = decimal
+                  } else if (hasDot) {
+                      // Varios puntos = separadores de miles; uno solo = decimal
+                      if ((clean.match(/\./g) || []).length > 1) clean = clean.replace(/\./g, '');
+                  }
                   const result = parseFloat(clean);
                   return isNaN(result) ? 0 : result;
               };
+
+              const errores: string[] = [];
 
               for (let i = 1; i < lines.length; i++) {
                   const line = lines[i].trim();
@@ -357,6 +374,12 @@ export const AdminDashboard: React.FC = () => {
 
                   if (factorVal <= 0) continue;
 
+                  // Validar rangos contra los límites de la BD (evita "numeric field overflow")
+                  // rate numeric(6,4) ≤ 99.99 · factor numeric(10,8) ≤ 99.99 · discount numeric(5,2) ≤ 999.99
+                  if (rateVal > 99.99) { errores.push(`Fila ${i + 1}: tasa ${rateVal} fuera de rango (debe ser < 100). Revisa el formato.`); continue; }
+                  if (factorVal > 9.99) { errores.push(`Fila ${i + 1}: factor ${factorVal} fuera de rango (debe ser < 10, normalmente entre 0.01 y 1.1). Revisa que no le falte el punto decimal.`); continue; }
+                  if (discountVal > 100) { errores.push(`Fila ${i + 1}: descuento ${discountVal}% fuera de rango (debe ser ≤ 100).`); continue; }
+
                   newFactors.push({
                       product: productEnum,
                       termMonths: termVal,
@@ -364,6 +387,14 @@ export const AdminDashboard: React.FC = () => {
                       factor: factorVal,
                       discountPct: discountVal,
                   });
+              }
+
+              // Si hubo filas con valores fuera de rango, avisar exactamente cuáles
+              if (errores.length > 0) {
+                  return showAlert(
+                      `Se encontraron ${errores.length} fila(s) con valores inválidos:\n\n${errores.slice(0, 10).join('\n')}${errores.length > 10 ? '\n...' : ''}\n\nCorrige esas filas y vuelve a subir.`,
+                      "Valores fuera de rango"
+                  );
               }
 
               if (newFactors.length === 0) {
