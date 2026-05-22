@@ -69,6 +69,7 @@ export const saveEntity = async (entity: Omit<FinancialEntity, 'id'>, id?: strin
     cash_fee: entity.cashFee ?? 15157,
     bank_fee: entity.bankFee ?? 7614,
     max_cartera: entity.maxCartera ?? null,
+    pagadurias: entity.pagadurias ?? [],
     pagaduria_max_cartera: entity.pagaduriaMaxCartera ?? {},
     commissions: entity.commissions ?? {},
     validation_url: entity.validationUrl ?? null,
