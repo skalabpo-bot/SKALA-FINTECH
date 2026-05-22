@@ -3,6 +3,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { AnalysisResult, SimulationResult, ProductType, LoanConfiguration, PaymentMethod, ClientData } from '../types';
 import { AdBanner } from './AdBanner';
 import { calculateDisbursement } from '../services/calculatorService';
+import { entityCardGradient } from '../services/colorUtils';
 import { analyzeCedulaDocument, CedulaImage } from '../services/geminiService';
 import { pdfToImages } from '../services/pdfToImage';
 
@@ -359,7 +360,12 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {viableSims.map((sim, viableIdx) => {
                 const idx = simulations.indexOf(sim);
-                const styles = getCardStyles(sim.product);
+                const baseStyles = getCardStyles(sim.product);
+                const useEntityColor = !!(config.primaryColor || config.secondaryColor);
+                // Con color de entidad forzamos texto blanco legible y panel oscuro sutil
+                const styles = useEntityColor
+                  ? { ...baseStyles, textColor: 'text-white', accentColor: 'text-white/75', disburseBg: 'bg-black/25' }
+                  : baseStyles;
                 const aplica4x1000Card = config.aplicaCuatroXMil ?? true;
                 const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee, aplica4x1000Card);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
@@ -369,7 +375,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                 const isSelected = selectedSimulations.has(idx);
 
                 const entityGradient = (config.primaryColor || config.secondaryColor)
-                  ? `linear-gradient(135deg, ${config.primaryColor || '#475569'}, ${config.secondaryColor || '#1e293b'})`
+                  ? entityCardGradient(config.primaryColor, config.secondaryColor)
                   : undefined;
                 return (
                   <div

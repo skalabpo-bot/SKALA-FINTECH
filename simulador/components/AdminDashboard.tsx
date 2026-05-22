@@ -343,6 +343,9 @@ export const AdminDashboard: React.FC = () => {
                   const line = lines[i].trim();
                   if (!line) continue;
                   const cols = line.split(separator).map(c => c.trim());
+                  // Quitar columnas vacías al final (comas/; sobrantes de Excel) que
+                  // desplazaban el mapeo y hacían que el Factor leyera el Descuento.
+                  while (cols.length > 0 && cols[cols.length - 1] === '') cols.pop();
 
                   let pStr: string, tStr: string, rStr: string, fStr: string, dStr: string = '';
                   if (cols.length >= 6) { pStr = cols[1]; tStr = cols[2]; rStr = cols[3]; fStr = cols[4]; dStr = cols[5] || ''; }

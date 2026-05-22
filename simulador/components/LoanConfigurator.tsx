@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, LoanConfiguration, CarteraItem, SimulationResult, ProductType } from '../types';
 import { getTermsForEntity } from '../services/fpmService';
 import { simulateLoan, calculateDisbursement } from '../services/calculatorService';
+import { entityCardGradient } from '../services/colorUtils';
 import { useSimulator } from '../context/SimulatorContext';
 
 interface LoanConfiguratorProps {
@@ -370,7 +371,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {viableLive.map((sim, i) => {
                       const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, 'bancaria', selectedEntity?.cashFee ?? 15157, selectedEntity?.bankFee ?? 7614, selectedEntity?.aplicaCuatroXMil ?? true);
-                      const cardBg = `linear-gradient(135deg, ${selectedEntity?.primaryColor || '#475569'}, ${selectedEntity?.secondaryColor || '#1e293b'})`;
+                      const cardBg = entityCardGradient(selectedEntity?.primaryColor, selectedEntity?.secondaryColor);
                       return (
                         <div key={i} style={{ background: cardBg }} className="rounded-xl p-4 text-white shadow-lg transition-all duration-300">
                           <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">{sim.product}</p>
