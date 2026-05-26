@@ -27,6 +27,7 @@ interface SimulatorViewProps {
   onFillForm: (prefilled: Record<string, any>) => void;
   onCancel: () => void;
   creditTypeId?: string;
+  assignedGestorId?: string;
 }
 
 const PRODUCT_COLORS: Record<string, string> = {
@@ -80,7 +81,7 @@ const matchCity = (raw: string): string => {
 
 const inputCls = 'w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-primary focus:bg-white transition-all placeholder:text-slate-300';
 
-export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel, creditTypeId }) => {
+export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel, creditTypeId, assignedGestorId }) => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.PAYSTUB_UPLOAD);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [loanConfig, setLoanConfig] = useState<LoanConfiguration | null>(null);
@@ -309,6 +310,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       ...fromPayroll,
       ...(documents.length > 0 ? { documents } : {}),
       ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
+      ...(assignedGestorId ? { assignedGestorId } : {}),
     };
   };
 

@@ -6,6 +6,7 @@ import { OnboardingForm } from './components/OnboardingForm';
 import { SimulatorView } from './components/SimulatorView';
 import { CreditTypeSelector } from './components/CreditTypeSelector';
 import { DynamicOnboardingView } from './components/DynamicOnboardingView';
+import { SupervisorGestorPicker } from './components/SupervisorGestorPicker';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CreditDetail } from './components/CreditDetail';
 import { AdminPanel } from './components/AdminPanel';
@@ -63,6 +64,8 @@ const App = () => {
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [selectedCreditType, setSelectedCreditType] = useState<any | null>(null);
   const [prefilledCreditData, setPrefilledCreditData] = useState<Record<string, any> | null>(null);
+  // Supervisor radicando a nombre de un asesor de su zona
+  const [radicarGestorId, setRadicarGestorId] = useState<string>('');
   const [authView, setAuthView] = useState<'LOGIN' | 'REGISTER' | 'FORGOT_PASSWORD'>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -753,25 +756,39 @@ const App = () => {
       {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
-        <CreditTypeSelector onSelect={(type) => {
-          setSelectedCreditType(type);
-          if (type.requires_entity === false) {
-            setCurrentView('dynamic_onboarding');
-          } else {
-            setCurrentView('simulator_libranza');
-          }
-        }} />
+        <>
+          {currentUser?.role === 'SUPERVISOR_ASIGNADO' && (
+            <SupervisorGestorPicker
+              currentUser={currentUser}
+              value={radicarGestorId}
+              onChange={setRadicarGestorId}
+            />
+          )}
+          <CreditTypeSelector onSelect={(type) => {
+            if (currentUser?.role === 'SUPERVISOR_ASIGNADO' && !radicarGestorId) {
+              dispatchAlert('Selecciona primero el asesor para el que vas a radicar.', 'error');
+              return;
+            }
+            setSelectedCreditType(type);
+            if (type.requires_entity === false) {
+              setCurrentView('dynamic_onboarding');
+            } else {
+              setCurrentView('simulator_libranza');
+            }
+          }} />
+        </>
       )}
       {currentView === 'simulator_libranza' && (
         <SimulatorView
           currentUser={currentUser}
           creditTypeId={selectedCreditType?.id}
+          assignedGestorId={radicarGestorId || undefined}
           onCreditCreated={(creditId) => {
             setSelectedCreditId(creditId);
             setCurrentView('detail');
           }}
           onFillForm={(prefilled) => {
-            setPrefilledCreditData(prefilled);
+            setPrefilledCreditData(radicarGestorId ? { ...prefilled, assignedGestorId: radicarGestorId } : prefilled);
             setCurrentView('onboarding');
           }}
           onCancel={() => setCurrentView('simulator')}
@@ -781,7 +798,8 @@ const App = () => {
         <DynamicOnboardingView
           creditType={selectedCreditType}
           currentUser={currentUser!}
-          onSuccess={() => { setSelectedCreditType(null); setCurrentView('credits'); }}
+          assignedGestorId={radicarGestorId || undefined}
+          onSuccess={() => { setSelectedCreditType(null); setRadicarGestorId(''); setCurrentView('credits'); }}
           onCancel={() => { setSelectedCreditType(null); setCurrentView('simulator'); }}
         />
       )}
@@ -789,7 +807,7 @@ const App = () => {
         <OnboardingForm
           currentUser={currentUser}
           initialData={prefilledCreditData ?? undefined}
-          onSuccess={() => { setPrefilledCreditData(null); setCurrentView('credits'); }}
+          onSuccess={() => { setPrefilledCreditData(null); setRadicarGestorId(''); setCurrentView('credits'); }}
         />
       )}
       {currentView === 'credits' && <CreditList />}

@@ -11,6 +11,7 @@ import { downloadVehicrediPdf } from '../services/vehicrediPdf';
 interface Props {
   creditType: CreditType;
   currentUser: User;
+  assignedGestorId?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -128,7 +129,7 @@ const generateTestData = (fields: EntityFormField[]): Record<string, any> => {
   return data;
 };
 
-export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser, onSuccess, onCancel }) => {
+export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser, assignedGestorId, onSuccess, onCancel }) => {
   const [entityId, setEntityId] = useState<string | null>(null);
   const [entityName, setEntityName] = useState<string>('');
   const [fields, setFields] = useState<EntityFormField[]>([]);
@@ -299,6 +300,7 @@ export const DynamicOnboardingView: React.FC<Props> = ({ creditType, currentUser
         apellidos: formData.apellidos || '',
         numeroDocumento: formData.numeroDocumento || '',
         documents: documents.length > 0 ? documents : undefined,
+        ...(assignedGestorId ? { assignedGestorId } : {}),
       };
       await MockService.createCredit(payload, currentUser);
       dispatchAlert(`${creditType.name} radicado exitosamente.`, 'success');

@@ -222,7 +222,9 @@ export const ProductionService = {
     },
 
     createCredit: async (formData: any, currentUser: User) => {
-        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, ...rest } = formData;
+        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, ...rest } = formData;
+        // El gestor asignado puede venir explícito (ej: supervisor radica para un asesor de su zona)
+        const gestorId = assignedGestorId || currentUser.id;
         const states = await ProductionService.getStates();
 
         // Determinar si el tipo de crédito requiere entidad real (libranza) o es directo (hipotecario/vehículo)
@@ -295,7 +297,7 @@ export const ProductionService = {
         const nombreCompleto = (nombres || apellidos) ? `${nombres} ${apellidos}`.trim() : (rest.nombreCompleto || '');
 
         const insertPayload = {
-            assigned_gestor_id: currentUser.id,
+            assigned_gestor_id: gestorId,
             status_id: initialState.id,
             amount: Number(monto || 0),
             disbursement_amount: Number(montoDesembolso || monto || 0),
@@ -1330,6 +1332,19 @@ export const ProductionService = {
     getCreditTypes: async () => {
         const { data } = await supabase.from('credit_types').select('*').eq('active', true).order('order_index');
         return data || [];
+    },
+
+    // Gestores activos de la zona de un supervisor (para que radique a nombre de su asesor)
+    getGestoresByZone: async (zoneId: string) => {
+        if (!zoneId) return [];
+        const { data } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .eq('zone_id', zoneId)
+            .eq('role', 'GESTOR')
+            .eq('status', 'ACTIVE')
+            .order('full_name');
+        return (data || []).map((g: any) => ({ id: g.id, name: g.full_name }));
     },
 
     getFinancialEntityByName: async (name: string) => {
