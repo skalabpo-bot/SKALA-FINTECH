@@ -274,7 +274,8 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           const dataToSave = { ...editFormData };
           // Si el gestor guardó en modo subsanación, quitar el permiso automáticamente
           const currentStateName = states.find(s => s.id === credit?.statusId)?.name?.toUpperCase() ?? '';
-          const isOwnSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && credit?.assignedGestorId === currentUser.id;
+          const isOwnSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && !!currentUser.zoneId
+              && (credit?.gestorZoneId === currentUser.zoneId || credit?.assignedGestorId === currentUser.id);
           const isGestorSubsanacion = (currentUser.role === 'GESTOR' || isOwnSupervisor) && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
           if (isGestorSubsanacion) dataToSave.subsanacionHabilitada = false;
           await MockService.updateCreditData(credit!.id, dataToSave, currentUser.id);
@@ -451,8 +452,11 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   if (!credit) return <div className="p-10 text-center font-bold text-slate-400">Crédito no encontrado.</div>;
 
   const canEdit = MockService.hasPermission(currentUser, 'EDIT_CREDIT_INFO');
-  // Supervisor que tiene créditos propios asignados (ex-gestor) puede gestionarlos como gestor
-  const isGestorOrOwnSupervisor = currentUser.role === 'GESTOR' || (currentUser.role === 'SUPERVISOR_ASIGNADO' && credit.assignedGestorId === currentUser.id);
+  // Supervisor puede gestionar como gestor los créditos de SU zona (gestores que supervisa)
+  // o los créditos asignados a él mismo.
+  const isZoneSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && !!currentUser.zoneId
+      && (credit.gestorZoneId === currentUser.zoneId || credit.assignedGestorId === currentUser.id);
+  const isGestorOrOwnSupervisor = currentUser.role === 'GESTOR' || isZoneSupervisor;
   // Recalcular el estado actual en cada render para que se actualice inmediatamente
   const currentStateObj = states.find(s => s.id === credit.statusId);
   const hasTasksEnabled = currentStateObj?.enableTasks ?? false;

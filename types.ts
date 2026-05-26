@@ -153,6 +153,7 @@ export interface Credit {
   assignedGestorId: string;
   gestorName?: string;
   gestorZoneName?: string;
+  gestorZoneId?: string;
   assignedAnalystId?: string;
   analystName?: string;
   assignedEntityAnalystId?: string;

@@ -46,6 +46,7 @@ const mapCreditFromDB = (c: any): Credit => {
         assignedGestorId: c.assigned_gestor_id,
         gestorName: c.gestor_profile?.full_name || c.profiles?.full_name || 'Sin asignar',
         gestorZoneName: c.gestor_profile?.zones?.name || undefined,
+        gestorZoneId: c.gestor_profile?.zone_id || undefined,
         assignedAnalystId: c.assigned_analyst_id || undefined,
         analystName: c.analyst_profile?.full_name || undefined,
         assignedEntityAnalystId: c.assigned_entity_analyst_id || undefined,
@@ -768,7 +769,7 @@ export const ProductionService = {
         // Verificar y archivar créditos DEVUELTO vencidos (fire & forget)
         ProductionService.autoArchiveExpiredDevuelto().catch(() => {});
         // Intentar con join de analista y analista de entidad; si la columna no existe, fallback sin ella
-        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)';
+        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
@@ -822,7 +823,7 @@ export const ProductionService = {
 
     getCreditById: async (id: string) => {
       // Intentar con join de analista; fallback sin ella
-      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)').eq('id', id).single();
+      let { data: c } = await supabase.from('credits').select('*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)').eq('id', id).single();
       if (!c) {
           // Fallback sin analyst join
           const fallback = await supabase.from('credits').select('*, profiles:assigned_gestor_id(full_name, phone)').eq('id', id).single();
