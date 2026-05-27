@@ -449,7 +449,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                     <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                       <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
                       <p className="text-[11px] text-amber-700 font-semibold leading-snug">
-                        Verifica que la capacidad sea correcta. El cálculo automático puede fallar si el desprendible se leyó mal — ajústala a mano si no coincide con la real.
+                        Verifica siempre que la capacidad sea correcta. Algunos desprendibles pueden presentar variaciones o formatos poco comunes; si la cifra no coincide con la real, ajústala manualmente aquí.
                       </p>
                     </div>
                  </div>
