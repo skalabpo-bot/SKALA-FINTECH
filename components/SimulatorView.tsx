@@ -376,7 +376,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const errDireccion = direccionCompleta.trim() && !/[a-zA-Z]/.test(direccionCompleta) ? 'Incluye letras en la dirección (Ej: Calle 5 # 10-23, no solo números)' : '';
   const errBarrio = barrio.trim() && /^\d+$/.test(barrio.trim()) ? 'El barrio no puede ser solo números' : '';
 
-  const paystubReady = paystubFile !== null;
+  // Cualquiera de los dos desprendibles (principal o adicional) cumple el requisito
+  const paystubReady = paystubFile !== null || paystub2File !== null;
 
   const canCreate = cedulaReady &&
     paystubReady &&

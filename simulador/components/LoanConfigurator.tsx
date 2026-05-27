@@ -144,7 +144,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         cashFee: selectedEntity.cashFee ?? 15157,
         bankFee: selectedEntity.bankFee ?? 7614,
         carteraItems: carteraItems.length > 0 ? carteraItems : undefined,
-        customQuota: customQuota < analysis.availableQuota ? customQuota : undefined,
+        customQuota: customQuota !== analysis.availableQuota ? customQuota : undefined,
         commissions: selectedEntity.commissions,
         aplicaCuatroXMil: selectedEntity.aplicaCuatroXMil ?? true,
         primaryColor: selectedEntity.primaryColor,
@@ -425,22 +425,33 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                       <input
                         type="number"
                         min={0}
-                        max={analysis.availableQuota}
                         step={1}
                         value={customQuota}
                         onChange={e => {
                           const val = Number(e.target.value);
-                          setCustomQuota(Math.min(analysis.availableQuota, Math.max(0, val)));
+                          // Permite ajustar la capacidad hacia ARRIBA o ABAJO (el calculo
+                          // automatico a veces subestima la capacidad real).
+                          setCustomQuota(Math.max(0, val));
                         }}
                         className="block w-full pl-9 pr-4 py-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all font-bold text-xl font-mono shadow-sm"
                       />
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 ml-1">
-                      Cupo disponible: {formatCurrency(analysis.availableQuota)}
+                      Cupo calculado: {formatCurrency(analysis.availableQuota)}
                       {customQuota < analysis.availableQuota && (
-                        <span className="ml-2 text-amber-500 font-bold">Reducida manualmente</span>
+                        <span className="ml-2 text-amber-500 font-bold">↓ Reducida manualmente</span>
+                      )}
+                      {customQuota > analysis.availableQuota && (
+                        <span className="ml-2 text-blue-500 font-bold">↑ Aumentada manualmente</span>
                       )}
                     </p>
+                    {/* Alerta SIEMPRE visible: verificar la capacidad */}
+                    <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
+                      <p className="text-[11px] text-amber-700 font-semibold leading-snug">
+                        Verifica que la capacidad sea correcta. El cálculo automático puede fallar si el desprendible se leyó mal — ajústala a mano si no coincide con la real.
+                      </p>
+                    </div>
                  </div>
               </div>
 
