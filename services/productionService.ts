@@ -1347,6 +1347,17 @@ export const ProductionService = {
         return (data || []).map((g: any) => ({ id: g.id, name: g.full_name }));
     },
 
+    // Todos los gestores activos (para el admin, que radica a nombre de cualquiera)
+    getAllGestores: async () => {
+        const { data } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .eq('role', 'GESTOR')
+            .eq('status', 'ACTIVE')
+            .order('full_name');
+        return (data || []).map((g: any) => ({ id: g.id, name: g.full_name }));
+    },
+
     getFinancialEntityByName: async (name: string) => {
         const { data } = await supabase.from('financial_entities').select('*').eq('name', name).single();
         return data;

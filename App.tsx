@@ -757,7 +757,7 @@ const App = () => {
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
         <>
-          {currentUser?.role === 'SUPERVISOR_ASIGNADO' && (
+          {(currentUser?.role === 'SUPERVISOR_ASIGNADO' || currentUser?.role === 'ADMIN') && (
             <SupervisorGestorPicker
               currentUser={currentUser}
               value={radicarGestorId}
@@ -765,7 +765,7 @@ const App = () => {
             />
           )}
           <CreditTypeSelector onSelect={(type) => {
-            if (currentUser?.role === 'SUPERVISOR_ASIGNADO' && !radicarGestorId) {
+            if ((currentUser?.role === 'SUPERVISOR_ASIGNADO' || currentUser?.role === 'ADMIN') && !radicarGestorId) {
               dispatchAlert('Selecciona primero el asesor para el que vas a radicar.', 'error');
               return;
             }

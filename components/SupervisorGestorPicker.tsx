@@ -15,12 +15,16 @@ export const SupervisorGestorPicker: React.FC<Props> = ({ currentUser, value, on
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser.zoneId) { setLoading(false); return; }
-    MockService.getGestoresByZone(currentUser.zoneId)
+    setLoading(true);
+    // Admin: todos los gestores. Supervisor: solo los de su zona.
+    const loader = currentUser.role === 'ADMIN'
+      ? MockService.getAllGestores()
+      : (currentUser.zoneId ? MockService.getGestoresByZone(currentUser.zoneId) : Promise.resolve([]));
+    loader
       .then((g: any[]) => setGestores(g || []))
       .catch(() => setGestores([]))
       .finally(() => setLoading(false));
-  }, [currentUser.zoneId]);
+  }, [currentUser.zoneId, currentUser.role]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 pt-6">
