@@ -17,6 +17,8 @@ interface FinancialFormProps {
 /** Mapea nombre de pagaduría → EntityType para el cálculo de ley */
 const inferEntityType = (name: string): EntityType => {
   const n = name.toUpperCase();
+  // CASUR (Policía) primero: Ley 1527 sobre el neto. NO confundir con CREMIL (Fuerzas Militares, Ley 50).
+  if (/\bCASUR\b|SUELDOS.*RETIRO.*POLIC|POLIC.*RETIRO/.test(n)) return 'CASUR';
   if (/\bCREMIL\b/.test(n)) return 'CREMIL';
   if (/MIN.*DEFENSA|MINDEFENSA|PENSIONADO.*MINDEFENSA/.test(n)) return 'MIN_DEFENSA';
   if (/SEGUROS ALFA|ALFA/.test(n)) return 'SEGUROS_ALFA';
@@ -68,6 +70,7 @@ const compressImage = (file: File): Promise<string> => {
 const ENTITY_BADGES: Record<string, { label: string; color: string }> = {
   GENERAL: { label: 'Ley 1527 — 50% sobre ingreso neto (devengado - salud - pensión)', color: 'gray' },
   CREMIL: { label: 'CREMIL — Ley 50: 50% sobre salario bruto', color: 'green' },
+  CASUR: { label: 'CASUR — Ley 1527: 50% sobre ingreso neto (devengado - salud - pensión)', color: 'gray' },
   MIN_DEFENSA: { label: 'Min Defensa — Ley 1527 (>2 SMMLV) / protección SMMLV (≤2 SMMLV)', color: 'blue' },
   SEGUROS_ALFA: { label: 'Seguros Alfa — Ley 1527 al 48%', color: 'purple' },
 };

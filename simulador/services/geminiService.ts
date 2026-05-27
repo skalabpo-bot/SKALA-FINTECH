@@ -274,17 +274,18 @@ export const analyzePaystubDocument = async (
     PROHIBIDO en detailedDeductions: salud, EPS, pensión, AFP, embargo, retención judicial, cuota alimentaria.
 
     CAMPO 7 — entityType
-    Detecta solo para referencia interna:
-    - "CREMIL" si el membrete dice exactamente "CREMIL"
+    Detecta solo para referencia interna. Lee el membrete con MUCHO cuidado, no asumas:
+    - "CASUR" si dice "CASUR", "Caja de Sueldos de Retiro de la Policía" o es un retiro/pensión de la POLICÍA Nacional. (CASUR = Policía → Ley 1527.)
+    - "CREMIL" SOLO si dice "CREMIL" o "Caja de Retiro de las Fuerzas Militares" (Ejército/Armada/FAC). NUNCA marques CREMIL para documentos de la Policía ni de CASUR — son entidades distintas con régimen distinto.
     - "MIN_DEFENSA" si dice "Ministerio de Defensa", "MINDEFENSA" o "Pensionado MinDefensa"
     - "SEGUROS_ALFA" si dice "Seguros Alfa" o "ALFA"
     - "GENERAL" en cualquier otro caso
 
     CAMPO 8 — manualQuota
-    SOLO aplicable si entityType es "CREMIL".
-    Los desprendibles de CREMIL frecuentemente muestran el CUPO DISPONIBLE directamente, que es el valor que el pensionado tiene libre para endeudarse.
+    SOLO aplicable si entityType es "CREMIL" o "CASUR".
+    Los desprendibles de CREMIL y CASUR frecuentemente muestran el CUPO DISPONIBLE directamente, que es el valor que el pensionado tiene libre para endeudarse.
     Busca etiquetas como: "Cupo Disponible", "Cupo Libre", "Cupo Autorizado", "Cupo para Libranza", "Disponible Libranza", "Saldo Cupo".
-    Si encuentras este valor en un desprendible CREMIL, ponlo aquí. De lo contrario (o si no es CREMIL), pon 0.
+    Si encuentras este valor en un desprendible CREMIL o CASUR, ponlo aquí. De lo contrario, pon 0.
 
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;
@@ -304,7 +305,7 @@ export const analyzePaystubDocument = async (
         otherDeductions: data.otherDeductions || 0,
         embargos: data.embargos || 0,
         detailedDeductions: data.detailedDeductions || [],
-        entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+        entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
         employerName: data.employerName || '',
         manualQuota: data.manualQuota || 0
       };
@@ -374,7 +375,7 @@ export const analyzePaystubDocument = async (
             otherDeductions: data.otherDeductions || 0,
             embargos: data.embargos || 0,
             detailedDeductions: data.detailedDeductions || [],
-            entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+            entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
             employerName: data.employerName || '',
             manualQuota: data.manualQuota || 0
           };
@@ -412,7 +413,7 @@ export const analyzePaystubDocument = async (
         otherDeductions: data.otherDeductions || 0,
         embargos: data.embargos || 0,
         detailedDeductions: data.detailedDeductions || [],
-        entityType: (['CREMIL', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+        entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
         employerName: data.employerName || '',
         manualQuota: data.manualQuota || 0
       };

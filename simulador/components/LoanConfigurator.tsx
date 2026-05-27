@@ -159,6 +159,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   // Entity type label for summary
   const entityTypeLabels: Record<string, string> = {
     CREMIL: 'CREMIL — 50% Salario Bruto',
+    CASUR: 'CASUR — Ley 1527 (50% Neto)',
     MIN_DEFENSA: 'Min Defensa — Ley 50 + SMMLV',
     SEGUROS_ALFA: 'Seguros Alfa — 52% Neto',
     GENERAL: '50% Ingreso Neto',

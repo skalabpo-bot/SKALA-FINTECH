@@ -48,6 +48,28 @@ const calculateCremil: CalculationMethod = (data) => {
   };
 };
 
+/** CASUR (Caja de Sueldos de Retiro de la Policía) — Ley 1527: 50% del ingreso neto (devengado - salud - pensión).
+ *  IMPORTANTE: CASUR NO es CREMIL. CREMIL (Fuerzas Militares) usa Ley 50 sobre el bruto;
+ *  CASUR (Policía) usa Ley 1527 sobre el neto, igual que el régimen general. */
+const calculateCasur: CalculationMethod = (data) => {
+  const netIncome = data.monthlyIncome - data.mandatoryDeductions;
+  const legalCapacity = Math.floor(netIncome * 0.5);
+  const availableQuota = legalCapacity - data.otherDeductions - data.embargos;
+
+  return {
+    entityType: 'CASUR',
+    rawIncome: data.monthlyIncome,
+    mandatory: data.mandatoryDeductions,
+    others: data.otherDeductions,
+    embargos: data.embargos,
+    netIncome,
+    legalCapacity,
+    availableQuota: Math.max(0, availableQuota),
+    detailedDeductions: data.detailedDeductions || [],
+    isManual: false
+  };
+};
+
 /** Min Defensa:
  *  > 2 SMLV → Ley 1527: (devengado - descuentos ley) / 2 - otros descuentos
  *  ≤ 2 SMLV → devengado - 1 SMLV - todos los descuentos
@@ -105,6 +127,7 @@ const calculateSegurosAlfa: CalculationMethod = (data) => {
 const calculationRegistry: Record<string, CalculationMethod> = {
   GENERAL: calculateGeneral,
   CREMIL: calculateCremil,
+  CASUR: calculateCasur,
   MIN_DEFENSA: calculateMinDefensa,
   SEGUROS_ALFA: calculateSegurosAlfa,
 };

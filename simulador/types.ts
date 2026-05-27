@@ -7,7 +7,7 @@ export enum ProductType {
   COMPRA_CARTERA = 'Compra de Cartera'
 }
 
-export type EntityType = 'GENERAL' | 'CREMIL' | 'MIN_DEFENSA' | 'SEGUROS_ALFA';
+export type EntityType = 'GENERAL' | 'CREMIL' | 'CASUR' | 'MIN_DEFENSA' | 'SEGUROS_ALFA';
 
 export interface FinancialEntity {
   id: string;
