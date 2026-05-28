@@ -173,6 +173,9 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
     if(!formData.monto || !formData.plazo || !formData.numeroDocumento) {
         return dispatchAlert("Monto, Plazo y Cédula son obligatorios.", "error");
     }
+    if (!formData.lineaCredito?.trim()) {
+        return dispatchAlert("Debes seleccionar la Línea de Crédito antes de radicar.", "error");
+    }
     // Referencias obligatorias (ambas, datos clave)
     const refFaltante = (n: 1 | 2) => {
         const p = `ref${n}`;

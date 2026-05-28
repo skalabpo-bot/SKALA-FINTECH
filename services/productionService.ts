@@ -307,7 +307,7 @@ export const ProductionService = {
             commission_percent: commPercent,
             commission_est: commEst,
             credit_type_id: creditTypeId || null,
-            client_data: { ...rest, nombreCompleto }
+            client_data: { ...rest, nombreCompleto, lineaCredito: lineaCredito || '' }
         };
 
         let { data, error } = await supabase.from('credits').insert(insertPayload).select().single();
@@ -343,7 +343,7 @@ export const ProductionService = {
             `Dirección: ${rest.direccionCompleta || ''}`,
             `Estado Civil: ${rest.estadoCivil || ''}`,
             `Banco: ${rest.banco || ''} - ${rest.tipoCuenta || ''} - ${rest.numeroCuenta || ''}`,
-            `Línea de Crédito: ${rest.lineaCredito || ''}`,
+            `Línea de Crédito: ${lineaCredito || '(no especificada)'}`,
             `Tipo Pensión: ${rest.tipoPension || ''}`,
             `Mesada: $${Number(rest.mesadaPensional || 0).toLocaleString()}`,
             `Gastos Mensuales: $${Number(rest.gastosMensuales || 0).toLocaleString()}`,
