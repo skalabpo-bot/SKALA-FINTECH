@@ -36,6 +36,50 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     [UserRole.ANALISTA_ENTIDAD]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA']
 };
 
+// Cache en memoria para datos casi-estáticos (estados, entidades, tipos). TTL 30s.
+const CACHE_TTL_MS = 30_000;
+let _statesCache: { data: CreditState[]; ts: number } | null = null;
+let _entitiesCache: { data: any[]; ts: number } | null = null;
+let _creditTypesCache: { data: any[]; ts: number } | null = null;
+let _lastAutoArchiveTs = 0;
+
+// Mapper liviano para la bandeja: estripa client_data pesado (carteraItems,
+// detailedDeductions, legalAnalysis, snapshots, contactos, banco, etc.) y solo
+// conserva los 3 campos que la lista/búsqueda realmente usan.
+const mapCreditForList = (c: any): Credit => {
+    const cd = c.client_data || {};
+    return {
+        id: c.id,
+        solicitudNumber: c.solicitud_number,
+        createdAt: new Date(c.created_at),
+        updatedAt: new Date(c.updated_at),
+        assignedGestorId: c.assigned_gestor_id,
+        gestorName: c.gestor_profile?.full_name || c.profiles?.full_name || 'Sin asignar',
+        gestorZoneId: c.gestor_profile?.zone_id || undefined,
+        assignedAnalystId: c.assigned_analyst_id || undefined,
+        analystName: c.analyst_profile?.full_name || undefined,
+        assignedEntityAnalystId: c.assigned_entity_analyst_id || undefined,
+        entityAnalystName: c.entity_analyst_profile?.full_name || undefined,
+        statusId: c.status_id,
+        nombreCompleto: cd.nombreCompleto || '',
+        numeroDocumento: cd.numeroDocumento || '',
+        recomendado: cd.recomendado || false,
+        monto: Number(c.amount || 0),
+        montoDesembolso: Number(c.disbursement_amount || 0),
+        plazo: Number(c.term || 0),
+        entidadAliada: c.entity_name,
+        tasa: Number(c.interest_rate || 0),
+        commissionPercentage: Number(c.commission_percent || 0),
+        estimatedCommission: Number(c.commission_est || 0),
+        comisionPagada: c.comision_pagada || false,
+        fechaPagoComision: c.fecha_pago_comision || undefined,
+        creditTypeId: c.credit_type_id || undefined,
+        comments: [],
+        documents: [],
+        history: []
+    } as any;
+};
+
 const mapCreditFromDB = (c: any): Credit => {
     const clientData = c.client_data || {};
     return {
@@ -768,8 +812,11 @@ export const ProductionService = {
     },
 
     getCredits: async (user: User) => {
-        // Verificar y archivar créditos DEVUELTO vencidos (fire & forget)
-        ProductionService.autoArchiveExpiredDevuelto().catch(() => {});
+        // Auto-archive solo cada 10 min para no competir con la bandeja en cada navegación
+        if (Date.now() - _lastAutoArchiveTs > 10 * 60_000) {
+            _lastAutoArchiveTs = Date.now();
+            setTimeout(() => ProductionService.autoArchiveExpiredDevuelto().catch(() => {}), 1500);
+        }
         // Intentar con join de analista y analista de entidad; si la columna no existe, fallback sin ella
         let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)';
         let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
@@ -820,7 +867,7 @@ export const ProductionService = {
             data = fallback.data;
             if (fallback.error) throw fallback.error;
         }
-        return (data || []).map(mapCreditFromDB);
+        return (data || []).map(mapCreditForList);
     },
 
     getCreditById: async (id: string) => {
@@ -1325,13 +1372,19 @@ export const ProductionService = {
     },
 
     getEntities: async () => {
+        if (_entitiesCache && Date.now() - _entitiesCache.ts < CACHE_TTL_MS) return _entitiesCache.data;
         const { data } = await supabase.from('allied_entities').select('*');
-        return data || [];
+        const result = data || [];
+        _entitiesCache = { data: result, ts: Date.now() };
+        return result;
     },
 
     getCreditTypes: async () => {
+        if (_creditTypesCache && Date.now() - _creditTypesCache.ts < CACHE_TTL_MS) return _creditTypesCache.data;
         const { data } = await supabase.from('credit_types').select('*').eq('active', true).order('order_index');
-        return data || [];
+        const result = data || [];
+        _creditTypesCache = { data: result, ts: Date.now() };
+        return result;
     },
 
     // Gestores activos de la zona de un supervisor (para que radique a nombre de su asesor)
@@ -1906,10 +1959,11 @@ export const ProductionService = {
     },
 
     getStates: async (): Promise<CreditState[]> => {
+        if (_statesCache && Date.now() - _statesCache.ts < CACHE_TTL_MS) return _statesCache.data;
         try {
             const { data, error } = await supabase.from('credit_states_config').select('*').order('order_index');
             if (!error && data && data.length > 0) {
-                return data.map((s: any) => ({
+                const result = data.map((s: any) => ({
                     id: s.id,
                     name: s.name,
                     color: s.color || 'bg-gray-500',
@@ -1919,7 +1973,9 @@ export const ProductionService = {
                     enableTasks: s.enable_tasks || false,
                     enableEdit: s.enable_edit || false,
                     slaHours: s.sla_hours ?? null
-                }));
+                })) as CreditState[];
+                _statesCache = { data: result, ts: Date.now() };
+                return result;
             }
         } catch (e) { /* fallback */ }
         return [...INITIAL_STATES];

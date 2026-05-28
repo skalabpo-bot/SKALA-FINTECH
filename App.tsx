@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { OnboardingForm } from './components/OnboardingForm';
@@ -319,6 +319,8 @@ const App = () => {
     const [entities, setEntities] = useState<any[]>([]);
     const [creditTypes, setCreditTypes] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [visibleCount, setVisibleCount] = useState(100);
     const [filterStatus, setFilterStatus] = useState('');
     const [filterEntity, setFilterEntity] = useState('');
     const [filterCreditType, setFilterCreditType] = useState('');
@@ -363,18 +365,36 @@ const App = () => {
 
     const activeFilterCount = [filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo].filter(Boolean).length;
 
-    const filtered = credits.filter(c => {
-        const matchesSearch = !searchTerm ||
-            c.nombreCompleto?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.numeroDocumento?.includes(searchTerm) ||
-            c.gestorName?.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = !filterStatus || c.statusId === filterStatus;
-        const matchesEntity = !filterEntity || c.entidadAliada === filterEntity;
-        const matchesCreditType = !filterCreditType || c.creditTypeId === filterCreditType;
-        const matchesDateFrom = !filterDateFrom || new Date(c.createdAt) >= new Date(filterDateFrom);
-        const matchesDateTo = !filterDateTo || new Date(c.createdAt) <= new Date(filterDateTo + 'T23:59:59');
-        return matchesSearch && matchesStatus && matchesEntity && matchesCreditType && matchesDateFrom && matchesDateTo;
-    });
+    // Debounce: filtra solo 250ms después de la última tecla (evita re-renders por keystroke)
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(searchTerm.trim().toLowerCase()), 250);
+        return () => clearTimeout(t);
+    }, [searchTerm]);
+
+    // Reset del cap de filas cuando cambia un filtro/búsqueda
+    useEffect(() => { setVisibleCount(100); }, [debouncedSearch, filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo]);
+
+    const filtered = useMemo(() => {
+        const q = debouncedSearch;
+        const dateFrom = filterDateFrom ? new Date(filterDateFrom).getTime() : null;
+        const dateTo = filterDateTo ? new Date(filterDateTo + 'T23:59:59').getTime() : null;
+        return credits.filter(c => {
+            if (q) {
+                const name = (c.nombreCompleto || '').toLowerCase();
+                const doc = (c.numeroDocumento || '').toString();
+                const gestor = (c.gestorName || '').toLowerCase();
+                if (!name.includes(q) && !doc.includes(q) && !gestor.includes(q)) return false;
+            }
+            if (filterStatus && c.statusId !== filterStatus) return false;
+            if (filterEntity && c.entidadAliada !== filterEntity) return false;
+            if (filterCreditType && c.creditTypeId !== filterCreditType) return false;
+            if (dateFrom !== null && new Date(c.createdAt).getTime() < dateFrom) return false;
+            if (dateTo !== null && new Date(c.createdAt).getTime() > dateTo) return false;
+            return true;
+        });
+    }, [credits, debouncedSearch, filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo]);
+
+    const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
 
     const clearFilters = () => { setFilterStatus(''); setFilterEntity(''); setFilterCreditType(''); setFilterDateFrom(''); setFilterDateTo(''); };
 
@@ -466,7 +486,7 @@ const App = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 text-sm">
-              {filtered.map(c => {
+              {visible.map(c => {
                 const lastRead = creditReadMap[c.id];
                 const hasUnread = !!lastRead && new Date(c.updatedAt) > lastRead;
                 const ctype = creditTypes.find((t: any) => t.id === c.creditTypeId);
@@ -545,6 +565,18 @@ const App = () => {
               {filtered.length === 0 && (
                   <tr>
                       <td colSpan={8} className="px-8 py-20 text-center text-slate-300 font-bold italic">No se encontraron expedientes.</td>
+                  </tr>
+              )}
+              {filtered.length > visible.length && (
+                  <tr>
+                      <td colSpan={8} className="px-8 py-6 text-center">
+                          <button
+                              onClick={() => setVisibleCount(v => v + 100)}
+                              className="px-6 py-2.5 bg-slate-100 hover:bg-primary hover:text-white text-slate-600 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest shadow-sm"
+                          >
+                              Ver más ({filtered.length - visible.length} restantes)
+                          </button>
+                      </td>
                   </tr>
               )}
             </tbody>
