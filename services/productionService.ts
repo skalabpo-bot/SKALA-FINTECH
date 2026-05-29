@@ -63,6 +63,7 @@ const mapCreditForList = (c: any): Credit => {
         statusId: c.status_id,
         nombreCompleto: cd.nombreCompleto || '',
         numeroDocumento: cd.numeroDocumento || '',
+        pagaduria: cd.pagaduria || '',
         recomendado: cd.recomendado || false,
         monto: Number(c.amount || 0),
         montoDesembolso: Number(c.disbursement_amount || 0),
@@ -811,7 +812,7 @@ export const ProductionService = {
         }
     },
 
-    getCredits: async (user: User) => {
+    getCredits: async (user: User, mode: 'list' | 'full' = 'list') => {
         // Auto-archive solo cada 10 min para no competir con la bandeja en cada navegación
         if (Date.now() - _lastAutoArchiveTs > 10 * 60_000) {
             _lastAutoArchiveTs = Date.now();
@@ -867,7 +868,8 @@ export const ProductionService = {
             data = fallback.data;
             if (fallback.error) throw fallback.error;
         }
-        return (data || []).map(mapCreditForList);
+        const mapper = mode === 'full' ? mapCreditFromDB : mapCreditForList;
+        return (data || []).map(mapper);
     },
 
     getCreditById: async (id: string) => {
@@ -2500,7 +2502,7 @@ export const ProductionService = {
 
     exportCSV: async (currentUser: User, filters: ReportFilters, selectedColumns: string[]) => {
         const [credits, states, zones] = await Promise.all([
-            ProductionService.getCredits(currentUser),
+            ProductionService.getCredits(currentUser, 'full'),
             ProductionService.getStates(),
             ProductionService.getZones().catch(() => [])
         ]);

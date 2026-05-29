@@ -323,6 +323,7 @@ const App = () => {
     const [visibleCount, setVisibleCount] = useState(100);
     const [filterStatus, setFilterStatus] = useState('');
     const [filterEntity, setFilterEntity] = useState('');
+    const [filterPagaduria, setFilterPagaduria] = useState('');
     const [filterCreditType, setFilterCreditType] = useState('');
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
@@ -363,7 +364,13 @@ const App = () => {
         }
     };
 
-    const activeFilterCount = [filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo].filter(Boolean).length;
+    const activeFilterCount = [filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo].filter(Boolean).length;
+
+    // Lista de pagadurías presentes en los créditos actuales (solo opciones relevantes)
+    const availablePagadurias = useMemo(
+        () => Array.from(new Set(credits.map(c => (c as any).pagaduria).filter(Boolean))).sort() as string[],
+        [credits]
+    );
 
     // Debounce: filtra solo 250ms después de la última tecla (evita re-renders por keystroke)
     useEffect(() => {
@@ -372,7 +379,7 @@ const App = () => {
     }, [searchTerm]);
 
     // Reset del cap de filas cuando cambia un filtro/búsqueda
-    useEffect(() => { setVisibleCount(100); }, [debouncedSearch, filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo]);
+    useEffect(() => { setVisibleCount(100); }, [debouncedSearch, filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo]);
 
     const filtered = useMemo(() => {
         const q = debouncedSearch;
@@ -387,16 +394,17 @@ const App = () => {
             }
             if (filterStatus && c.statusId !== filterStatus) return false;
             if (filterEntity && c.entidadAliada !== filterEntity) return false;
+            if (filterPagaduria && (c as any).pagaduria !== filterPagaduria) return false;
             if (filterCreditType && c.creditTypeId !== filterCreditType) return false;
             if (dateFrom !== null && new Date(c.createdAt).getTime() < dateFrom) return false;
             if (dateTo !== null && new Date(c.createdAt).getTime() > dateTo) return false;
             return true;
         });
-    }, [credits, debouncedSearch, filterStatus, filterEntity, filterCreditType, filterDateFrom, filterDateTo]);
+    }, [credits, debouncedSearch, filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo]);
 
     const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
 
-    const clearFilters = () => { setFilterStatus(''); setFilterEntity(''); setFilterCreditType(''); setFilterDateFrom(''); setFilterDateTo(''); };
+    const clearFilters = () => { setFilterStatus(''); setFilterEntity(''); setFilterPagaduria(''); setFilterCreditType(''); setFilterDateFrom(''); setFilterDateTo(''); };
 
     // Mapa estático de colores para pill de tipo (Tailwind JIT necesita clases literales)
     const TYPE_PILL_COLOR: Record<string, string> = {
@@ -432,7 +440,7 @@ const App = () => {
 
             {showFilters && (
                 <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 animate-fade-in">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                         <div>
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Tipo de Crédito</label>
                             <select value={filterCreditType} onChange={e => setFilterCreditType(e.target.value)} className="w-full px-3 py-2.5 bg-white border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-primary">
@@ -452,6 +460,13 @@ const App = () => {
                             <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} className="w-full px-3 py-2.5 bg-white border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-primary">
                                 <option value="">Todas las entidades</option>
                                 {entities.map((e: any) => <option key={e.id || e.name} value={e.name}>{e.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Pagaduría</label>
+                            <select value={filterPagaduria} onChange={e => setFilterPagaduria(e.target.value)} className="w-full px-3 py-2.5 bg-white border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-primary">
+                                <option value="">Todas las pagadurías</option>
+                                {availablePagadurias.map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
                         </div>
                         <div>
@@ -522,6 +537,11 @@ const App = () => {
                         {isDirect
                           ? <p className="text-xs font-bold text-slate-400 italic">Skala (Directo)</p>
                           : <p className="text-xs font-bold text-slate-600">{c.entidadAliada || '---'}</p>}
+                        {(c as any).pagaduria && (
+                            <span className="mt-1 inline-flex items-center text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200" title={`Pagaduría: ${(c as any).pagaduria}`}>
+                                {(c as any).pagaduria}
+                            </span>
+                        )}
                     </td>
                     <td className="px-8 py-6 font-black text-slate-800 text-base">${c.monto?.toLocaleString()}</td>
                     <td className="px-8 py-6">
