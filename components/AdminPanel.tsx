@@ -155,52 +155,6 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
     const toggleSection = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
-    const AccordionSection = ({
-        id, title, subtitle, icon: Icon, iconColor = 'text-slate-600', iconBg = 'bg-slate-100', badge, children,
-    }: any) => {
-        const isOpen = !!openSections[id];
-        return (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <button
-                    type="button"
-                    onClick={() => toggleSection(id)}
-                    className="w-full flex items-center justify-between gap-3 px-6 py-4 hover:bg-slate-50 transition-colors"
-                >
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className={`p-2 ${iconBg} rounded-xl shrink-0`}>
-                            <Icon size={20} className={iconColor} />
-                        </div>
-                        <div className="text-left min-w-0">
-                            <h2 className="text-base md:text-lg font-bold text-slate-800 truncate">{title}</h2>
-                            {subtitle && <p className="text-[11px] text-slate-500 truncate">{subtitle}</p>}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        {badge && <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 rounded text-slate-500 hidden sm:inline">{badge}</span>}
-                        {isOpen ? <ChevronDown size={20} className="text-slate-400"/> : <ChevronRight size={20} className="text-slate-400"/>}
-                    </div>
-                </button>
-                {isOpen && (
-                    <div className="border-t border-slate-100 p-6 animate-fade-in">
-                        {children}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    const QuickStat = ({ label, value, icon: Icon, colorClass, bgClass }: any) => (
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
-                <p className="text-3xl font-display font-bold text-slate-800">{value}</p>
-            </div>
-            <div className={`p-3 rounded-xl ${bgClass} ${colorClass}`}>
-                <Icon size={24} />
-            </div>
-        </div>
-    );
-
     return (
         <div className="space-y-6 animate-fade-in pb-20 max-w-full overflow-x-hidden">
             <div className="flex flex-col md:flex-row justify-between items-end mb-2">
@@ -218,7 +172,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </div>
 
             {/* FLUJO DE CRÉDITO + ZONAS */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="flujo-supervisores"
                 title="Flujo de Crédito y Supervisores"
                 subtitle="Estados del proceso, acciones rápidas, supervisores de zona"
@@ -490,7 +444,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* ROLES SECTION */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="roles"
                 title="Roles y Permisos"
                 subtitle="Permisos por cada rol del sistema"
@@ -571,7 +525,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* FUNCIONALIDADES — Feature flags */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="funcionalidades"
                 title="Funcionalidades"
                 subtitle="Activa o desactiva módulos del sistema sin código"
@@ -621,7 +575,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* TIPOS DE CRÉDITO */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="tipos-credito"
                 title="Tipos de Crédito"
                 subtitle="Libranza, Hipotecario, Vehículo, etc."
@@ -633,7 +587,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* BANNERS POR ESTADO */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="banners"
                 title="Banners Informativos"
                 subtitle="Mensajes que aparecen al usuario según estado y entidad"
@@ -645,7 +599,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* BIBLIOTECA DE CAMPOS */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="biblioteca"
                 title="Biblioteca de Campos"
                 subtitle="Campos disponibles para formularios dinámicos"
@@ -657,7 +611,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* SIMULADOR — Entidades & Factores FPM */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="simulador"
                 title="Simulador de Crédito"
                 subtitle="Entidades financieras, factores FPM, comisiones, pagadurías"
@@ -669,7 +623,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
             </AccordionSection>
 
             {/* LISTS ROW */}
-            <AccordionSection
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
                 id="listas"
                 title="Listas Generales"
                 subtitle="Pagadurías, ciudades y bancos del sistema"
@@ -718,6 +672,54 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
         </div>
     );
 };
+
+// Definidos a NIVEL DE MÓDULO para no remontarse en cada render del padre
+// (caso contrario el input pierde foco en cada tecla → "jumping input").
+const AccordionSection = ({
+    id, openSections, onToggle, title, subtitle, icon: Icon, iconColor = 'text-slate-600', iconBg = 'bg-slate-100', badge, children,
+}: any) => {
+    const isOpen = !!openSections[id];
+    return (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <button
+                type="button"
+                onClick={() => onToggle(id)}
+                className="w-full flex items-center justify-between gap-3 px-6 py-4 hover:bg-slate-50 transition-colors"
+            >
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className={`p-2 ${iconBg} rounded-xl shrink-0`}>
+                        <Icon size={20} className={iconColor} />
+                    </div>
+                    <div className="text-left min-w-0">
+                        <h2 className="text-base md:text-lg font-bold text-slate-800 truncate">{title}</h2>
+                        {subtitle && <p className="text-[11px] text-slate-500 truncate">{subtitle}</p>}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    {badge && <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 rounded text-slate-500 hidden sm:inline">{badge}</span>}
+                    {isOpen ? <ChevronDown size={20} className="text-slate-400"/> : <ChevronRight size={20} className="text-slate-400"/>}
+                </div>
+            </button>
+            {isOpen && (
+                <div className="border-t border-slate-100 p-6 animate-fade-in">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const QuickStat = ({ label, value, icon: Icon, colorClass, bgClass }: any) => (
+    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
+        <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+            <p className="text-3xl font-display font-bold text-slate-800">{value}</p>
+        </div>
+        <div className={`p-3 rounded-xl ${bgClass} ${colorClass}`}>
+            <Icon size={24} />
+        </div>
+    </div>
+);
 
 const ConfigCard = ({ title, icon: Icon, colorClass, items, newItem, setNewItem, onAdd, onDelete }: any) => (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-80">
