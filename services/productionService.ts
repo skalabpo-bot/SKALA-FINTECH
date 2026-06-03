@@ -922,17 +922,21 @@ export const ProductionService = {
 
         const updatePayload: any = { status_id: statusId, updated_at: new Date().toISOString() };
 
-        // Si se pasan tareas de devolución, guardarlas en client_data (también resetea subsanacionHabilitada)
-        if (devolucionTasks !== undefined) {
+        // Estampar fecha de desembolso cuando entra al estado DESEMBOLSADO (para reportes precisos)
+        const isDisbursing = !!newState && /DESEMBOLSADO/i.test(newState.name);
+
+        // Si se pasan tareas de devolución O hay que estampar fechaDesembolso, leer client_data y mergear
+        if (devolucionTasks !== undefined || isDisbursing) {
             try {
                 const { data: currentRow } = await supabase.from('credits').select('client_data').eq('id', creditId).single();
+                const existing = currentRow?.client_data || {};
                 updatePayload.client_data = {
-                    ...(currentRow?.client_data || {}),
-                    devolucionTasks,
-                    subsanacionHabilitada: false,
+                    ...existing,
+                    ...(devolucionTasks !== undefined ? { devolucionTasks, subsanacionHabilitada: false } : {}),
+                    ...(isDisbursing && !existing.fechaDesembolso ? { fechaDesembolso: new Date().toISOString() } : {}),
                 };
             } catch (e) {
-                console.warn('No se pudieron guardar las tareas de devolución:', e);
+                console.warn('No se pudo actualizar client_data en cambio de estado:', e);
             }
         }
 
@@ -2549,8 +2553,21 @@ export const ProductionService = {
 
         let filtered = credits;
 
-        if (filters.startDate) filtered = filtered.filter(c => new Date(c.createdAt) >= new Date(filters.startDate));
-        if (filters.endDate) filtered = filtered.filter(c => new Date(c.createdAt) <= new Date(filters.endDate + 'T23:59:59'));
+        // Si el filtro es por DESEMBOLSADO, las fechas Desde/Hasta aplican sobre la
+        // FECHA DE DESEMBOLSO (no la de radicación) para que el reporte concuerde
+        // con la venta real. Fallback: c.updatedAt para créditos sin estampado.
+        const selectedState = filters.statusId ? states.find(s => s.id === filters.statusId) : null;
+        const filterByDisbursement = !!selectedState && /DESEMBOLSADO/i.test(selectedState.name);
+        const dateOf = (c: any): Date => {
+            if (filterByDisbursement) {
+                const raw = (c as any).fechaDesembolso || c.updatedAt;
+                return new Date(raw);
+            }
+            return new Date(c.createdAt);
+        };
+
+        if (filters.startDate) filtered = filtered.filter(c => dateOf(c) >= new Date(filters.startDate));
+        if (filters.endDate) filtered = filtered.filter(c => dateOf(c) <= new Date(filters.endDate + 'T23:59:59'));
         if (filters.statusId) filtered = filtered.filter(c => c.statusId === filters.statusId);
         if (filters.entity) filtered = filtered.filter(c => c.entidadAliada === filters.entity);
         if ((filters as any).comisionPagada === 'pagada') filtered = filtered.filter(c => c.comisionPagada === true);
@@ -2599,6 +2616,12 @@ export const ProductionService = {
             'ref2_telefono': c => c.ref2Telefono || '',
             'solicitud_numero': c => String(c.solicitudNumber || ''),
             'fecha_actualizacion': c => c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '',
+            'fecha_desembolso': c => {
+                const stateName = states.find(s => s.id === c.statusId)?.name || '';
+                if (!/DESEMBOLSADO/i.test(stateName)) return '';
+                const raw = (c as any).fechaDesembolso || c.updatedAt;
+                return raw ? new Date(raw).toLocaleDateString('es-CO') : '';
+            },
             'zona': c => gestorZoneMap[c.assignedGestorId] || 'Sin zona',
             'gestor_cedula': c => gestorCedulaMap[c.assignedGestorId] || '',
             'gestor_email': c => gestorEmailMap[c.assignedGestorId] || '',

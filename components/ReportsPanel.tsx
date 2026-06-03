@@ -12,7 +12,7 @@ const ALL_AVAILABLE_COLUMNS = [
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',
     'pagaduria', 'clave_pagaduria',
     'linea_credito', 'monto', 'monto_desembolso', 'plazo', 'entidad', 'tasa', 'comision_porcentaje', 'comision_estimada',
-    'comision_pagada', 'fecha_pago_comision',
+    'comision_pagada', 'fecha_pago_comision', 'fecha_desembolso',
     'gastos_mensuales', 'activos', 'pasivos', 'patrimonio',
     'tipo_desembolso', 'banco_cliente', 'tipo_cuenta', 'numero_cuenta',
     'ref1_nombre', 'ref1_telefono', 'ref2_nombre', 'ref2_telefono',
@@ -67,15 +67,27 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-end mb-12 bg-slate-50 p-8 rounded-3xl border border-slate-200">
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><Calendar size={14}/> Desde</label>
-                    <input type="date" value={filters.startDate} onChange={e => setFilters({...filters, startDate: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"/>
-                </div>
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><Calendar size={14}/> Hasta</label>
-                    <input type="date" value={filters.endDate} onChange={e => setFilters({...filters, endDate: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"/>
-                </div>
+            {(() => {
+                const selectedState = filters.statusId ? states.find((s: any) => s.id === filters.statusId) : null;
+                const filterByDisbursement = !!selectedState && /DESEMBOLSADO/i.test(selectedState.name);
+                const dateLabel = filterByDisbursement ? 'Fecha desembolso' : 'Fecha radicación';
+                return (
+                    <>
+                        {filterByDisbursement && (
+                            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 text-[12px] text-amber-800 font-semibold flex items-start gap-2">
+                                <span className="text-base">ℹ️</span>
+                                <span>Las fechas <b>Desde/Hasta</b> filtran por <b>fecha de desembolso</b> (no de radicación). Así el reporte concuerda con la venta real.</span>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-end mb-12 bg-slate-50 p-8 rounded-3xl border border-slate-200">
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><Calendar size={14}/> Desde <span className="text-[9px] text-slate-400 normal-case font-medium">({dateLabel})</span></label>
+                                <input type="date" value={filters.startDate} onChange={e => setFilters({...filters, startDate: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"/>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><Calendar size={14}/> Hasta <span className="text-[9px] text-slate-400 normal-case font-medium">({dateLabel})</span></label>
+                                <input type="date" value={filters.endDate} onChange={e => setFilters({...filters, endDate: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"/>
+                            </div>
                 <div className="space-y-2">
                     <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><FileText size={14}/> Estado</label>
                     <select value={filters.statusId} onChange={e => setFilters({...filters, statusId: e.target.value})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm cursor-pointer">
@@ -96,6 +108,9 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                     <span>{isExporting ? 'Generando...' : 'Exportar CSV'}</span>
                 </button>
             </div>
+                    </>
+                );
+            })()}
 
             <div className="border-t pt-10">
                 <button onClick={() => setShowColumnSelector(!showColumnSelector)} className="text-xs font-bold text-slate-600 hover:text-primary mb-8 flex items-center gap-2 px-6 py-3 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all">
