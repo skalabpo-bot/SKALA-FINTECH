@@ -56,6 +56,7 @@ const mapCreditForList = (c: any): Credit => {
         assignedGestorId: c.assigned_gestor_id,
         gestorName: c.gestor_profile?.full_name || c.profiles?.full_name || 'Sin asignar',
         gestorZoneId: c.gestor_profile?.zone_id || undefined,
+        assignedSupervisorId: c.assigned_supervisor_id || undefined,
         assignedAnalystId: c.assigned_analyst_id || undefined,
         analystName: c.analyst_profile?.full_name || undefined,
         assignedEntityAnalystId: c.assigned_entity_analyst_id || undefined,
@@ -342,7 +343,31 @@ export const ProductionService = {
         const apellidos = rest.apellidos || '';
         const nombreCompleto = (nombres || apellidos) ? `${nombres} ${apellidos}`.trim() : (rest.nombreCompleto || '');
 
-        const insertPayload = {
+        // Snapshot del supervisor al momento de radicar — si después cambia el
+        // supervisor de la zona, las operaciones en curso siguen reportando a
+        // quien las recibió. Solo los créditos nuevos van al nuevo supervisor.
+        let supervisorIdSnapshot: string | null = null;
+        try {
+            const { data: gestorProfile } = await supabase
+                .from('profiles')
+                .select('zone_id')
+                .eq('id', gestorId)
+                .single();
+            if (gestorProfile?.zone_id) {
+                const { data: sup } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('role', 'SUPERVISOR_ASIGNADO')
+                    .eq('zone_id', gestorProfile.zone_id)
+                    .limit(1)
+                    .maybeSingle();
+                supervisorIdSnapshot = sup?.id || null;
+            }
+        } catch (e) {
+            console.warn('No se pudo resolver supervisor snapshot:', e);
+        }
+
+        const insertPayload: any = {
             assigned_gestor_id: gestorId,
             status_id: initialState.id,
             amount: Number(monto || 0),
@@ -355,8 +380,19 @@ export const ProductionService = {
             credit_type_id: creditTypeId || null,
             client_data: { ...rest, nombreCompleto, lineaCredito: lineaCredito || '' }
         };
+        if (supervisorIdSnapshot) insertPayload.assigned_supervisor_id = supervisorIdSnapshot;
 
         let { data, error } = await supabase.from('credits').insert(insertPayload).select().single();
+
+        // Fallback: si la columna assigned_supervisor_id aún no existe en la DB
+        // (migración pendiente), reintenta sin ese campo
+        if (error && /assigned_supervisor_id/.test(error.message || '')) {
+            console.warn('assigned_supervisor_id no existe aún, reintentando sin snapshot');
+            delete insertPayload.assigned_supervisor_id;
+            const retry = await supabase.from('credits').insert(insertPayload).select().single();
+            data = retry.data;
+            error = retry.error;
+        }
 
         // Retry silencioso con supabaseAdmin si RLS bloqueó (token expirado / auth.uid() null intermitente)
         if (error && supabaseAdmin && (error.code === '42501' || /row-level security|policy/i.test(error.message || ''))) {
@@ -827,16 +863,11 @@ export const ProductionService = {
 
         if (!canViewAll) {
             if (canViewZone && user.zoneId) {
-                // SUPERVISOR_ASIGNADO: obtener todos los gestores de su zona y filtrar créditos
-                // También incluir sus propios créditos (si fue gestor antes del cambio de rol)
-                const { data: zoneProfiles } = await supabase
-                    .from('profiles')
-                    .select('id')
-                    .eq('zone_id', user.zoneId);
-                const zoneGestorIds = (zoneProfiles || []).map((p: any) => p.id);
-                // Asegurar que el propio supervisor esté incluido (para ver sus créditos anteriores)
-                if (!zoneGestorIds.includes(user.id)) zoneGestorIds.push(user.id);
-                query = query.in('assigned_gestor_id', zoneGestorIds);
+                // SUPERVISOR_ASIGNADO: filtrar por snapshot del supervisor.
+                // Esto asegura que un cambio de supervisor en la zona NO traslada
+                // las operaciones ya en curso — solo las nuevas van al nuevo supervisor.
+                // Incluye también sus propios créditos (si fue gestor antes).
+                query = query.or(`assigned_supervisor_id.eq.${user.id},assigned_gestor_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA') {
                 query = query.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA_ENTIDAD') {
@@ -1506,57 +1537,59 @@ export const ProductionService = {
             stats.byStatus[statusName] = (stats.byStatus[statusName] || 0) + 1;
         });
 
-        // Rankings (solo admin / VIEW_ALL_CREDITS). Siempre sobre los desembolsados
-        // del periodo seleccionado (o histórico si timeFilter='ALL').
-        if (ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS')) {
-            // Top asesores: agrupa desembolsados por assignedGestorId
-            const gestorAgg: Record<string, { id: string; name: string; count: number; total: number; zoneId?: string }> = {};
+        // Rankings: admin ve top asesores + top supervisores; supervisor ve top asesores
+        // (solo de su equipo, porque getCredits ya filtra por assignedSupervisorId).
+        const isAdmin = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
+        const isSupervisor = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
+
+        if (isAdmin || isSupervisor) {
+            // Top asesores
+            const gestorAgg: Record<string, { id: string; name: string; count: number; total: number }> = {};
             for (const c of disbursedFiltered) {
                 const gid = c.assignedGestorId;
                 if (!gid) continue;
                 if (!gestorAgg[gid]) {
-                    gestorAgg[gid] = { id: gid, name: c.gestorName || 'Sin nombre', count: 0, total: 0, zoneId: (c as any).gestorZoneId };
+                    gestorAgg[gid] = { id: gid, name: c.gestorName || 'Sin nombre', count: 0, total: 0 };
                 }
                 gestorAgg[gid].count += 1;
                 gestorAgg[gid].total += (c.monto || 0);
             }
             stats.topGestores = Object.values(gestorAgg)
                 .sort((a, b) => b.total - a.total)
-                .slice(0, 5)
-                .map(({ zoneId, ...rest }) => rest);
+                .slice(0, 5);
 
-            // Top supervisores: necesita mapping zoneId → supervisor. Una sola query.
-            const zoneIds = [...new Set(Object.values(gestorAgg).map(g => g.zoneId).filter(Boolean))] as string[];
-            if (zoneIds.length > 0) {
-                try {
-                    const { data: supervisors } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, zone_id, zones(name)')
-                        .eq('role', 'SUPERVISOR_ASIGNADO')
-                        .in('zone_id', zoneIds);
-
-                    const supByZone: Record<string, { id: string; name: string; zone: string }> = {};
-                    for (const s of supervisors || []) {
-                        if (s.zone_id) supByZone[s.zone_id] = { id: s.id, name: s.full_name || 'Sin nombre', zone: (s as any).zones?.name || '' };
-                    }
-
-                    const supAgg: Record<string, { id: string; name: string; count: number; total: number; zone?: string }> = {};
-                    for (const c of disbursedFiltered) {
-                        const zid = (c as any).gestorZoneId;
-                        const sup = zid ? supByZone[zid] : null;
-                        if (!sup) continue;
-                        if (!supAgg[sup.id]) supAgg[sup.id] = { id: sup.id, name: sup.name, count: 0, total: 0, zone: sup.zone };
-                        supAgg[sup.id].count += 1;
-                        supAgg[sup.id].total += (c.monto || 0);
-                    }
-                    stats.topSupervisores = Object.values(supAgg)
-                        .sort((a, b) => b.total - a.total)
-                        .slice(0, 5);
-                } catch (e) {
-                    console.warn('No se pudo cargar rankings de supervisores:', e);
+            // Top supervisores: SOLO admin. Agrupa por assignedSupervisorId (snapshot).
+            if (isAdmin) {
+                const supAgg: Record<string, { id: string; count: number; total: number }> = {};
+                for (const c of disbursedFiltered) {
+                    const sid = (c as any).assignedSupervisorId;
+                    if (!sid) continue;
+                    if (!supAgg[sid]) supAgg[sid] = { id: sid, count: 0, total: 0 };
+                    supAgg[sid].count += 1;
+                    supAgg[sid].total += (c.monto || 0);
                 }
-            } else {
-                stats.topSupervisores = [];
+                const supIds = Object.keys(supAgg);
+                if (supIds.length > 0) {
+                    try {
+                        const { data: supervisors } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, zones(name)')
+                            .in('id', supIds);
+                        const supInfo: Record<string, { name: string; zone: string }> = {};
+                        for (const s of supervisors || []) {
+                            supInfo[s.id] = { name: s.full_name || 'Sin nombre', zone: (s as any).zones?.name || '' };
+                        }
+                        stats.topSupervisores = Object.values(supAgg)
+                            .map(s => ({ id: s.id, name: supInfo[s.id]?.name || 'Sin nombre', count: s.count, total: s.total, zone: supInfo[s.id]?.zone }))
+                            .sort((a, b) => b.total - a.total)
+                            .slice(0, 5);
+                    } catch (e) {
+                        console.warn('No se pudo cargar nombres de supervisores:', e);
+                        stats.topSupervisores = [];
+                    }
+                } else {
+                    stats.topSupervisores = [];
+                }
             }
         }
 

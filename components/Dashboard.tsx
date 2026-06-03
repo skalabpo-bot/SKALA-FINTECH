@@ -211,13 +211,14 @@ const RecentActivityList = ({ currentUser }: { currentUser: User }) => {
     );
 };
 
-const Leaderboard = ({ title, icon: Icon, entries, periodLabel, accentClass = 'text-amber-500' }: any) => {
+const Leaderboard = ({ title, icon: Icon, entries, periodLabel, accentClass = 'text-amber-500', barColors = 'from-amber-400 to-orange-500' }: any) => {
     const formatMoney = (n: number) => {
         if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
         if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
         return `$${n.toLocaleString('es-CO')}`;
     };
     const medals = ['🥇', '🥈', '🥉'];
+    const maxTotal = (entries && entries.length > 0) ? Math.max(...entries.map((e: any) => e.total || 0)) : 0;
     return (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
             <div className="flex justify-between items-center mb-5">
@@ -230,19 +231,31 @@ const Leaderboard = ({ title, icon: Icon, entries, periodLabel, accentClass = 't
                 <p className="text-center text-slate-400 text-sm py-8 italic">Sin desembolsos en este periodo</p>
             ) : (
                 <div className="space-y-2">
-                    {entries.map((e: any, i: number) => (
-                        <div key={e.id} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${i < 3 ? 'bg-gradient-to-r from-amber-50 to-white border border-amber-100' : 'bg-slate-50/50 border border-transparent'}`}>
-                            <div className="text-2xl shrink-0 w-8 text-center">{medals[i] || <span className="text-xs font-black text-slate-400">#{i + 1}</span>}</div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-black text-slate-800 truncate">{e.name}</p>
-                                {e.zone && <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{e.zone}</p>}
-                                <p className="text-[10px] text-slate-500 font-medium">{e.count} crédito{e.count === 1 ? '' : 's'}</p>
+                    {entries.map((e: any, i: number) => {
+                        const pct = maxTotal > 0 ? (e.total / maxTotal) * 100 : 0;
+                        return (
+                            <div key={e.id} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${i < 3 ? 'bg-gradient-to-r from-amber-50 to-white border border-amber-100' : 'bg-slate-50/50 border border-transparent'}`}>
+                                <div className="text-2xl shrink-0 w-8 text-center">{medals[i] || <span className="text-xs font-black text-slate-400">#{i + 1}</span>}</div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-baseline gap-2">
+                                        <p className="text-sm font-black text-slate-800 truncate">{e.name}</p>
+                                        <p className="text-sm font-black text-emerald-600 font-mono shrink-0">{formatMoney(e.total)}</p>
+                                    </div>
+                                    {/* Barra de progreso relativa al líder */}
+                                    <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full bg-gradient-to-r ${barColors} rounded-full transition-all duration-700`}
+                                            style={{ width: `${pct}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between mt-1 text-[10px] text-slate-500 font-medium">
+                                        <span>{e.count} crédito{e.count === 1 ? '' : 's'}{e.zone ? ` · ${e.zone}` : ''}</span>
+                                        <span className="text-slate-400 font-bold">{pct.toFixed(0)}%</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div className="text-right shrink-0">
-                                <p className="text-base font-black text-emerald-600 font-mono">{formatMoney(e.total)}</p>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -340,25 +353,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
         </div>
       )}
 
-      {/* --- LEADERBOARDS (solo admin / VIEW_ALL_CREDITS) --- */}
-      {MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && (stats.topGestores || stats.topSupervisores) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
-          <Leaderboard
-            title="Top Asesores"
-            icon={Award}
-            entries={stats.topGestores}
-            periodLabel={stats.periodLabel}
-            accentClass="text-amber-500"
-          />
-          <Leaderboard
-            title="Top Supervisores"
-            icon={Medal}
-            entries={stats.topSupervisores}
-            periodLabel={stats.periodLabel}
-            accentClass="text-indigo-500"
-          />
-        </div>
-      )}
+      {/* --- LEADERBOARDS ---
+          Admin: ve Top Asesores (todos) + Top Supervisores.
+          Supervisor: ve Top Asesores SOLO de su equipo (getCredits ya filtra por snapshot). */}
+      {(() => {
+          const isAdmin = MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS');
+          const isSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO';
+          if (!isAdmin && !isSupervisor) return null;
+          if (!stats.topGestores && !stats.topSupervisores) return null;
+          return (
+              <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6 lg:gap-8`}>
+                  <Leaderboard
+                      title={isSupervisor && !isAdmin ? 'Top Asesores de mi equipo' : 'Top Asesores'}
+                      icon={Award}
+                      entries={stats.topGestores}
+                      periodLabel={stats.periodLabel}
+                      accentClass="text-amber-500"
+                      barColors="from-amber-400 to-orange-500"
+                  />
+                  {isAdmin && (
+                      <Leaderboard
+                          title="Top Supervisores"
+                          icon={Medal}
+                          entries={stats.topSupervisores}
+                          periodLabel={stats.periodLabel}
+                          accentClass="text-indigo-500"
+                          barColors="from-indigo-400 to-purple-500"
+                      />
+                  )}
+              </div>
+          );
+      })()}
 
       {/* --- MAIN CONTENT ROW --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
