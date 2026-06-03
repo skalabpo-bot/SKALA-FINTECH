@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { User, DashboardStats, NewsItem } from '../types';
 import { MockService } from '../services/mockService';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, AreaChart, Area, CartesianGrid } from 'recharts';
-import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText, Users, ArrowUpRight, ArrowDownRight, Activity, ChevronRight, Wallet, Award, Medal, X } from 'lucide-react';
+import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText, Users, ArrowUpRight, ArrowDownRight, Activity, ChevronRight, Wallet, Award, Medal, X, ChevronLeft } from 'lucide-react';
 
 interface DashboardProps {
   currentUser: User;
@@ -93,7 +93,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const NewsCarousel = () => {
     const [news, setNews] = useState<NewsItem[]>([]);
     const [curr, setCurr] = useState(0);
-    const [selected, setSelected] = useState<NewsItem | null>(null);
+    const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchNews = async () => {
@@ -103,28 +103,39 @@ const NewsCarousel = () => {
         fetchNews();
     }, []);
 
-    // Autoplay — pausa cuando el modal está abierto
+    const isOpen = selectedIdx !== null;
+    const selected = isOpen ? news[selectedIdx!] : null;
+
+    const goPrev = () => setSelectedIdx(i => i === null ? null : (i - 1 + news.length) % news.length);
+    const goNext = () => setSelectedIdx(i => i === null ? null : (i + 1) % news.length);
+
+    // Autoplay del carrusel del dashboard — pausa cuando el modal está abierto
     useEffect(() => {
-        if (!news.length || selected) return;
+        if (!news.length || isOpen) return;
         const i = setInterval(() => setCurr(c => (c + 1) % news.length), 6000);
         return () => clearInterval(i);
-    }, [news, selected]);
+    }, [news, isOpen]);
 
-    // Cerrar modal con Escape
+    // Teclado: Escape cierra, flechas navegan (sin autoplay)
     useEffect(() => {
-        if (!selected) return;
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelected(null); };
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setSelectedIdx(null);
+            else if (e.key === 'ArrowLeft') goPrev();
+            else if (e.key === 'ArrowRight') goNext();
+        };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [selected]);
+    }, [isOpen, news.length]);
 
     if (!news.length) return null;
+    const hasMultiple = news.length > 1;
 
     return (
         <>
             <button
                 type="button"
-                onClick={() => setSelected(news[curr])}
+                onClick={() => setSelectedIdx(curr)}
                 className="relative w-full h-52 md:h-64 lg:h-72 rounded-3xl overflow-hidden shadow-md group min-w-0 block text-left cursor-zoom-in"
                 title="Click para ver imagen completa"
             >
@@ -142,7 +153,7 @@ const NewsCarousel = () => {
             {selected && (
                 <div
                     className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
-                    onClick={() => setSelected(null)}
+                    onClick={() => setSelectedIdx(null)}
                 >
                     <div
                         className="relative bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
@@ -150,21 +161,65 @@ const NewsCarousel = () => {
                     >
                         <button
                             type="button"
-                            onClick={() => setSelected(null)}
-                            className="absolute top-4 right-4 z-10 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-lg transition-all"
+                            onClick={() => setSelectedIdx(null)}
+                            className="absolute top-4 right-4 z-20 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-lg transition-all"
                             aria-label="Cerrar"
                         >
                             <X size={20}/>
                         </button>
-                        <div className="bg-slate-100 flex items-center justify-center max-h-[70vh] overflow-auto custom-scrollbar">
+
+                        <div className="relative bg-slate-100 flex items-center justify-center max-h-[70vh] overflow-auto custom-scrollbar">
+                            {hasMultiple && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); goPrev(); }}
+                                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-lg transition-all"
+                                    aria-label="Anterior"
+                                >
+                                    <ChevronLeft size={22}/>
+                                </button>
+                            )}
+
                             <img
                                 src={selected.imageUrl}
                                 alt={selected.title}
                                 className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
                             />
+
+                            {hasMultiple && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); goNext(); }}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-lg transition-all"
+                                    aria-label="Siguiente"
+                                >
+                                    <ChevronRight size={22}/>
+                                </button>
+                            )}
                         </div>
+
                         <div className="p-6 border-t border-slate-100">
-                            <span className="inline-block bg-primary text-white text-[10px] font-bold px-2 py-1 rounded mb-2 shadow-sm">NOVEDAD</span>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="inline-block bg-primary text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm">NOVEDAD</span>
+                                {hasMultiple && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-bold text-slate-400">
+                                            {selectedIdx! + 1} / {news.length}
+                                        </span>
+                                        <div className="flex gap-1">
+                                            {news.map((_, i) => (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    onClick={() => setSelectedIdx(i)}
+                                                    className={`h-1.5 rounded-full transition-all ${i === selectedIdx ? 'bg-primary w-6' : 'bg-slate-300 w-2 hover:bg-slate-400'}`}
+                                                    aria-label={`Ir a novedad ${i + 1}`}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             <h3 className="text-2xl font-display font-bold text-slate-800 mb-2">{selected.title}</h3>
                             <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{selected.description}</p>
                         </div>
