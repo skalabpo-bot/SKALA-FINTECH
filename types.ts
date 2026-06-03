@@ -275,6 +275,14 @@ export interface WithdrawalRequest {
   notas?: string;
 }
 
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  count: number;
+  total: number;
+  zone?: string;
+}
+
 export interface DashboardStats {
   totalCredits: number;
   disbursedCredits: number;
@@ -283,9 +291,12 @@ export interface DashboardStats {
   totalAmountSolicited: number;
   totalAmountDisbursed: number;
   totalCommissionEarned: number;
-  totalCommissionPending: number;  // desembolsados, comision_pagada=false
-  totalCommissionPaid: number;     // desembolsados, comision_pagada=true
+  totalCommissionPending: number;
+  totalCommissionPaid: number;
   byStatus: Record<string, number>;
+  topGestores?: LeaderboardEntry[];
+  topSupervisores?: LeaderboardEntry[];
+  periodLabel?: string;
 }
 
 export interface ReportFilters {

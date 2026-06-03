@@ -65,6 +65,7 @@ const mapCreditForList = (c: any): Credit => {
         numeroDocumento: cd.numeroDocumento || '',
         pagaduria: cd.pagaduria || '',
         recomendado: cd.recomendado || false,
+        fechaDesembolso: cd.fechaDesembolso || undefined,
         monto: Number(c.amount || 0),
         montoDesembolso: Number(c.disbursement_amount || 0),
         plazo: Number(c.term || 0),
@@ -1451,28 +1452,114 @@ export const ProductionService = {
         }));
     },
 
-    getStats: async (user: User): Promise<DashboardStats> => {
+    getStats: async (user: User, timeFilter: 'ALL' | 'THIS_MONTH' | 'LAST_MONTH' = 'ALL'): Promise<DashboardStats> => {
         const [credits, states] = await Promise.all([ProductionService.getCredits(user), ProductionService.getStates()]);
         const finalStates = states.filter(s => s.isFinal).map(s => s.id);
         const disbursedStates = states.filter(s => s.name.includes('DESEMBOLSADO')).map(s => s.id);
         const returnedStates = states.filter(s => s.name.includes('DEVUELTO') || s.name.includes('RECHAZADO')).map(s => s.id);
 
+        // Rango de fechas según timeFilter — aplica solo a métricas de desembolso
+        // usando fechaDesembolso (fallback updatedAt para créditos sin estampar).
+        const now = new Date();
+        let periodStart: Date | null = null;
+        let periodEnd: Date | null = null;
+        let periodLabel = 'Histórico';
+        if (timeFilter === 'THIS_MONTH') {
+            periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            periodLabel = now.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+        } else if (timeFilter === 'LAST_MONTH') {
+            periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            periodEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+            periodLabel = periodStart.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+        }
+
+        const disbursementDate = (c: any): Date | null => {
+            const raw = c.fechaDesembolso || c.updatedAt;
+            return raw ? new Date(raw) : null;
+        };
+
+        const isDisbursedInPeriod = (c: any): boolean => {
+            if (!disbursedStates.includes(c.statusId)) return false;
+            if (!periodStart || !periodEnd) return true;
+            const d = disbursementDate(c);
+            return !!d && d >= periodStart && d < periodEnd;
+        };
+
+        const disbursedFiltered = credits.filter(isDisbursedInPeriod);
+
         const stats: DashboardStats = {
             totalCredits: credits.length,
-            disbursedCredits: credits.filter(c => disbursedStates.includes(c.statusId)).length,
+            disbursedCredits: disbursedFiltered.length,
             pendingCredits: credits.filter(c => !finalStates.includes(c.statusId)).length,
             returnedCredits: credits.filter(c => returnedStates.includes(c.statusId)).length,
             totalAmountSolicited: credits.reduce((acc, c) => acc + (c.monto || 0), 0),
-            totalAmountDisbursed: credits.filter(c => disbursedStates.includes(c.statusId)).reduce((acc, c) => acc + (c.monto || 0), 0),
-            totalCommissionEarned: credits.filter(c => disbursedStates.includes(c.statusId)).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
-            totalCommissionPending: credits.filter(c => disbursedStates.includes(c.statusId) && !c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
-            totalCommissionPaid: credits.filter(c => disbursedStates.includes(c.statusId) && c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
-            byStatus: {}
+            totalAmountDisbursed: disbursedFiltered.reduce((acc, c) => acc + (c.monto || 0), 0),
+            totalCommissionEarned: disbursedFiltered.reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
+            totalCommissionPending: disbursedFiltered.filter(c => !c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
+            totalCommissionPaid: disbursedFiltered.filter(c => c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
+            byStatus: {},
+            periodLabel,
         };
         credits.forEach(c => {
             const statusName = states.find(s => s.id === c.statusId)?.name || 'Otros';
             stats.byStatus[statusName] = (stats.byStatus[statusName] || 0) + 1;
         });
+
+        // Rankings (solo admin / VIEW_ALL_CREDITS). Siempre sobre los desembolsados
+        // del periodo seleccionado (o histórico si timeFilter='ALL').
+        if (ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS')) {
+            // Top asesores: agrupa desembolsados por assignedGestorId
+            const gestorAgg: Record<string, { id: string; name: string; count: number; total: number; zoneId?: string }> = {};
+            for (const c of disbursedFiltered) {
+                const gid = c.assignedGestorId;
+                if (!gid) continue;
+                if (!gestorAgg[gid]) {
+                    gestorAgg[gid] = { id: gid, name: c.gestorName || 'Sin nombre', count: 0, total: 0, zoneId: (c as any).gestorZoneId };
+                }
+                gestorAgg[gid].count += 1;
+                gestorAgg[gid].total += (c.monto || 0);
+            }
+            stats.topGestores = Object.values(gestorAgg)
+                .sort((a, b) => b.total - a.total)
+                .slice(0, 5)
+                .map(({ zoneId, ...rest }) => rest);
+
+            // Top supervisores: necesita mapping zoneId → supervisor. Una sola query.
+            const zoneIds = [...new Set(Object.values(gestorAgg).map(g => g.zoneId).filter(Boolean))] as string[];
+            if (zoneIds.length > 0) {
+                try {
+                    const { data: supervisors } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, zone_id, zones(name)')
+                        .eq('role', 'SUPERVISOR_ASIGNADO')
+                        .in('zone_id', zoneIds);
+
+                    const supByZone: Record<string, { id: string; name: string; zone: string }> = {};
+                    for (const s of supervisors || []) {
+                        if (s.zone_id) supByZone[s.zone_id] = { id: s.id, name: s.full_name || 'Sin nombre', zone: (s as any).zones?.name || '' };
+                    }
+
+                    const supAgg: Record<string, { id: string; name: string; count: number; total: number; zone?: string }> = {};
+                    for (const c of disbursedFiltered) {
+                        const zid = (c as any).gestorZoneId;
+                        const sup = zid ? supByZone[zid] : null;
+                        if (!sup) continue;
+                        if (!supAgg[sup.id]) supAgg[sup.id] = { id: sup.id, name: sup.name, count: 0, total: 0, zone: sup.zone };
+                        supAgg[sup.id].count += 1;
+                        supAgg[sup.id].total += (c.monto || 0);
+                    }
+                    stats.topSupervisores = Object.values(supAgg)
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 5);
+                } catch (e) {
+                    console.warn('No se pudo cargar rankings de supervisores:', e);
+                }
+            } else {
+                stats.topSupervisores = [];
+            }
+        }
+
         return stats;
     },
 

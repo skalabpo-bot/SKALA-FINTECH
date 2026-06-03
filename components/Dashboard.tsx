@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { User, DashboardStats, NewsItem } from '../types';
 import { MockService } from '../services/mockService';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, AreaChart, Area, CartesianGrid } from 'recharts';
-import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText, Users, ArrowUpRight, ArrowDownRight, Activity, ChevronRight, Wallet } from 'lucide-react';
+import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText, Users, ArrowUpRight, ArrowDownRight, Activity, ChevronRight, Wallet, Award, Medal } from 'lucide-react';
 
 interface DashboardProps {
   currentUser: User;
@@ -211,6 +211,44 @@ const RecentActivityList = ({ currentUser }: { currentUser: User }) => {
     );
 };
 
+const Leaderboard = ({ title, icon: Icon, entries, periodLabel, accentClass = 'text-amber-500' }: any) => {
+    const formatMoney = (n: number) => {
+        if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+        if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+        return `$${n.toLocaleString('es-CO')}`;
+    };
+    const medals = ['🥇', '🥈', '🥉'];
+    return (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center mb-5">
+                <h3 className="font-display font-bold text-lg text-slate-800 flex items-center gap-2">
+                    <Icon size={20} className={accentClass}/> {title}
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 capitalize">{periodLabel || 'Histórico'}</span>
+            </div>
+            {(!entries || entries.length === 0) ? (
+                <p className="text-center text-slate-400 text-sm py-8 italic">Sin desembolsos en este periodo</p>
+            ) : (
+                <div className="space-y-2">
+                    {entries.map((e: any, i: number) => (
+                        <div key={e.id} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${i < 3 ? 'bg-gradient-to-r from-amber-50 to-white border border-amber-100' : 'bg-slate-50/50 border border-transparent'}`}>
+                            <div className="text-2xl shrink-0 w-8 text-center">{medals[i] || <span className="text-xs font-black text-slate-400">#{i + 1}</span>}</div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-black text-slate-800 truncate">{e.name}</p>
+                                {e.zone && <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{e.zone}</p>}
+                                <p className="text-[10px] text-slate-500 font-medium">{e.count} crédito{e.count === 1 ? '' : 's'}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="text-base font-black text-emerald-600 font-mono">{formatMoney(e.total)}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // --- MAIN DASHBOARD COMPONENT ---
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate }) => {
@@ -287,18 +325,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
           {!MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && MockService.hasPermission(currentUser, 'EXPORT_DATA') ? (
             <>
               <StatCard title="Pendiente Pago" value={stats.pendingCredits} icon={Banknote} color="text-blue-600" bg="bg-blue-100" />
-              <StatCard title="Desembolsado (Mes)" value={stats.totalAmountDisbursed} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-100" trend={8}/>
-              <StatCard title="Total Procesados" value={stats.disbursedCredits} icon={FileText} color="text-purple-600" bg="bg-purple-100" />
+              <StatCard title={`Desembolsado (${stats.periodLabel || 'Histórico'})`} value={stats.totalAmountDisbursed} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-100" />
+              <StatCard title={`Créditos Desembolsados (${stats.periodLabel || 'Histórico'})`} value={stats.disbursedCredits} icon={FileText} color="text-purple-600" bg="bg-purple-100" />
               <StatCard title="Rechazados" value={0} icon={AlertCircle} color="text-slate-600" bg="bg-slate-200" />
             </>
           ) : (
             <>
-              <StatCard title="Total Créditos" value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" trend={15} />
-              <StatCard title="Monto Colocado" value={stats.totalAmountDisbursed} icon={DollarSign} color="text-emerald-600" bg="bg-emerald-100" trend={23} />
+              <StatCard title="Total Créditos" value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title={`Monto Desembolsado (${stats.periodLabel || 'Histórico'})`} value={stats.totalAmountDisbursed} icon={DollarSign} color="text-emerald-600" bg="bg-emerald-100" />
+              <StatCard title={`Créditos Desembolsados (${stats.periodLabel || 'Histórico'})`} value={stats.disbursedCredits} icon={CheckCircle} color="text-purple-600" bg="bg-purple-100" />
               <StatCard title="En Estudio" value={stats.pendingCredits} icon={Clock} color="text-orange-600" bg="bg-orange-100" />
-              <StatCard title="Tasa Aprobación" value="84%" icon={CheckCircle} color="text-purple-600" bg="bg-purple-100" trend={2} />
             </>
           )}
+        </div>
+      )}
+
+      {/* --- LEADERBOARDS (solo admin / VIEW_ALL_CREDITS) --- */}
+      {MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && (stats.topGestores || stats.topSupervisores) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+          <Leaderboard
+            title="Top Asesores"
+            icon={Award}
+            entries={stats.topGestores}
+            periodLabel={stats.periodLabel}
+            accentClass="text-amber-500"
+          />
+          <Leaderboard
+            title="Top Supervisores"
+            icon={Medal}
+            entries={stats.topSupervisores}
+            periodLabel={stats.periodLabel}
+            accentClass="text-indigo-500"
+          />
         </div>
       )}
 
@@ -316,7 +374,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
                       </div>
                       <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
                           <button onClick={() => setTimeFilter('ALL')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${timeFilter === 'ALL' ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Todo</button>
-                          <button onClick={() => setTimeFilter('THIS_MONTH')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${timeFilter === 'THIS_MONTH' ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Mes</button>
+                          <button onClick={() => setTimeFilter('THIS_MONTH')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${timeFilter === 'THIS_MONTH' ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Mes actual</button>
+                          <button onClick={() => setTimeFilter('LAST_MONTH')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${timeFilter === 'LAST_MONTH' ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Mes anterior</button>
                       </div>
                   </div>
                   
