@@ -432,10 +432,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
             </div>
             )}
             <div className="grid grid-cols-2 gap-4 flex-1">
-              <StatCard title="Desembolsados" value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
-              <StatCard title="En Proceso" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
-              <StatCard title="Devueltos" value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" trend={-5}/>
-              <StatCard title="Total Créditos" value={stats.totalCredits} icon={FileText} color="text-slate-600" bg="bg-slate-100" />
+              <StatCard title={`Desembolsados (${stats.periodLabel || 'Histórico'})`} value={stats.disbursedCredits} icon={Trophy} color="text-emerald-600" bg="bg-emerald-100" />
+              <StatCard title="En Proceso (Actual)" value={stats.pendingCredits} icon={Clock} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title={`Devueltos (${stats.periodLabel || 'Histórico'})`} value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" />
+              <StatCard title={`Radicados (${stats.periodLabel || 'Histórico'})`} value={stats.totalCredits} icon={FileText} color="text-slate-600" bg="bg-slate-100" />
             </div>
           </div>
         </div>
@@ -444,17 +444,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
           {!MockService.hasPermission(currentUser, 'CONFIGURE_SYSTEM') && MockService.hasPermission(currentUser, 'EXPORT_DATA') ? (
             <>
-              <StatCard title="Pendiente Pago" value={stats.pendingCredits} icon={Banknote} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title="En Estudio (Actual)" value={stats.pendingCredits} icon={Banknote} color="text-blue-600" bg="bg-blue-100" />
               <StatCard title={`Desembolsado (${stats.periodLabel || 'Histórico'})`} value={stats.totalAmountDisbursed} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-100" />
               <StatCard title={`Créditos Desembolsados (${stats.periodLabel || 'Histórico'})`} value={stats.disbursedCredits} icon={FileText} color="text-purple-600" bg="bg-purple-100" />
-              <StatCard title="Rechazados" value={0} icon={AlertCircle} color="text-slate-600" bg="bg-slate-200" />
+              <StatCard title={`Devueltos (${stats.periodLabel || 'Histórico'})`} value={stats.returnedCredits} icon={AlertCircle} color="text-red-600" bg="bg-red-100" />
             </>
           ) : (
             <>
-              <StatCard title="Total Créditos" value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" />
+              <StatCard title={`Radicados (${stats.periodLabel || 'Histórico'})`} value={stats.totalCredits} icon={Users} color="text-blue-600" bg="bg-blue-100" />
               <StatCard title={`Monto Desembolsado (${stats.periodLabel || 'Histórico'})`} value={stats.totalAmountDisbursed} icon={DollarSign} color="text-emerald-600" bg="bg-emerald-100" />
               <StatCard title={`Créditos Desembolsados (${stats.periodLabel || 'Histórico'})`} value={stats.disbursedCredits} icon={CheckCircle} color="text-purple-600" bg="bg-purple-100" />
-              <StatCard title="En Estudio" value={stats.pendingCredits} icon={Clock} color="text-orange-600" bg="bg-orange-100" />
+              <StatCard title="En Estudio (Actual)" value={stats.pendingCredits} icon={Clock} color="text-orange-600" bg="bg-orange-100" />
             </>
           )}
         </div>
@@ -502,7 +502,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
                       <div>
                           <h3 className="text-xl font-display font-bold text-slate-800">Distribución de Solicitudes</h3>
-                          <p className="text-sm text-slate-500">Volumen de créditos por estado actual.</p>
+                          <p className="text-sm text-slate-500 capitalize">
+                              {timeFilter === 'ALL' ? 'Histórico — todos los créditos por estado actual' : `Radicados en ${stats.periodLabel} por estado actual`}
+                          </p>
                       </div>
                       <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
                           <button onClick={() => setTimeFilter('ALL')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${timeFilter === 'ALL' ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Todo</button>

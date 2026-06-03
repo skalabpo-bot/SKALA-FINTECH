@@ -1519,12 +1519,22 @@ export const ProductionService = {
 
         const disbursedFiltered = credits.filter(isDisbursedInPeriod);
 
+        // Para métricas de "cohorte" (Total, Devueltos, Distribución por estado):
+        // cuando hay periodo, se filtra por createdAt — créditos radicados en el periodo.
+        // pendingCredits siempre es point-in-time (cuántos están actualmente en estudio).
+        const inPeriodByCreation = (c: any): boolean => {
+            if (!periodStart || !periodEnd) return true;
+            const d = new Date(c.createdAt);
+            return d >= periodStart && d < periodEnd;
+        };
+        const creditsInPeriod = credits.filter(inPeriodByCreation);
+
         const stats: DashboardStats = {
-            totalCredits: credits.length,
+            totalCredits: creditsInPeriod.length,
             disbursedCredits: disbursedFiltered.length,
             pendingCredits: credits.filter(c => !finalStates.includes(c.statusId)).length,
-            returnedCredits: credits.filter(c => returnedStates.includes(c.statusId)).length,
-            totalAmountSolicited: credits.reduce((acc, c) => acc + (c.monto || 0), 0),
+            returnedCredits: creditsInPeriod.filter(c => returnedStates.includes(c.statusId)).length,
+            totalAmountSolicited: creditsInPeriod.reduce((acc, c) => acc + (c.monto || 0), 0),
             totalAmountDisbursed: disbursedFiltered.reduce((acc, c) => acc + (c.monto || 0), 0),
             totalCommissionEarned: disbursedFiltered.reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
             totalCommissionPending: disbursedFiltered.filter(c => !c.comisionPagada).reduce((acc, c) => acc + (c.estimatedCommission || 0), 0),
@@ -1532,7 +1542,7 @@ export const ProductionService = {
             byStatus: {},
             periodLabel,
         };
-        credits.forEach(c => {
+        creditsInPeriod.forEach(c => {
             const statusName = states.find(s => s.id === c.statusId)?.name || 'Otros';
             stats.byStatus[statusName] = (stats.byStatus[statusName] || 0) + 1;
         });
