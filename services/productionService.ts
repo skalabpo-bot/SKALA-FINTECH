@@ -1597,23 +1597,42 @@ export const ProductionService = {
                 }
                 const supIds = Object.keys(supAgg);
                 if (supIds.length > 0) {
+                    // Query 1: nombres + email + zone_id de supervisores
+                    const supInfo: Record<string, { name: string; zoneId?: string }> = {};
                     try {
                         const { data: supervisors } = await supabase
                             .from('profiles')
-                            .select('id, full_name, zones(name)')
+                            .select('id, full_name, email, zone_id')
                             .in('id', supIds);
-                        const supInfo: Record<string, { name: string; zone: string }> = {};
                         for (const s of supervisors || []) {
-                            supInfo[s.id] = { name: s.full_name || 'Sin nombre', zone: (s as any).zones?.name || '' };
+                            // Fallback en cascada: full_name → email → "Supervisor (id...)"
+                            const name = s.full_name?.trim() || s.email?.trim() || `Supervisor ${s.id.slice(0, 6)}`;
+                            supInfo[s.id] = { name, zoneId: s.zone_id || undefined };
                         }
-                        stats.topSupervisores = Object.values(supAgg)
-                            .map(s => ({ id: s.id, name: supInfo[s.id]?.name || 'Sin nombre', count: s.count, total: s.total, zone: supInfo[s.id]?.zone }))
-                            .sort((a, b) => b.total - a.total)
-                            .slice(0, 5);
                     } catch (e) {
-                        console.warn('No se pudo cargar nombres de supervisores:', e);
-                        stats.topSupervisores = [];
+                        console.warn('No se pudo cargar perfiles de supervisores:', e);
                     }
+
+                    // Query 2: nombres de zonas (separada porque PostgREST puede no resolver el join automáticamente)
+                    const zoneIds = [...new Set(Object.values(supInfo).map(s => s.zoneId).filter(Boolean))] as string[];
+                    const zoneNameById: Record<string, string> = {};
+                    if (zoneIds.length > 0) {
+                        try {
+                            const { data: zonesData } = await supabase.from('zones').select('id, name').in('id', zoneIds);
+                            for (const z of zonesData || []) zoneNameById[z.id] = z.name || '';
+                        } catch (e) { /* opcional, no rompe */ }
+                    }
+
+                    stats.topSupervisores = Object.values(supAgg)
+                        .map(s => ({
+                            id: s.id,
+                            name: supInfo[s.id]?.name || `Supervisor ${s.id.slice(0, 6)}`,
+                            count: s.count,
+                            total: s.total,
+                            zone: supInfo[s.id]?.zoneId ? zoneNameById[supInfo[s.id].zoneId!] : '',
+                        }))
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 5);
                 } else {
                     stats.topSupervisores = [];
                 }
