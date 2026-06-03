@@ -253,7 +253,7 @@ const Leaderboard = ({ title, icon: Icon, entries, periodLabel, accentClass = 't
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [timeFilter, setTimeFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH'>('ALL');
+  const [timeFilter, setTimeFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH'>('THIS_MONTH');
   const [billeteraEnabled, setBilleteraEnabled] = useState(false);
 
   useEffect(() => {
