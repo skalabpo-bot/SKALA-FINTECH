@@ -1558,11 +1558,38 @@ export const ProductionService = {
                 .sort((a, b) => b.total - a.total)
                 .slice(0, 5);
 
-            // Top supervisores: SOLO admin. Agrupa por assignedSupervisorId (snapshot).
+            // Top supervisores: SOLO admin.
+            // Primer intento: agrupa por snapshot (assignedSupervisorId).
+            // Fallback para créditos sin snapshot (migración pendiente o backfill incompleto):
+            // resuelve el supervisor desde la zona actual del gestor.
             if (isAdmin) {
+                // Recolectar zonas de gestor para créditos sin snapshot
+                const zonesNeeded = [...new Set(
+                    disbursedFiltered
+                        .filter(c => !(c as any).assignedSupervisorId && (c as any).gestorZoneId)
+                        .map(c => (c as any).gestorZoneId)
+                )] as string[];
+
+                let supByZone: Record<string, string> = {};
+                if (zonesNeeded.length > 0) {
+                    try {
+                        const { data: zoneSups } = await supabase
+                            .from('profiles')
+                            .select('id, zone_id')
+                            .eq('role', 'SUPERVISOR_ASIGNADO')
+                            .in('zone_id', zonesNeeded);
+                        for (const s of zoneSups || []) {
+                            if (s.zone_id) supByZone[s.zone_id] = s.id;
+                        }
+                    } catch (e) {
+                        console.warn('Fallback supervisor-by-zone falló:', e);
+                    }
+                }
+
                 const supAgg: Record<string, { id: string; count: number; total: number }> = {};
                 for (const c of disbursedFiltered) {
-                    const sid = (c as any).assignedSupervisorId;
+                    const sid = (c as any).assignedSupervisorId
+                        || ((c as any).gestorZoneId ? supByZone[(c as any).gestorZoneId] : null);
                     if (!sid) continue;
                     if (!supAgg[sid]) supAgg[sid] = { id: sid, count: 0, total: 0 };
                     supAgg[sid].count += 1;
