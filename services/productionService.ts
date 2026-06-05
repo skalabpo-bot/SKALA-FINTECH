@@ -409,10 +409,13 @@ export const ProductionService = {
         if (error) throw error;
 
         // Snapshot completo de condiciones originales de radicación
+        const cuotaUtilizar = Number(rest.cuotaUtilizar || 0);
+        const cuotaDisponible = Number(rest.cuotaDisponible || 0);
         const snapshotRadicacion = [
             `Monto: $${Number(monto).toLocaleString()}`,
             `Monto Desembolso: $${Number(montoDesembolso || monto || 0).toLocaleString()}`,
             `Plazo: ${plazo} meses`,
+            `Cuota Utilizada: $${cuotaUtilizar.toLocaleString()}${cuotaDisponible > 0 ? ` (de $${cuotaDisponible.toLocaleString()} disponible)` : ''}`,
             `Entidad: ${entidadAliada}`,
             `Tasa: ${tasa}% NMV`,
             `Comisión: ${commPercent}% ($${commEst.toLocaleString()})`,
