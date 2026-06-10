@@ -858,53 +858,54 @@ export const ProductionService = {
             _lastAutoArchiveTs = Date.now();
             setTimeout(() => ProductionService.autoArchiveExpiredDevuelto().catch(() => {}), 1500);
         }
-        // Intentar con join de analista y analista de entidad; si la columna no existe, fallback sin ella
-        let selectStr = '*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)';
-        let query = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
 
-        if (!canViewAll) {
+        // Construye la query con joins de analista (preferida) o sin ella (fallback)
+        const buildQuery = (withAnalyst: boolean) => {
+            const selectStr = withAnalyst
+                ? '*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)'
+                : '*, profiles:assigned_gestor_id(full_name, phone)';
+            let q = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
+            if (canViewAll) return q;
             if (canViewZone && user.zoneId) {
-                // SUPERVISOR_ASIGNADO: filtrar por snapshot del supervisor.
-                // Esto asegura que un cambio de supervisor en la zona NO traslada
-                // las operaciones ya en curso — solo las nuevas van al nuevo supervisor.
-                // Incluye también sus propios créditos (si fue gestor antes).
-                query = query.or(`assigned_supervisor_id.eq.${user.id},assigned_gestor_id.eq.${user.id}`);
+                // SUPERVISOR_ASIGNADO: snapshot del supervisor (no traslada operaciones en curso)
+                q = q.or(`assigned_supervisor_id.eq.${user.id},assigned_gestor_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA') {
-                query = query.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
+                q = q.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA_ENTIDAD') {
-                // Solo ve créditos que un analista le haya asignado explícitamente
-                query = query.eq('assigned_entity_analyst_id', user.id);
+                q = q.eq('assigned_entity_analyst_id', user.id);
             } else {
-                query = query.eq('assigned_gestor_id', user.id);
+                q = q.eq('assigned_gestor_id', user.id);
             }
-        }
-        let { data, error } = await query;
-        // Fallback: si falla (columna analyst no existe), reintentar sin el join de analista
-        if (error) {
-            console.warn('getCredits fallback (sin analyst join):', error.message);
-            let fallbackQuery = supabase.from('credits').select('*, profiles:assigned_gestor_id(full_name, phone)').order('created_at', { ascending: false });
-            if (!canViewAll) {
-                if (canViewZone && user.zoneId) {
-                    const { data: zoneProfiles } = await supabase.from('profiles').select('id').eq('zone_id', user.zoneId);
-                    const zoneGestorIds = (zoneProfiles || []).map((p: any) => p.id);
-                    if (!zoneGestorIds.includes(user.id)) zoneGestorIds.push(user.id);
-                    fallbackQuery = fallbackQuery.in('assigned_gestor_id', zoneGestorIds);
-                } else if (user.role === 'ANALISTA') {
-                    fallbackQuery = fallbackQuery.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
-                } else if (user.role === 'ANALISTA_ENTIDAD') {
-                    fallbackQuery = fallbackQuery.eq('assigned_entity_analyst_id', user.id);
-                } else {
-                    fallbackQuery = fallbackQuery.eq('assigned_gestor_id', user.id);
-                }
+            return q;
+        };
+
+        // Paginar en lotes de 1000 para superar el cap por defecto de Supabase.
+        // Sin esto, admins con más de 1000 créditos no veían los más antiguos.
+        const PAGE = 1000;
+        const fetchAllPages = async (withAnalyst: boolean): Promise<any[]> => {
+            const all: any[] = [];
+            for (let from = 0; from < 100_000; from += PAGE) {
+                const { data, error } = await buildQuery(withAnalyst).range(from, from + PAGE - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                all.push(...data);
+                if (data.length < PAGE) break;
             }
-            const fallback = await fallbackQuery;
-            data = fallback.data;
-            if (fallback.error) throw fallback.error;
+            return all;
+        };
+
+        let allRows: any[];
+        try {
+            allRows = await fetchAllPages(true);
+        } catch (e: any) {
+            console.warn('getCredits fallback (sin analyst join):', e.message);
+            allRows = await fetchAllPages(false);
         }
+
         const mapper = mode === 'full' ? mapCreditFromDB : mapCreditForList;
-        return (data || []).map(mapper);
+        return allRows.map(mapper);
     },
 
     getCreditById: async (id: string) => {
@@ -1360,7 +1361,7 @@ export const ProductionService = {
                 is_read: false,
                 credit_id: creditId
             }));
-            await supabase.from('notifications').insert(notifications).catch(() => {});
+            try { await supabase.from('notifications').insert(notifications); } catch { /* notificaciones opcionales */ }
         }
     },
 
@@ -1998,14 +1999,16 @@ export const ProductionService = {
         }
 
         // Notificar al usuario aprobado
-        await supabase.from('notifications').insert({
-            user_id: id,
-            title: 'Solicitud Aprobada',
-            message: `Tu solicitud como ${(profile?.role || '').replace(/_/g, ' ')} ha sido aprobada. Ya puedes usar la plataforma.`,
-            type: 'success',
-            is_read: false,
-            credit_id: null,
-        }).catch(() => {});
+        try {
+            await supabase.from('notifications').insert({
+                user_id: id,
+                title: 'Solicitud Aprobada',
+                message: `Tu solicitud como ${(profile?.role || '').replace(/_/g, ' ')} ha sido aprobada. Ya puedes usar la plataforma.`,
+                type: 'success',
+                is_read: false,
+                credit_id: null,
+            });
+        } catch { /* notificación opcional */ }
 
         // Si es gestor, notificar al supervisor de su zona
         if (profile?.role === 'GESTOR' || profile?.role === 'ANALISTA') {
