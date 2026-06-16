@@ -66,10 +66,10 @@ const App = () => {
   const [prefilledCreditData, setPrefilledCreditData] = useState<Record<string, any> | null>(null);
   // Supervisor radicando a nombre de un asesor de su zona
   const [radicarGestorId, setRadicarGestorId] = useState<string>('');
-  // Resetear SIEMPRE el asesor seleccionado cuando cambia el usuario logueado.
+  // Resetear SIEMPRE el estado de radicación cuando cambia el usuario logueado.
   // Evita que un valor obsoleto (de una sesión de admin/supervisor previa en el
   // mismo navegador, sin recarga) contamine la radicación del siguiente usuario.
-  useEffect(() => { setRadicarGestorId(''); }, [currentUser?.id]);
+  useEffect(() => { setRadicarGestorId(''); setPrefilledCreditData(null); }, [currentUser?.id]);
   const [authView, setAuthView] = useState<'LOGIN' | 'REGISTER' | 'FORGOT_PASSWORD'>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

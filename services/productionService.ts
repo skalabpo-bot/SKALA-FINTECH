@@ -468,11 +468,16 @@ export const ProductionService = {
             `Pasivos: $${Number(rest.pasivos || 0).toLocaleString()}`,
         ].join('\n');
 
+        // Si quien radica NO es el gestor asignado, dejarlo explícito en la trazabilidad
+        // (auditoría permanente de radicaciones "a nombre de otro").
+        const radicadoPor = gestorId !== currentUser.id
+            ? `Radicado por ${currentUser.name} (${currentUser.role}) A NOMBRE DE otro asesor.`
+            : 'Expediente radicado por el gestor.';
         const historyPayload = {
             credit_id: data.id,
             user_id: currentUser.id,
             action: 'RADICACIÓN',
-            description: `Expediente radicado por el gestor.\n\n--- CONDICIONES ORIGINALES ---\n${snapshotRadicacion}`
+            description: `${radicadoPor}\n\n--- CONDICIONES ORIGINALES ---\n${snapshotRadicacion}`
         };
         const { error: histErr } = await supabase.from('credit_history').insert(historyPayload);
         if (histErr) {
