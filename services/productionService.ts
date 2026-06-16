@@ -270,8 +270,40 @@ export const ProductionService = {
 
     createCredit: async (formData: any, currentUser: User) => {
         const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, ...rest } = formData;
-        // El gestor asignado puede venir explícito (ej: supervisor radica para un asesor de su zona)
-        const gestorId = assignedGestorId || currentUser.id;
+
+        // ── GUARD DE ASIGNACIÓN (anti "créditos cruzados") ────────────────────────
+        // Solo ADMIN y SUPERVISOR pueden radicar a nombre de otro asesor. Cualquier
+        // otro rol (GESTOR, etc.) SIEMPRE radica para sí mismo, sin importar lo que
+        // venga en assignedGestorId. Esto evita que un valor obsoleto de la UI
+        // (estado compartido entre sesiones) asigne el crédito a otro gestor.
+        let gestorId = currentUser.id;
+        if (assignedGestorId && assignedGestorId !== currentUser.id) {
+            if (currentUser.role === 'ADMIN') {
+                // Admin puede asignar a cualquier gestor
+                gestorId = assignedGestorId;
+            } else if (currentUser.role === 'SUPERVISOR_ASIGNADO') {
+                // Supervisor: solo a un asesor de SU zona (verificación contra DB)
+                try {
+                    const { data: targetGestor } = await supabase
+                        .from('profiles')
+                        .select('zone_id')
+                        .eq('id', assignedGestorId)
+                        .single();
+                    if (targetGestor?.zone_id && currentUser.zoneId && targetGestor.zone_id === currentUser.zoneId) {
+                        gestorId = assignedGestorId;
+                    } else {
+                        throw new Error('El asesor seleccionado no pertenece a tu zona. Vuelve a seleccionar el asesor e inténtalo de nuevo.');
+                    }
+                } catch (e: any) {
+                    if (/no pertenece a tu zona/.test(e?.message || '')) throw e;
+                    // Si la verificación falla por otro motivo, radicar a nombre propio (seguro)
+                    gestorId = currentUser.id;
+                }
+            }
+            // Otros roles: se ignora assignedGestorId → gestorId queda en currentUser.id
+        }
+        // ──────────────────────────────────────────────────────────────────────────
+
         const states = await ProductionService.getStates();
 
         // Determinar si el tipo de crédito requiere entidad real (libranza) o es directo (hipotecario/vehículo)

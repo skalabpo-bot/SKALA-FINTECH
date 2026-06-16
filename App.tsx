@@ -66,6 +66,10 @@ const App = () => {
   const [prefilledCreditData, setPrefilledCreditData] = useState<Record<string, any> | null>(null);
   // Supervisor radicando a nombre de un asesor de su zona
   const [radicarGestorId, setRadicarGestorId] = useState<string>('');
+  // Resetear SIEMPRE el asesor seleccionado cuando cambia el usuario logueado.
+  // Evita que un valor obsoleto (de una sesión de admin/supervisor previa en el
+  // mismo navegador, sin recarga) contamine la radicación del siguiente usuario.
+  useEffect(() => { setRadicarGestorId(''); }, [currentUser?.id]);
   const [authView, setAuthView] = useState<'LOGIN' | 'REGISTER' | 'FORGOT_PASSWORD'>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -802,8 +806,11 @@ const App = () => {
     );
   }
 
+  // Solo admin y supervisor pueden radicar a nombre de otro asesor.
+  const canRadicarOnBehalf = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERVISOR_ASIGNADO';
+
   return (
-    <Layout currentUser={currentUser} onLogout={() => { cleanupAllSubscriptions(); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
+    <Layout currentUser={currentUser} onLogout={() => { cleanupAllSubscriptions(); setRadicarGestorId(''); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
       {currentView === 'dashboard' && <Dashboard currentUser={currentUser} onNavigate={setCurrentView} />}
       {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
@@ -834,13 +841,14 @@ const App = () => {
         <SimulatorView
           currentUser={currentUser}
           creditTypeId={selectedCreditType?.id}
-          assignedGestorId={radicarGestorId || undefined}
+          assignedGestorId={canRadicarOnBehalf ? (radicarGestorId || undefined) : undefined}
           onCreditCreated={(creditId) => {
             setSelectedCreditId(creditId);
+            setRadicarGestorId('');
             setCurrentView('detail');
           }}
           onFillForm={(prefilled) => {
-            setPrefilledCreditData(radicarGestorId ? { ...prefilled, assignedGestorId: radicarGestorId } : prefilled);
+            setPrefilledCreditData(canRadicarOnBehalf && radicarGestorId ? { ...prefilled, assignedGestorId: radicarGestorId } : prefilled);
             setCurrentView('onboarding');
           }}
           onCancel={() => setCurrentView('simulator')}
@@ -850,7 +858,7 @@ const App = () => {
         <DynamicOnboardingView
           creditType={selectedCreditType}
           currentUser={currentUser!}
-          assignedGestorId={radicarGestorId || undefined}
+          assignedGestorId={canRadicarOnBehalf ? (radicarGestorId || undefined) : undefined}
           onSuccess={() => { setSelectedCreditType(null); setRadicarGestorId(''); setCurrentView('credits'); }}
           onCancel={() => { setSelectedCreditType(null); setCurrentView('simulator'); }}
         />
