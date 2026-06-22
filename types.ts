@@ -45,9 +45,9 @@ export interface EntitySimulator {
   id: string;
   entityName: string;
   label: string;
-  googleSheetId: string;
+  filePath?: string;   // ruta del .xlsx en el bucket privado 'simuladores'
+  fileName?: string;
   sheetTab?: string;
-  downloadUrl?: string;
   isActive: boolean;
   orderIndex: number;
 }

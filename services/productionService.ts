@@ -1467,28 +1467,20 @@ export const ProductionService = {
     },
 
     // =============================================
-    // ACADEMIA — Simuladores online (Google Sheets)
+    // ACADEMIA — Simuladores online (OnlyOffice, Excel real embebido)
     // =============================================
-
-    // Extrae el ID de un link de Google Sheets (o devuelve el texto si ya es un ID)
-    extractSheetId: (linkOrId: string): string => {
-        const s = (linkOrId || '').trim();
-        const m = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        return m ? m[1] : s;
-    },
 
     _mapSimulator: (r: any) => ({
         id: r.id,
         entityName: r.entity_name,
         label: r.label || 'Vigente',
-        googleSheetId: r.google_sheet_id,
+        filePath: r.file_path || undefined,
+        fileName: r.file_name || undefined,
         sheetTab: r.sheet_tab || undefined,
-        downloadUrl: r.download_url || undefined,
         isActive: r.is_active !== false,
         orderIndex: r.order_index || 0,
     }),
 
-    // Simuladores activos de una entidad (para el asesor)
     getEntitySimulators: async (entityName: string) => {
         const { data, error } = await supabase.from('entity_simulators')
             .select('*').eq('entity_name', entityName).eq('is_active', true).order('order_index');
@@ -1496,7 +1488,6 @@ export const ProductionService = {
         return (data || []).map(ProductionService._mapSimulator);
     },
 
-    // Todos (para el admin)
     getAllEntitySimulators: async () => {
         const { data, error } = await supabase.from('entity_simulators')
             .select('*').order('entity_name').order('order_index');
@@ -1504,20 +1495,30 @@ export const ProductionService = {
         return (data || []).map(ProductionService._mapSimulator);
     },
 
-    saveEntitySimulator: async (sim: { id?: string; entityName: string; label: string; link: string; sheetTab?: string; isActive?: boolean; orderIndex?: number }) => {
+    // Sube el .xlsx del simulador al bucket privado 'simuladores'. Devuelve {path, name}.
+    uploadSimulatorFile: async (file: File): Promise<{ path: string; name: string }> => {
+        const safe = file.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `${Date.now()}_${safe}`;
+        const { error } = await supabase.storage.from('simuladores').upload(path, file, { upsert: true });
+        if (error) throw error;
+        return { path, name: file.name };
+    },
+
+    saveEntitySimulator: async (sim: { id?: string; entityName: string; label: string; filePath?: string; fileName?: string; sheetTab?: string; isActive?: boolean; orderIndex?: number }) => {
         const payload: any = {
             entity_name: sim.entityName,
             label: (sim.label || 'Vigente').trim(),
-            google_sheet_id: ProductionService.extractSheetId(sim.link),
             sheet_tab: sim.sheetTab?.trim() || null,
             is_active: sim.isActive !== false,
             order_index: sim.orderIndex ?? 0,
             updated_at: new Date().toISOString(),
         };
+        if (sim.filePath) { payload.file_path = sim.filePath; payload.file_name = sim.fileName || null; }
         if (sim.id) {
             const { error } = await supabase.from('entity_simulators').update(payload).eq('id', sim.id);
             if (error) throw error;
         } else {
+            if (!sim.filePath) throw new Error('Debes subir el archivo Excel del simulador.');
             const { error } = await supabase.from('entity_simulators').insert(payload);
             if (error) throw error;
         }
@@ -1528,14 +1529,14 @@ export const ProductionService = {
         if (error) throw error;
     },
 
-    // Calcula un simulador vía la Edge Function (que llama al Apps Script → Google Sheets).
-    // inputs: [{ sheet?, a1, value }]. Devuelve { display, values, formulas, sheet }.
-    calcSimulator: async (googleSheetId: string, sheetTab: string | undefined, inputs: { sheet?: string; a1: string; value: any }[]) => {
-        const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/simulador-calc`;
+    // Pide a la Edge Function la config firmada (JWT) de OnlyOffice para un simulador.
+    // Devuelve { documentServerUrl, config }.
+    getOnlyOfficeConfig: async (filePath: string, fileName: string, userName?: string) => {
+        const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/onlyoffice-config`;
         const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(import.meta as any).env.VITE_SUPABASE_ANON_KEY}` },
-            body: JSON.stringify({ templateId: googleSheetId, outputsSheet: sheetTab, inputs: inputs || [] }),
+            body: JSON.stringify({ filePath, fileName, userName, key: filePath }),
         });
         const json = await resp.json();
         if (json.error) throw new Error(json.error);

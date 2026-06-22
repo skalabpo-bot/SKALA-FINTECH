@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { GraduationCap, Download, Loader2, Settings2, BookOpen } from 'lucide-react';
+import { GraduationCap, Loader2, Settings2, BookOpen } from 'lucide-react';
 import { MockService } from '../../services/mockService';
 import { EntitySimulator } from '../../types';
-import { OnlineSimulatorRunner } from './OnlineSimulatorRunner';
+import { OnlyOfficeViewer } from './OnlyOfficeViewer';
 import { EntitySimulatorAdmin } from './EntitySimulatorAdmin';
 
 /**
@@ -85,15 +85,12 @@ export const AcademiaView: React.FC<{ currentUser?: any }> = ({ currentUser }) =
                 </div>
               )}
             </div>
-            {selected?.downloadUrl && (
-              <a href={selected.downloadUrl} download className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-all">
-                <Download size={15} /> Descargar Excel
-              </a>
-            )}
           </div>
 
-          {selected && (
-            <OnlineSimulatorRunner key={selected.id} googleSheetId={selected.googleSheetId} sheetTab={selected.sheetTab} />
+          {selected?.filePath ? (
+            <OnlyOfficeViewer key={selected.id} filePath={selected.filePath} fileName={selected.fileName} userName={currentUser?.name} />
+          ) : (
+            <p className="text-sm text-slate-400 italic py-8 text-center">Este simulador aún no tiene archivo. Súbelo en Administrar.</p>
           )}
         </div>
       )}
