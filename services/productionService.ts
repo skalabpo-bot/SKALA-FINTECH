@@ -27,13 +27,13 @@ export const INITIAL_STATES: CreditState[] = [
 ];
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
-    [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
-    [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'REQUEST_WITHDRAWAL'],
-    [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO'],
-    [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID'],
-    [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS'],
-    [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA'],
-    [UserRole.ANALISTA_ENTIDAD]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA']
+    [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS', 'VIEW_ACADEMIA', 'MANAGE_ACADEMIA'],
+    [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'REQUEST_WITHDRAWAL', 'VIEW_ACADEMIA'],
+    [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_ACADEMIA'],
+    [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'VIEW_ACADEMIA'],
+    [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS', 'VIEW_ACADEMIA'],
+    [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA'],
+    [UserRole.ANALISTA_ENTIDAD]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA']
 };
 
 // Cache en memoria para datos casi-estáticos (estados, entidades, tipos). TTL 30s.
@@ -1464,6 +1464,82 @@ export const ProductionService = {
         const result = data || [];
         _creditTypesCache = { data: result, ts: Date.now() };
         return result;
+    },
+
+    // =============================================
+    // ACADEMIA — Simuladores online (Google Sheets)
+    // =============================================
+
+    // Extrae el ID de un link de Google Sheets (o devuelve el texto si ya es un ID)
+    extractSheetId: (linkOrId: string): string => {
+        const s = (linkOrId || '').trim();
+        const m = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        return m ? m[1] : s;
+    },
+
+    _mapSimulator: (r: any) => ({
+        id: r.id,
+        entityName: r.entity_name,
+        label: r.label || 'Vigente',
+        googleSheetId: r.google_sheet_id,
+        sheetTab: r.sheet_tab || undefined,
+        downloadUrl: r.download_url || undefined,
+        isActive: r.is_active !== false,
+        orderIndex: r.order_index || 0,
+    }),
+
+    // Simuladores activos de una entidad (para el asesor)
+    getEntitySimulators: async (entityName: string) => {
+        const { data, error } = await supabase.from('entity_simulators')
+            .select('*').eq('entity_name', entityName).eq('is_active', true).order('order_index');
+        if (error) return [];
+        return (data || []).map(ProductionService._mapSimulator);
+    },
+
+    // Todos (para el admin)
+    getAllEntitySimulators: async () => {
+        const { data, error } = await supabase.from('entity_simulators')
+            .select('*').order('entity_name').order('order_index');
+        if (error) return [];
+        return (data || []).map(ProductionService._mapSimulator);
+    },
+
+    saveEntitySimulator: async (sim: { id?: string; entityName: string; label: string; link: string; sheetTab?: string; isActive?: boolean; orderIndex?: number }) => {
+        const payload: any = {
+            entity_name: sim.entityName,
+            label: (sim.label || 'Vigente').trim(),
+            google_sheet_id: ProductionService.extractSheetId(sim.link),
+            sheet_tab: sim.sheetTab?.trim() || null,
+            is_active: sim.isActive !== false,
+            order_index: sim.orderIndex ?? 0,
+            updated_at: new Date().toISOString(),
+        };
+        if (sim.id) {
+            const { error } = await supabase.from('entity_simulators').update(payload).eq('id', sim.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase.from('entity_simulators').insert(payload);
+            if (error) throw error;
+        }
+    },
+
+    deleteEntitySimulator: async (id: string) => {
+        const { error } = await supabase.from('entity_simulators').delete().eq('id', id);
+        if (error) throw error;
+    },
+
+    // Calcula un simulador vía la Edge Function (que llama al Apps Script → Google Sheets).
+    // inputs: [{ sheet?, a1, value }]. Devuelve { display, values, formulas, sheet }.
+    calcSimulator: async (googleSheetId: string, sheetTab: string | undefined, inputs: { sheet?: string; a1: string; value: any }[]) => {
+        const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/simulador-calc`;
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(import.meta as any).env.VITE_SUPABASE_ANON_KEY}` },
+            body: JSON.stringify({ templateId: googleSheetId, outputsSheet: sheetTab, inputs: inputs || [] }),
+        });
+        const json = await resp.json();
+        if (json.error) throw new Error(json.error);
+        return json;
     },
 
     // Gestores activos de la zona de un supervisor (para que radique a nombre de su asesor)

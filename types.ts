@@ -28,15 +28,29 @@ export type Permission =
   | 'VIEW_ZONE_CREDITS'
   | 'MARK_COMMISSION_PAID'
   | 'REQUEST_WITHDRAWAL'
-  | 'MANAGE_WITHDRAWALS';
+  | 'MANAGE_WITHDRAWALS'
+  | 'VIEW_ACADEMIA'
+  | 'MANAGE_ACADEMIA';
 
 export const ALL_PERMISSIONS: Permission[] = [
   'VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS',
   'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT',
   'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA',
   'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'VIEW_ZONE_CREDITS',
-  'MARK_COMMISSION_PAID', 'REQUEST_WITHDRAWAL', 'MANAGE_WITHDRAWALS'
+  'MARK_COMMISSION_PAID', 'REQUEST_WITHDRAWAL', 'MANAGE_WITHDRAWALS',
+  'VIEW_ACADEMIA', 'MANAGE_ACADEMIA'
 ];
+
+export interface EntitySimulator {
+  id: string;
+  entityName: string;
+  label: string;
+  googleSheetId: string;
+  sheetTab?: string;
+  downloadUrl?: string;
+  isActive: boolean;
+  orderIndex: number;
+}
 
 export interface Zone {
   id: string;

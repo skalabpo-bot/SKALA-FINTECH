@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { User, Notification } from '../types';
 import { MockService } from '../services/mockService';
 import { subscribeToNotifications } from '../services/realtimeService';
-import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone, GraduationCap } from 'lucide-react';
 
 interface Toast {
     id: string;
@@ -187,6 +187,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
           <NavItem view="notifications" icon={Bell} label="Notificaciones" badge={unreadCount} />
           {MockService.hasPermission(currentUser, 'CREATE_CREDIT') && <NavItem view="simulator" icon={PlusCircle} label="Nuevo Crédito" />}
           <NavItem view="credits" icon={FileText} label="Bandeja" />
+          {MockService.hasPermission(currentUser, 'VIEW_ACADEMIA') && <NavItem view="academia" icon={GraduationCap} label="Academia" />}
           {(currentUser.role === 'SUPERVISOR_ASIGNADO' || currentUser.role === 'ADMIN') && <NavItem view="team" icon={Users} label={currentUser.role === 'ADMIN' ? 'Equipos' : 'Mi Equipo'} />}
           
           {MockService.hasPermission(currentUser, 'MANAGE_NEWS') && <NavItem view="news" icon={Megaphone} label="Novedades" />}

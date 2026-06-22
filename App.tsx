@@ -12,6 +12,7 @@ import { CreditDetail } from './components/CreditDetail';
 import { AdminPanel } from './components/AdminPanel';
 import { ReportsPanel } from './components/ReportsPanel';
 import { NewsPanel } from './components/NewsPanel';
+import { AcademiaView } from './components/academia/AcademiaView';
 import { AutomationsPanel } from './components/AutomationsPanel';
 import { NotificationsView } from './components/NotificationsView';
 import { ProfileView } from './components/ProfileView';
@@ -875,6 +876,7 @@ const App = () => {
       {currentView === 'reports' && <ReportsPanel currentUser={currentUser} />}
       {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
       {currentView === 'news' && <NewsPanel />}
+      {currentView === 'academia' && <AcademiaView currentUser={currentUser} />}
       {currentView === 'automations' && <AutomationsPanel />}
       {currentView === 'team' && <TeamView currentUser={currentUser} />}
       {currentView === 'notifications' && <NotificationsView currentUser={currentUser} onViewCredit={(id) => { setSelectedCreditId(id); setCurrentView('detail'); }} />}
