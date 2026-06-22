@@ -1533,10 +1533,12 @@ export const ProductionService = {
     // Devuelve { documentServerUrl, config }.
     getOnlyOfficeConfig: async (filePath: string, fileName: string, userName?: string) => {
         const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/onlyoffice-config`;
+        // key ÚNICA por apertura: evita que OnlyOffice sirva una versión cacheada/fallida.
+        const uniqueKey = `${filePath}-${Date.now()}`.replace(/[^a-zA-Z0-9._=-]/g, '').slice(0, 120);
         const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(import.meta as any).env.VITE_SUPABASE_ANON_KEY}` },
-            body: JSON.stringify({ filePath, fileName, userName, key: filePath }),
+            body: JSON.stringify({ filePath, fileName, userName, key: uniqueKey }),
         });
         const json = await resp.json();
         if (json.error) throw new Error(json.error);

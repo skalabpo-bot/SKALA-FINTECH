@@ -12,8 +12,9 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
 const OO_URL = (Deno.env.get('ONLYOFFICE_URL') || '').replace(/\/$/, '');
 const OO_SECRET = Deno.env.get('ONLYOFFICE_JWT_SECRET') || '';
-const SUPABASE_URL = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '');
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const SUPABASE_URL = (Deno.env.get('SUPABASE_URL') || Deno.env.get('SB_URL') || '').replace(/\/$/, '');
+// SB_SERVICE_KEY: secreto propio (las auto-inyectadas SUPABASE_* a veces no llegan según el deploy)
+const SERVICE_KEY = Deno.env.get('SB_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const BUCKET = 'simuladores';
 
 const CORS = {
