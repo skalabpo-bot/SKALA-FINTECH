@@ -876,7 +876,7 @@ const App = () => {
       {currentView === 'reports' && <ReportsPanel currentUser={currentUser} />}
       {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
       {currentView === 'news' && <NewsPanel />}
-      {currentView === 'academia' && <AcademiaView currentUser={currentUser} />}
+      {currentView === 'academia' && (() => { const h = window.location.hostname; return (h === 'localhost' || h === '127.0.0.1' || h.endsWith('.netlify.app')); })() && <AcademiaView currentUser={currentUser} />}
       {currentView === 'automations' && <AutomationsPanel />}
       {currentView === 'team' && <TeamView currentUser={currentUser} />}
       {currentView === 'notifications' && <NotificationsView currentUser={currentUser} onViewCredit={(id) => { setSelectedCreditId(id); setCurrentView('detail'); }} />}
