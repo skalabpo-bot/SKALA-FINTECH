@@ -52,6 +52,48 @@ export interface EntitySimulator {
   orderIndex: number;
 }
 
+// ── Motor de cálculo por entidad (radicación con el Excel real) ───────────────
+// Un PRODUCTO = una tasa/variante: fija sus celdas en la hoja y trae su comisión.
+export interface EntityCalcProduct {
+  nombre: string;                       // etiqueta que ve el asesor (ej. "1.5% NMV")
+  rate: number;                         // tasa (se guarda en el crédito y mapea comisión)
+  comision: number;                     // % de comisión del asesor para este producto
+  discountPct?: number;                 // seguro+aval informativo (no recalcula nada)
+  cellValues?: Record<string, any>;     // celdas A1 que definen el producto, ej. { "C12": 1.5 }
+}
+
+// Config de cálculo de UNA entidad. Si existe (y is_active), la radicación usa el
+// Excel real en vez de fpm_factors. La fecha de nacimiento es ENTRADA (la edad la
+// resuelve el Excel); la comisión la define el producto/tasa.
+export interface EntityCalcConfig {
+  id?: string;
+  entityName: string;
+  googleSheetId: string;                // ID del Google Sheet (templateId del motor)
+  sheetTab?: string;                    // hoja donde se escribe/lee (null = primera)
+  inputCells: {                         // celdas A1 que Skala llena
+    cuota?: string;
+    plazo?: string;
+    fechaNacimiento?: string;
+    pagaduria?: string;
+    tipo?: string;
+    [k: string]: string | undefined;
+  };
+  outputCells: { monto?: string; desembolso?: string; [k: string]: string | undefined };
+  products: EntityCalcProduct[];
+  clearRanges?: string[];  // rangos pesados a limpiar en la copia de trabajo (ej. "Hoja!A30:M214") → motor más rápido
+  isActive: boolean;
+}
+
+// Resultado de calcular con el Excel real.
+export interface CalcRealResult {
+  monto: number;
+  desembolso: number;
+  comision: number;       // % comisión del producto elegido
+  rate: number;           // tasa del producto (se guarda en el crédito)
+  discountPct: number;    // informativo
+  tasaLabel: string;      // nombre del producto
+}
+
 export interface Zone {
   id: string;
   name: string;

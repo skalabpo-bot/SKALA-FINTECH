@@ -8,6 +8,13 @@ const STORAGE_KEY = 'gemini_usage_logs';
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [2000, 4000, 8000]; // espera creciente en ms
 
+// Oculta secretos (API keys) de cualquier mensaje de error que pudiera llegar a la UI.
+const redact = (s: string): string => (s || '')
+  .replace(/AIza[0-9A-Za-z_\-]{10,}/g, '***')
+  .replace(/api_key:\s*\S+/gi, 'api_key:***')
+  .replace(/sk-[A-Za-z0-9_\-]{10,}/g, '***')
+  .replace(/Bearer\s+\S+/gi, 'Bearer ***');
+
 // Edge Function de Supabase que llama OpenAI (sin CORS)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -423,14 +430,15 @@ export const analyzePaystubDocument = async (
     }
   }
 
-  // Manejo de errores final
+  // Manejo de errores final (NUNCA exponer la API key: solo mensaje amigable; el
+  // detalle técnico va a consola redactado).
   let errorMsg = "No pudimos leer el documento automáticamente.";
   if (lastError) {
-    const msg = lastError.message || '';
-    if (msg.includes('404')) errorMsg += " (Modelos IA no disponibles)";
-    else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada)";
-    else if (msg.includes('403')) errorMsg += " (API Key inválida o sin permisos)";
-    else errorMsg += ` (${msg})`;
+    const msg = redact(lastError.message || '');
+    console.warn('Desprendible OCR (detalle técnico):', msg);
+    if (/404/.test(msg)) errorMsg += " (Modelos IA no disponibles)";
+    else if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) errorMsg += " (Servicio de IA sin cupo, intenta de nuevo)";
+    else if (/403/.test(msg)) errorMsg += " (Credenciales de IA inválidas)";
   }
 
   throw new Error(errorMsg + "\nPor favor ingrese los datos manualmente.");
@@ -638,11 +646,12 @@ Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
     }
   }
 
-  let errorMsg = "No pudimos leer la cédula.";
+  // NUNCA exponer la API key: mensaje amigable; el detalle técnico (redactado) va a consola.
+  let errorMsg = "No pudimos leer la cédula. Verifica que la foto sea clara y completa (JPG o PNG) y vuelve a intentar.";
   if (lastError) {
-    const msg = lastError.message || '';
-    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) errorMsg += " (Cuota agotada)";
-    else if (msg) errorMsg += ` (${msg})`;
+    const msg = redact(lastError.message || '');
+    console.warn('Cédula OCR (detalle técnico):', msg);
+    if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) errorMsg = "No pudimos leer la cédula: el servicio de IA está temporalmente sin cupo. Intenta de nuevo en un momento.";
   }
 
   throw new Error(errorMsg);

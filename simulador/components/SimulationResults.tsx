@@ -18,7 +18,7 @@ interface SimulationResultsProps {
   clientData: ClientData | null;
   onClientDataChange: (data: ClientData | null) => void;
   onCedulaFilesChange?: (front: File | null, back: File | null) => void;
-  onSimulationSelect?: (idx: number) => void;
+  onSimulationSelect?: (idx: number | null) => void;
 }
 
 export const SimulationResults: React.FC<SimulationResultsProps> = ({
@@ -50,13 +50,18 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
 
+  // Modo EXCEL: el monto/desembolso vienen del simulador real de la entidad.
+  const isExcelMode = config.calcMode === 'excel';
+
   const toggleSimulation = (idx: number) => {
     if (!simulations[idx].isViable) return;
     const next = new Set(selectedSimulations);
     if (next.has(idx)) next.delete(idx);
     else next.add(idx);
     setSelectedSimulations(next);
-    onSimulationSelect?.(idx);
+    // Selección para RADICAR: la tocada si quedó marcada; si se deseleccionó, otra
+    // marcada o null. Así el padre (selectedSimIdx) nunca queda pegado a una card sin check.
+    onSimulationSelect?.(next.has(idx) ? idx : (next.size ? Math.max(...next) : null));
   };
 
   const getCardStyles = (product: ProductType) => {
@@ -84,14 +89,39 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
       const imgs = await pdfToImages(file, 2, 3); // primeras 2 páginas, scale 3 para OCR
       return imgs.map(i => ({ base64: i.base64, mimeType: i.mimeType }));
     }
+    // Re-codificar SIEMPRE a JPEG con canvas: normaliza cualquier formato de la foto
+    // (HEIC del iPhone, etc.) a uno que los modelos aceptan (png/jpeg/gif/webp) y
+    // evita el error "invalid_image_format" de OpenAI.
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        resolve([{ base64: result.split(',')[1], mimeType: file.type }]);
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 2200;
+          let { width, height } = img;
+          if (Math.max(width, height) > maxDim) {
+            const s = maxDim / Math.max(width, height);
+            width = Math.round(width * s); height = Math.round(height * s);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('canvas no disponible');
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+          URL.revokeObjectURL(url);
+          resolve([{ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' }]);
+        } catch (err) { URL.revokeObjectURL(url); reject(err); }
       };
-      reader.onerror = () => reject(new Error('Error leyendo el archivo.'));
-      reader.readAsDataURL(file);
+      img.onerror = () => {
+        // Fallback: si el navegador no puede decodificar (formato exótico), mandar tal cual
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = (e) => resolve([{ base64: (e.target?.result as string).split(',')[1], mimeType: file.type || 'image/jpeg' }]);
+        reader.onerror = () => reject(new Error('Error leyendo el archivo.'));
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
     });
   };
 
@@ -162,6 +192,19 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
     ).join('') || '';
 
     const offersHtml = toExport.map(sim => {
+      // Modo excel: monto/desembolso vienen del simulador real (sin desglose de factores)
+      if (sim.calcMode === 'excel') {
+        return `
+        <div class="offer-card">
+          <div class="offer-title">${sim.displayLabel || 'Simulador real'}</div>
+          <table>
+            <tr><th>Monto a Financiar</th><td>${fmt(sim.maxAmount)}</td></tr>
+            <tr class="highlight"><th>A Desembolsar</th><td>${fmt(sim.disbursementOverride ?? sim.maxAmount)}</td></tr>
+            <tr><th>Tasa M.V.</th><td>${sim.rate}%</td></tr>
+            <tr><th>Plazo</th><td>${sim.term} meses</td></tr>
+          </table>
+        </div>`;
+      }
       const aplica4x1000 = config.aplicaCuatroXMil ?? true;
       const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, config.cashFee, config.bankFee, aplica4x1000);
       const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
@@ -317,7 +360,8 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
         </div>
       </div>
 
-      {/* Payment Method Selector */}
+      {/* Payment Method Selector (no aplica en modo excel: el desembolso lo da el simulador) */}
+      {!isExcelMode && (
       <div className="flex items-center justify-center gap-3">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Forma de Entrega:</p>
         <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
@@ -335,6 +379,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Cards */}
       <div>
@@ -360,6 +405,61 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {viableSims.map((sim, viableIdx) => {
                 const idx = simulations.indexOf(sim);
+
+                // ── MODO EXCEL: tarjeta con monto/desembolso del simulador real ──
+                if (sim.calcMode === 'excel') {
+                  const isSelectedX = selectedSimulations.has(idx);
+                  const desembolsoX = sim.disbursementOverride ?? sim.maxAmount;
+                  const gradientX = entityCardGradient(config.primaryColor, config.secondaryColor);
+                  const framePanelX = frameBg(config.cardFrameColor, 0.82);
+                  return (
+                    <div
+                      key={`excel-${idx}`}
+                      onClick={() => toggleSimulation(idx)}
+                      style={gradientX ? { background: gradientX } : undefined}
+                      className={`relative rounded-2xl p-6 text-white shadow-2xl flex flex-col justify-between cursor-pointer transition-all duration-300 animate-fade-in ${gradientX ? '' : 'bg-gradient-to-br from-slate-700 to-slate-900'} ${isSelectedX ? 'scale-105 -translate-y-2 ring-4 ring-white ring-offset-2' : 'hover:scale-105 hover:-translate-y-2'}`}
+                    >
+                      {isSelectedX && (
+                        <div className="absolute top-3 left-3 z-30 bg-white rounded-full p-1 shadow-lg">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-green-600">
+                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="relative z-10 mb-4">
+                        <p className="text-xs font-bold uppercase tracking-widest text-white/80 truncate">{config.entityName}</p>
+                        <h3 className="text-2xl font-bold tracking-tight text-white mt-1 leading-none">{sim.displayLabel || 'Simulador real'}</h3>
+                      </div>
+                      <div className="relative z-10 mb-4">
+                        <p className="text-[10px] uppercase font-bold text-white/70 mb-1">Monto a Financiar</p>
+                        <p className="text-3xl font-mono font-extrabold text-white tracking-tight break-words leading-tight">{formatCurrency(sim.maxAmount)}</p>
+                      </div>
+                      <div style={framePanelX ? { background: framePanelX } : undefined} className={`relative z-10 rounded-xl p-3 mb-4 ${framePanelX ? '' : 'bg-black/20'}`}>
+                        <div className="flex justify-between text-sm font-extrabold text-white">
+                          <span>A DESEMBOLSAR</span>
+                          <span>{formatCurrency(desembolsoX)}</span>
+                        </div>
+                      </div>
+                      <div className="relative z-10 border-t border-white/10 pt-4 flex justify-between items-center">
+                        <div>
+                          <p className="text-[10px] uppercase text-white/70">Tasa M.V.</p>
+                          <p className="font-mono font-bold text-white">{sim.rate}%</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase text-white/70">Plazo</p>
+                          <p className="font-mono font-bold text-white">{sim.term} meses</p>
+                        </div>
+                      </div>
+                      {sim.commissionPct != null && sim.commissionPct > 0 && (
+                        <div style={framePanelX ? { background: framePanelX } : undefined} className="relative z-10 mt-2 bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
+                          <span className="text-[10px] font-bold uppercase text-white/70">Comisión estimada</span>
+                          <span className="font-mono font-bold text-sm text-white">{sim.commissionPct}% = {formatCurrency(Math.floor(sim.maxAmount * sim.commissionPct / 100))}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 const baseStyles = getCardStyles(sim.product);
                 const useEntityColor = !!(config.primaryColor || config.secondaryColor);
                 // Con color de entidad forzamos texto blanco legible y panel oscuro sutil
@@ -460,7 +560,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                        </div>
                        {sim.commissionPct != null && sim.commissionPct > 0 && (
                          <div style={framePanelBg ? { background: framePanelBg } : undefined} className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
-                           <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comision Gestor</span>
+                           <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comisión estimada</span>
                            <span className={`font-mono font-bold text-sm ${styles.textColor}`}>
                              {sim.commissionPct}% = {formatCurrency(Math.floor(sim.maxAmount * sim.commissionPct / 100))}
                            </span>
@@ -505,7 +605,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
               </div>
             )}
           </>
-        ) : (
+        ) : isExcelMode ? null : (
           <div className="text-center p-16 bg-white rounded-3xl border-2 border-dashed border-slate-200">
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">

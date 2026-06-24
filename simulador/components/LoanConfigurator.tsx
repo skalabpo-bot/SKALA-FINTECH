@@ -5,10 +5,12 @@ import { getTermsForEntity } from '../services/fpmService';
 import { simulateLoan, calculateDisbursement } from '../services/calculatorService';
 import { entityCardGradient } from '../services/colorUtils';
 import { useSimulator } from '../context/SimulatorContext';
+import { MockService } from '../../services/mockService';
+import { EntityCalcConfig } from '../../types';
 
 interface LoanConfiguratorProps {
   analysis: AnalysisResult;
-  onSimulate: (config: LoanConfiguration) => void;
+  onSimulate: (config: LoanConfiguration, excelResults?: SimulationResult[], selectedIdx?: number | null) => void;
   onBack: () => void;
   selectedPagaduria?: string;
   selectedCreditTypeId?: string;
@@ -21,6 +23,26 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   const [selectedTerm, setSelectedTerm] = useState<number | null>(null);
   const [cushion, setCushion] = useState<number>(0);
   const [customQuota, setCustomQuota] = useState<number>(analysis.availableQuota);
+
+  // ── Motor de cálculo por entidad (modo excel) ──────────────────────────────
+  const [calcConfigs, setCalcConfigs] = useState<Record<string, EntityCalcConfig>>({});
+  const [excelProduct, setExcelProduct] = useState<string>('');
+  const [birthDate, setBirthDate] = useState<string>(''); // fecha nacimiento (modo excel)
+  const [excelTipo, setExcelTipo] = useState<string>(''); // tipo de crédito (Compra Cartera / Libre Inversión)
+  const [excelCards, setExcelCards] = useState<SimulationResult[]>([]); // cards calculadas con el simulador
+  const [excelCardsLoading, setExcelCardsLoading] = useState(false);
+  const [excelCardsErr, setExcelCardsErr] = useState<string | null>(null);
+  const [selectedCardIdx, setSelectedCardIdx] = useState<number | null>(null);
+  const [excelRetry, setExcelRetry] = useState(0);
+  useEffect(() => {
+    MockService.getAllEntityCalcConfigs()
+      .then((list: EntityCalcConfig[]) => {
+        const map: Record<string, EntityCalcConfig> = {};
+        (list || []).forEach(c => { if (c.isActive && c.products?.length) { map[c.entityName] = c; map[c.entityName.trim()] = c; } });
+        setCalcConfigs(map);
+      })
+      .catch(() => {});
+  }, []);
 
   // Buyout Logic State
   const [manualCarteraItems, setManualCarteraItems] = useState<CarteraItem[]>([]);
@@ -53,6 +75,21 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   // Terms for selected entity
   const selectedEntity = useMemo(() => entities.find(e => e.id === selectedEntityId), [entities, selectedEntityId]);
 
+  // ¿La entidad usa el Excel real como motor? (modo excel) — si no, factores.
+  const excelCfg = useMemo<EntityCalcConfig | undefined>(() => {
+    if (!selectedEntity) return undefined;
+    return calcConfigs[selectedEntity.name] || calcConfigs[selectedEntity.name.trim()];
+  }, [selectedEntity, calcConfigs]);
+  const isExcelMode = !!excelCfg;
+
+  // Auto-seleccionar el primer producto al cambiar de entidad en modo excel
+  useEffect(() => {
+    if (excelCfg) {
+      const exists = excelCfg.products.some(p => p.nombre === excelProduct);
+      if (!exists) setExcelProduct(excelCfg.products[0]?.nombre || '');
+    }
+  }, [excelCfg]);
+
   const terms = useMemo(() => {
     if (!selectedEntity) return [];
     return getTermsForEntity(selectedEntity.name);
@@ -60,6 +97,11 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
 
   // Auto-select first term when entity changes
   useEffect(() => {
+    if (isExcelMode) {
+      // En modo excel no hay tabla de plazos: el asesor elige uno (default 144)
+      if (!selectedTerm) setSelectedTerm(144);
+      return;
+    }
     if (terms.length > 0) {
       // Try to keep current term if available, else select last (longest)
       if (selectedTerm && terms.includes(selectedTerm)) return;
@@ -68,7 +110,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     } else {
       setSelectedTerm(null);
     }
-  }, [terms]);
+  }, [terms, isExcelMode]);
 
   // Check if selected entity+term combo has FPM factors
   const hasFactorsForSelection = useMemo(() => {
@@ -136,7 +178,10 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         if (Number(item.amount) > 0) carteraItems.push({ entity: item.entity || 'Sin nombre', amount: Number(item.amount) });
       });
 
-      onSimulate({
+      // En modo excel ya calculamos las cards aquí; debe haber una seleccionada.
+      if (isExcelMode && (selectedCardIdx == null || !excelCards[selectedCardIdx])) return;
+
+      const config: LoanConfiguration = {
         entityName: selectedEntity.name,
         termMonths: selectedTerm,
         safetyCushion: Number(cushion),
@@ -144,13 +189,17 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         cashFee: selectedEntity.cashFee ?? 15157,
         bankFee: selectedEntity.bankFee ?? 7614,
         carteraItems: carteraItems.length > 0 ? carteraItems : undefined,
-        customQuota: customQuota !== analysis.availableQuota ? customQuota : undefined,
+        // En modo excel siempre enviamos la cuota (el motor la necesita); en factores, solo si cambió.
+        customQuota: isExcelMode ? customQuota : (customQuota !== analysis.availableQuota ? customQuota : undefined),
         commissions: selectedEntity.commissions,
         aplicaCuatroXMil: selectedEntity.aplicaCuatroXMil ?? true,
         primaryColor: selectedEntity.primaryColor,
         secondaryColor: selectedEntity.secondaryColor,
         cardFrameColor: selectedEntity.cardFrameColor,
-      });
+        ...(isExcelMode ? { calcMode: 'excel' as const, birthDate: birthDate || undefined, creditTipo: excelTipo || undefined } : {}),
+      };
+      if (isExcelMode) onSimulate(config, excelCards, selectedCardIdx);
+      else onSimulate(config);
     }
   };
 
@@ -165,9 +214,10 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     GENERAL: '50% Ingreso Neto',
   };
 
-  // Live simulation preview
+  // Live simulation preview (SOLO modo factores; en modo excel el cálculo real
+  // corre en RESULTADOS tras leer la cédula, así que aquí NO mostramos factores).
   const liveSimulations = useMemo((): SimulationResult[] => {
-    if (!selectedEntity || !selectedTerm || !hasFactorsForSelection || availableAfterCushion <= 0) return [];
+    if (isExcelMode || !selectedEntity || !selectedTerm || !hasFactorsForSelection || availableAfterCushion <= 0) return [];
     const results = simulateLoan(availableAfterCushion, {
       entityName: selectedEntity.name,
       termMonths: selectedTerm,
@@ -179,10 +229,49 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
     }, fpmTable);
     // Sort by gestor commission (highest first)
     return results.sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0));
-  }, [selectedEntity, selectedTerm, hasFactorsForSelection, availableAfterCushion, fpmTable]);
+  }, [selectedEntity, selectedTerm, hasFactorsForSelection, availableAfterCushion, fpmTable, isExcelMode]);
 
   const viableLive = liveSimulations.filter(s => s.isViable);
   const nonViableLive = liveSimulations.filter(s => !s.isViable);
+
+  // ── MODO EXCEL: calcular TODAS las cards (tasas/productos) aquí en Parametrización,
+  // en paralelo y una sola vez (debounced). Resultados solo radica (no recalcula). ──
+  useEffect(() => {
+    if (!isExcelMode || !excelCfg || !selectedEntity || !selectedTerm || availableAfterCushion <= 0) {
+      setExcelCards([]); setSelectedCardIdx(null); setExcelCardsErr(null); return;
+    }
+    let cancelled = false;
+    // Limpia las cards anteriores de inmediato (evita mostrar la oferta vieja mientras recalcula).
+    setExcelCards([]); setSelectedCardIdx(null);
+    setExcelCardsLoading(true); setExcelCardsErr(null);
+    const t = setTimeout(async () => {
+      try {
+        const extra = { pagaduria: selectedPagaduria || undefined, fechaNacimiento: birthDate || undefined, tipo: excelTipo || undefined };
+        let firstErr = '';
+        const results = await Promise.all(excelCfg.products.map(p =>
+          MockService.calcularCreditoReal(selectedEntity.name, p.nombre, selectedTerm, availableAfterCushion, extra, excelCfg)
+            .then((res: any): SimulationResult => ({
+              entityName: selectedEntity.name,
+              // El producto refleja el tipo elegido → la línea de crédito se auto-sugiere bien.
+              product: /compra/i.test(excelTipo) ? ProductType.COMPRA_CARTERA : ProductType.LIBRE_INVERSION,
+              term: selectedTerm,
+              rate: res.rate, fpmUsed: 0, finalQuotaUsed: availableAfterCushion, maxAmount: res.monto,
+              isViable: res.monto > 0, discountPct: res.discountPct, commissionPct: res.comision,
+              calcMode: 'excel', disbursementOverride: res.desembolso, displayLabel: res.tasaLabel,
+            }))
+            .catch((e: any) => { if (!firstErr) firstErr = e?.message || ''; return null; })
+        ));
+        if (cancelled) return;
+        const cards = (results.filter(Boolean) as SimulationResult[]).sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0));
+        setExcelCards(cards);
+        setSelectedCardIdx(cards.length === 1 ? 0 : null);
+        if (!cards.length) setExcelCardsErr(firstErr || 'No se pudo calcular con el simulador. Reintenta.');
+      } catch (e: any) { if (!cancelled) { setExcelCards([]); setExcelCardsErr(e?.message || 'Error al calcular.'); } }
+      finally { if (!cancelled) setExcelCardsLoading(false); }
+    }, 700);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExcelMode, excelCfg, selectedEntity, selectedTerm, availableAfterCushion, birthDate, excelTipo, selectedPagaduria, excelRetry]);
 
   const getCardColor = (product: ProductType) => {
     switch (product) {
@@ -306,7 +395,115 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                 )}
               </div>
 
-              {/* Term Selector */}
+              {/* ── MODO EXCEL: Fecha nacimiento + Plazo (las tasas salen como cards en Resultados) ── */}
+              {isExcelMode && excelCfg && (
+                <>
+                  {excelCfg.inputCells?.fechaNacimiento && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 ml-1">Fecha de nacimiento <span className="text-slate-300 normal-case">(la edad afecta el monto)</span></label>
+                      <input
+                        type="date"
+                        value={birthDate}
+                        onChange={e => setBirthDate(e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-mono font-bold focus:outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500"
+                      />
+                    </div>
+                  )}
+
+                  {/* Tipo de crédito (afecta el desembolso) */}
+                  {excelCfg.inputCells?.tipo && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Tipo de crédito</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['Compra Cartera', 'Libre Inversión'].map(tp => (
+                          <button
+                            key={tp}
+                            type="button"
+                            onClick={() => setExcelTipo(tp)}
+                            className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${excelTipo === tp ? 'bg-primary-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                          >
+                            {tp}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Plazo (Meses)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 144].map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setSelectedTerm(t)}
+                          className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${selectedTerm === t ? 'bg-primary-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                      <input
+                        type="number"
+                        min={1}
+                        max={240}
+                        value={selectedTerm ?? ''}
+                        onChange={e => setSelectedTerm(Math.max(1, Number(e.target.value)))}
+                        placeholder="Otro"
+                        className="w-24 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-mono font-bold text-sm focus:outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Cards calculadas con el simulador real */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">
+                      Opciones {excelCardsLoading && <span className="text-slate-400 normal-case">— calculando…</span>}
+                    </label>
+                    {excelCardsLoading && excelCards.length === 0 ? (
+                      <div className="rounded-xl p-5 bg-slate-100 text-slate-500 text-sm font-bold flex items-center gap-2">
+                        <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-400"></span> Calculando con el simulador de {selectedEntity?.name}…
+                      </div>
+                    ) : excelCardsErr ? (
+                      <div className="rounded-xl p-4 bg-red-50 border border-red-200 text-red-700 text-sm font-bold flex items-center justify-between gap-3">
+                        <span>{excelCardsErr}</span>
+                        <button type="button" onClick={() => setExcelRetry(n => n + 1)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-black uppercase tracking-widest">Reintentar</button>
+                      </div>
+                    ) : excelCards.length > 0 ? (
+                      <>
+                        <div className={`grid grid-cols-1 sm:grid-cols-2 ${excelCards.length > 2 ? 'lg:grid-cols-3' : ''} gap-3`}>
+                          {excelCards.map((sim, i) => {
+                            const isSel = selectedCardIdx === i;
+                            const bg = entityCardGradient(selectedEntity?.primaryColor, selectedEntity?.secondaryColor);
+                            return (
+                              <div
+                                key={i}
+                                onClick={() => setSelectedCardIdx(i)}
+                                style={{ background: bg }}
+                                className={`relative rounded-xl p-4 text-white shadow-lg cursor-pointer transition-all ${isSel ? 'ring-4 ring-white ring-offset-2 scale-[1.02]' : 'hover:scale-[1.01] opacity-90'}`}
+                              >
+                                {isSel && <div className="absolute top-2 left-2 bg-white rounded-full p-0.5"><svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-green-600"><path fillRule="evenodd" d="M16.7 4.2a.75.75 0 0 1 .1 1.05l-8 10.5a.75.75 0 0 1-1.12.07l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.9 3.89 7.48-9.82a.75.75 0 0 1 1.05-.13Z" clipRule="evenodd"/></svg></div>}
+                                <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">{sim.displayLabel || selectedEntity?.name}</p>
+                                <p className="text-xl font-mono font-extrabold mt-1">{formatCurrency(sim.maxAmount)}</p>
+                                <p className="text-[10px] font-bold opacity-80 mt-0.5">Desembolso: {formatCurrency(sim.disbursementOverride ?? sim.maxAmount)}</p>
+                                <div className="flex justify-between mt-2 text-[10px] font-bold opacity-70">
+                                  <span>{sim.rate}% M.V.</span>
+                                  {sim.commissionPct != null && <span>Com {sim.commissionPct}%</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-amber-600 font-semibold mt-2 ml-1">⚠️ Valores calculados con el simulador; pueden variar en la radicación final.</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-400 italic py-2">Ingresa la cuota{excelCfg.inputCells?.fechaNacimiento ? ', la fecha de nacimiento' : ''} y el plazo para ver las opciones.</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Term Selector — MODO FACTORES */}
+              {!isExcelMode && (
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Plazo (Meses)</label>
                 {terms.length === 0 ? (
@@ -363,6 +560,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                   </div>
                 )}
               </div>
+              )}
 
               {/* Live Preview Cards — right after term selector */}
               {viableLive.length > 0 && (
@@ -571,8 +769,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                  </div>
               </div>
 
-              {/* FPM Validation Warning */}
-              {selectedEntity && selectedTerm && !hasFactorsForSelection && (
+              {/* FPM Validation Warning (solo modo factores) */}
+              {!isExcelMode && selectedEntity && selectedTerm && !hasFactorsForSelection && (
                 <div className="p-4 bg-amber-50 border-l-4 border-amber-500 text-amber-700 rounded-r-lg text-sm font-medium">
                   No hay factores FPM para <strong>{selectedEntity.name}</strong> a <strong>{selectedTerm} meses</strong>. Configure los factores en Admin.
                 </div>
@@ -590,10 +788,10 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                     <button type="button" onClick={onBack} className="px-6 py-3 text-slate-500 font-bold hover:text-slate-800 transition-colors flex-1 sm:flex-none">Volver</button>
                     <button
                         type="submit"
-                        disabled={!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || !hasFactorsForSelection}
+                        disabled={!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || (isExcelMode ? selectedCardIdx == null : !hasFactorsForSelection)}
                         className="bg-primary-600 text-white px-8 py-4 rounded-xl font-bold shadow-xl shadow-primary-600/20 hover:bg-primary-700 hover:shadow-2xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
                     >
-                      Realizar Simulacion
+                      {isExcelMode ? 'Continuar' : 'Realizar Simulacion'}
                     </button>
                  </div>
               </div>

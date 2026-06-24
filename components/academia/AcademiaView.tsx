@@ -6,6 +6,7 @@ import { OnlyOfficeViewer } from './OnlyOfficeViewer';
 import { EntitySimulatorAdmin } from './EntitySimulatorAdmin';
 import { EntityPoliciesPanel } from './EntityPoliciesPanel';
 import { PoliciesAdmin } from './PoliciesAdmin';
+import { CalcConfigAdmin } from './CalcConfigAdmin';
 
 /**
  * Academia: por entidad, el asesor usa el simulador real (calculado online con Google
@@ -14,7 +15,7 @@ import { PoliciesAdmin } from './PoliciesAdmin';
 export const AcademiaView: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
   const canManage = MockService.hasPermission(currentUser, 'MANAGE_ACADEMIA');
   const [tab, setTab] = useState<'sim' | 'admin'>('sim');
-  const [adminTab, setAdminTab] = useState<'sims' | 'policies'>('sims');
+  const [adminTab, setAdminTab] = useState<'sims' | 'policies' | 'calc'>('sims');
   const [sims, setSims] = useState<EntitySimulator[]>([]);
   const [loading, setLoading] = useState(true);
   const [entity, setEntity] = useState<string>('');
@@ -62,8 +63,9 @@ export const AcademiaView: React.FC<{ currentUser?: any }> = ({ currentUser }) =
           <div className="flex bg-slate-100 rounded-xl p-1 gap-1 w-fit">
             <button onClick={() => setAdminTab('sims')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${adminTab === 'sims' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>Simuladores</button>
             <button onClick={() => setAdminTab('policies')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${adminTab === 'policies' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>Políticas</button>
+            <button onClick={() => setAdminTab('calc')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${adminTab === 'calc' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>Cálculo</button>
           </div>
-          {adminTab === 'sims' ? <EntitySimulatorAdmin /> : <PoliciesAdmin />}
+          {adminTab === 'sims' ? <EntitySimulatorAdmin /> : adminTab === 'policies' ? <PoliciesAdmin /> : <CalcConfigAdmin />}
         </div>
       ) : loading ? (
         <div className="py-20 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" size={32} /></div>

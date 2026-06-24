@@ -63,7 +63,30 @@ function doPost(e) {
       var raw = rng.getValues();           // valores crudos
       var formulas = rng.getFormulas();    // fórmula por celda ('' si no tiene) → el runner sabe qué es editable
 
-      return _json({ ok: true, sheet: outSheet.getName(), display: values, values: raw, formulas: formulas });
+      // Validaciones (desplegables / casillas) — solo celdas que tengan, mapa "r,c" → {type, options}
+      var validations = {};
+      try {
+        var dvs = rng.getDataValidations();
+        for (var r = 0; r < dvs.length; r++) {
+          for (var c = 0; c < dvs[r].length; c++) {
+            var dv = dvs[r][c];
+            if (!dv) continue;
+            var t = String(dv.getCriteriaType());
+            if (t === 'VALUE_IN_LIST') {
+              validations[r + ',' + c] = { type: 'list', options: (dv.getCriteriaValues()[0] || []) };
+            } else if (t === 'VALUE_IN_RANGE') {
+              var src = dv.getCriteriaValues()[0];
+              var opts = [];
+              try { opts = src.getValues().reduce(function (a, row) { return a.concat(row); }, []).filter(function (x) { return x !== '' && x != null; }); } catch (e2) {}
+              validations[r + ',' + c] = { type: 'list', options: opts };
+            } else if (t === 'CHECKBOX') {
+              validations[r + ',' + c] = { type: 'bool' };
+            }
+          }
+        }
+      } catch (eDV) {}
+
+      return _json({ ok: true, sheet: outSheet.getName(), display: values, values: raw, formulas: formulas, validations: validations });
     } finally {
       // 4) Borrar la copia temporal
       try { DriveApp.getFileById(ssId).setTrashed(true); } catch (err) {}

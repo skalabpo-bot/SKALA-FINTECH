@@ -112,7 +112,14 @@ export interface LoanConfiguration {
   primaryColor?: string; // Color de marca de la entidad (para las tarjetas)
   secondaryColor?: string;
   cardFrameColor?: string; // 3er color: marcos internos
+  // ── Modo EXCEL (motor real de la entidad) ──────────────────────────────────
+  calcMode?: 'factor' | 'excel'; // default 'factor'
+  excelProductName?: string;     // producto/tasa elegido (define comisión y celdas)
+  birthDate?: string;            // fecha de nacimiento (la edad afecta el cálculo, ej. COLTE)
+  creditTipo?: string;           // tipo de crédito (ej. "Compra Cartera" / "Libre Inversión") → celda tipo
 }
+
+export type CalcMode = 'factor' | 'excel';
 
 export interface SimulationResult {
   entityName: string;
@@ -125,6 +132,10 @@ export interface SimulationResult {
   isViable: boolean;
   discountPct: number; // Descuento seguro y aval (%)
   commissionPct?: number; // Comisión del asesor (%) para este producto
+  // ── Modo EXCEL: el monto/desembolso vienen del Excel real, no de factores ──
+  calcMode?: 'factor' | 'excel';
+  disbursementOverride?: number; // monto a desembolsar tal cual lo devuelve el Excel
+  displayLabel?: string;         // etiqueta del producto/tasa a mostrar (modo excel)
 }
 
 export enum AppStep {

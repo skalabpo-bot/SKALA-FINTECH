@@ -26,7 +26,7 @@ FROM (
     GROUP BY ch.credit_id
 ) h
 WHERE c.id = h.credit_id
-  AND c.status_id IN (SELECT id FROM credit_states_config WHERE name ILIKE '%DESEMBOLSADO%')
+  AND c.status_id::text IN (SELECT id::text FROM credit_states_config WHERE name ILIKE '%DESEMBOLSADO%')
   AND (c.client_data->>'fechaDesembolso') IS NULL;
 
 -- Paso 2: fallback a updated_at para los que no tengan history

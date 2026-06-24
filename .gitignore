@@ -34,3 +34,7 @@ dist-ssr
 .claude/settings.local.json
 .claude/settings.json
 supabase/.temp/
+
+# Originales de simuladores (la app NO los usa: el cálculo lee Google Sheets y el
+# visor lee el bucket 'simuladores'). Se conservan local como respaldo, sin commitear.
+SIMULADORES/

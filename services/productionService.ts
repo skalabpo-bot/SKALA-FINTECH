@@ -2,7 +2,7 @@ import { supabase, supabaseAdmin } from './supabaseClient';
 import {
     Credit, User, UserRole, AlliedEntity, Notification, Permission, Comment,
     CreditDocument, CreditState, Zone, DashboardStats, ReportFilters, NewsItem, CreditHistoryItem,
-    WithdrawalRequest, PolicyAnalysis
+    WithdrawalRequest, PolicyAnalysis, EntityCalcConfig, CalcRealResult
 } from '../types';
 
 // Ciudades y Bancos de Colombia (datos semilla / fallback si las tablas no existen)
@@ -269,7 +269,7 @@ export const ProductionService = {
     },
 
     createCredit: async (formData: any, currentUser: User) => {
-        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, ...rest } = formData;
+        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, comisionPct, ...rest } = formData;
 
         // ── GUARD DE ASIGNACIÓN (anti "créditos cruzados") ────────────────────────
         // Solo ADMIN y SUPERVISOR pueden radicar a nombre de otro asesor. Cualquier
@@ -318,6 +318,10 @@ export const ProductionService = {
         // Comisión y validación de cédula solo aplican para libranza
         let commPercent = 0;
         if (requiresEntity) {
+          // Modo EXCEL: el simulador ya resolvió la comisión del producto/tasa elegido.
+          if (comisionPct != null && !isNaN(Number(comisionPct))) {
+            commPercent = Number(comisionPct);
+          } else {
             try {
                 const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entidadAliada).eq('rate', Number(tasa)).limit(1).single();
                 const product = fpmRow?.product || '';
@@ -331,6 +335,7 @@ export const ProductionService = {
                     commPercent = rateConfig?.commission || 0;
                 }
             } catch (_) {}
+          }
         }
         const commEst = (Number(monto || 0) * commPercent) / 100;
 
@@ -579,7 +584,7 @@ export const ProductionService = {
         // Obtener datos anteriores PRIMERO (para fallback y audit log)
         let previousData: any = {};
         try {
-            const { data: prev } = await supabase.from('credits').select('amount, term, entity_name, interest_rate, disbursement_amount, client_data').eq('id', creditId).single();
+            const { data: prev } = await supabase.from('credits').select('amount, term, entity_name, interest_rate, disbursement_amount, commission_percent, client_data').eq('id', creditId).single();
             previousData = prev || {};
         } catch { /* continuar sin datos previos */ }
 
@@ -589,23 +594,31 @@ export const ProductionService = {
         const finalTasa = tasa != null && String(tasa).trim() !== '' ? Number(tasa) : (previousData.interest_rate ?? 0);
         const finalDesembolso = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
 
-        // Recalcular comisión basada en entidad y tasa
-        // Buscar comisión por PRODUCTO (determinado por tasa) en financial_entities
+        // Recalcular comisión. Prioridad: (1) config excel por tasa, (2) factores (legacy),
+        // (3) preservar la comisión guardada (NUNCA pisarla con 0). commEst sigue al monto.
         const entityName = entidadAliada || previousData.entity_name || '';
         let commPercent = 0;
         try {
-            const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entityName).eq('rate', finalTasa).limit(1).single();
-            const product = fpmRow?.product || '';
-            if (product) {
-                const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entityName).single();
-                commPercent = finEntity?.commissions?.[product] || 0;
-            }
-            if (!commPercent) {
-                const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entityName).single();
-                const rateConfig = alliedEntity?.rates?.find((r: any) => r.rate === finalTasa);
-                commPercent = rateConfig?.commission || 0;
-            }
+            const cfg = await ProductionService.getEntityCalcConfig(entityName);
+            const p = cfg?.products?.find((pr: any) => Number(pr.rate) === Number(finalTasa));
+            if (p && p.comision != null) commPercent = Number(p.comision);
         } catch (_) {}
+        if (!commPercent) {
+            try {
+                const { data: fpmRow } = await supabase.from('fpm_factors').select('product').eq('entity_name', entityName).eq('rate', finalTasa).limit(1).single();
+                const product = fpmRow?.product || '';
+                if (product) {
+                    const { data: finEntity } = await supabase.from('financial_entities').select('commissions').eq('name', entityName).single();
+                    commPercent = finEntity?.commissions?.[product] || 0;
+                }
+                if (!commPercent) {
+                    const { data: alliedEntity } = await supabase.from('allied_entities').select('rates').eq('name', entityName).single();
+                    const rateConfig = alliedEntity?.rates?.find((r: any) => r.rate === finalTasa);
+                    commPercent = rateConfig?.commission || 0;
+                }
+            } catch (_) {}
+        }
+        if (!commPercent) commPercent = Number(previousData.commission_percent || 0); // no pisar con 0
         const commEst = (finalMonto * commPercent) / 100;
 
         const updatePayload: any = {
@@ -1527,6 +1540,215 @@ export const ProductionService = {
     deleteEntitySimulator: async (id: string) => {
         const { error } = await supabase.from('entity_simulators').delete().eq('id', id);
         if (error) throw error;
+    },
+
+    // ── Motor de cálculo por entidad (radicación con el Excel real) ───────────
+    _mapCalcConfig: (r: any): EntityCalcConfig => ({
+        id: r.id,
+        entityName: r.entity_name,
+        googleSheetId: r.google_sheet_id,
+        sheetTab: r.sheet_tab || undefined,
+        inputCells: r.input_cells || {},
+        outputCells: r.output_cells || {},
+        products: Array.isArray(r.products) ? r.products : [],
+        clearRanges: Array.isArray(r.clear_ranges) ? r.clear_ranges : [],
+        isActive: r.is_active !== false,
+    }),
+
+    // Config de cálculo de una entidad (null si no tiene → usa factores).
+    getEntityCalcConfig: async (entityName: string): Promise<EntityCalcConfig | null> => {
+        const { data, error } = await supabase.from('entity_calc_config')
+            .select('*').eq('entity_name', entityName).eq('is_active', true).maybeSingle();
+        if (error || !data) return null;
+        return ProductionService._mapCalcConfig(data);
+    },
+
+    getAllEntityCalcConfigs: async (): Promise<EntityCalcConfig[]> => {
+        const { data, error } = await supabase.from('entity_calc_config').select('*').order('entity_name');
+        if (error) return [];
+        return (data || []).map(ProductionService._mapCalcConfig);
+    },
+
+    saveEntityCalcConfig: async (cfg: EntityCalcConfig) => {
+        const payload: any = {
+            entity_name: cfg.entityName.trim(),
+            google_sheet_id: (cfg.googleSheetId || '').trim(),
+            sheet_tab: cfg.sheetTab?.trim() || null,
+            input_cells: cfg.inputCells || {},
+            output_cells: cfg.outputCells || {},
+            products: cfg.products || [],
+            clear_ranges: cfg.clearRanges || [],
+            is_active: cfg.isActive !== false,
+            updated_at: new Date().toISOString(),
+        };
+        if (!payload.google_sheet_id) throw new Error('Falta el ID del Google Sheet.');
+        if (cfg.id) {
+            const { error } = await supabase.from('entity_calc_config').update(payload).eq('id', cfg.id);
+            if (error) throw error;
+        } else {
+            // upsert por entity_name (única config por entidad)
+            const { error } = await supabase.from('entity_calc_config').upsert(payload, { onConflict: 'entity_name' });
+            if (error) throw error;
+        }
+    },
+
+    deleteEntityCalcConfig: async (id: string) => {
+        const { error } = await supabase.from('entity_calc_config').delete().eq('id', id);
+        if (error) throw error;
+    },
+
+    // Convierte una referencia A1 (ej. "C9") a índices [fila, col] base 0.
+    _a1ToRC: (a1: string): [number, number] | null => {
+        const m = /^([A-Za-z]+)(\d+)$/.exec((a1 || '').trim());
+        if (!m) return null;
+        let col = 0;
+        for (const ch of m[1].toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64);
+        return [Number(m[2]) - 1, col - 1];
+    },
+
+    // Parsea un valor de celda a número (acepta number o texto formateado "$ 1.234,56" / "1,65%").
+    _numVal: (raw: any): number => {
+        if (raw == null || raw === '') return 0;
+        if (typeof raw === 'number') return raw;
+        const n = Number(String(raw).replace(/[^\d.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(/,/g, '.'));
+        return isNaN(n) ? 0 : n;
+    },
+
+    // Lee una celda (número) de la grilla `values` que devuelve el motor.
+    _readCellNumber: (grid: any[][], a1?: string): number => {
+        if (!a1) return 0;
+        const rc = ProductionService._a1ToRC(a1);
+        if (!rc) return 0;
+        return ProductionService._numVal(grid?.[rc[0]]?.[rc[1]]);
+    },
+
+    /**
+     * Calcula monto + desembolso con el Excel REAL de la entidad (modo excel).
+     * @param extra fecha de nacimiento / pagaduría / tipo que requiera la hoja.
+     */
+    calcularCreditoReal: async (
+        entityName: string,
+        productName: string,
+        plazo: number,
+        cuota: number,
+        extra?: { fechaNacimiento?: string; pagaduria?: string; tipo?: string; devengado?: number; dctosLey?: number; otrosDesc?: number; totalDesc?: number; monto?: number },
+        cfgIn?: EntityCalcConfig | null,
+    ): Promise<CalcRealResult> => {
+        const cfg = cfgIn || await ProductionService.getEntityCalcConfig(entityName);
+        if (!cfg) throw new Error(`La entidad ${entityName} no tiene motor de cálculo configurado.`);
+        const product = cfg.products.find(p => p.nombre === productName) || cfg.products[0];
+        if (!product) throw new Error(`La entidad ${entityName} no tiene productos configurados.`);
+
+        const sheet = cfg.sheetTab || undefined;
+        const inputs: { sheet?: string; a1: string; value: any }[] = [];
+        // a1 puede ser varias celdas separadas por coma (ej. "E45,H16": un mismo
+        // valor se escribe en todas — útil cuando la hoja repite el dato).
+        const push = (a1?: string, value?: any) => {
+            if (!a1 || value === undefined || value === null || value === '') return;
+            a1.split(',').map(s => s.trim()).filter(Boolean).forEach(cell => inputs.push({ sheet, a1: cell, value }));
+        };
+        // Valores disponibles del análisis del desprendible. Cada hoja usa los que necesite
+        // (COLTE: cuota; CrediAlianza/Vantage: devengado + descuentos). El config mapea cada
+        // clave a su celda A1; solo se escriben las que el config tenga mapeadas.
+        const allValues: Record<string, any> = {
+            cuota,
+            plazo,
+            fechaNacimiento: extra?.fechaNacimiento,
+            pagaduria: extra?.pagaduria,
+            tipo: extra?.tipo,
+            devengado: extra?.devengado,
+            dctosLey: extra?.dctosLey,
+            otrosDesc: extra?.otrosDesc,
+            totalDesc: extra?.totalDesc,
+            monto: extra?.monto,
+        };
+        Object.entries(cfg.inputCells).forEach(([key, a1]) => push(a1, allValues[key]));
+        // celdas que definen el producto (tasa, tipo, toggles…)
+        Object.entries(product.cellValues || {}).forEach(([a1, value]) => push(a1, value));
+
+        const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/simulador-calc`;
+        const anon = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+        // Celdas de salida que necesitamos → el motor RÁPIDO devuelve solo estas (sin la grilla completa).
+        const outCells = [cfg.outputCells.monto, cfg.outputCells.desembolso, cfg.outputCells.tasa].filter(Boolean) as string[];
+
+        // Lee un número de la respuesta, sea formato rápido (cells) o viejo (grilla).
+        const numFrom = (json: any, a1?: string): number => {
+            if (!a1 || !json) return 0;
+            if (json.cells && json.cells[a1]) {
+                const c = json.cells[a1];
+                return typeof c.value === 'number' ? c.value : ProductionService._numVal(c.display ?? c.value);
+            }
+            const grid = (json.values?.length ? json.values : json.display) || [];
+            return ProductionService._readCellNumber(grid, a1);
+        };
+        // Lee la tasa como % (de display "1,65%" → 1.65; de crudo 0.0165 → 1.65).
+        const tasaFrom = (json: any, a1?: string): number => {
+            if (!a1 || !json) return 0;
+            let t = 0;
+            if (json.cells && json.cells[a1]) t = ProductionService._numVal(json.cells[a1].display ?? json.cells[a1].value);
+            else t = ProductionService._readCellNumber(json.display || [], a1);
+            return t > 0 && t < 1 ? t * 100 : t;
+        };
+        // Texto crudo de una celda (para detectar errores/avisos de la hoja).
+        const dispStr = (json: any, a1?: string): string => {
+            if (!a1 || !json) return '';
+            if (json.cells && json.cells[a1]) return String(json.cells[a1].display ?? json.cells[a1].value ?? '');
+            const rc = ProductionService._a1ToRC(a1);
+            return rc ? String((json.display || [])?.[rc[0]]?.[rc[1]] ?? '') : '';
+        };
+        // ¿La celda trae un error/aviso determinista de la hoja? (edad/plazo no permitido, etc.)
+        const isNotViable = (s: string) => /#|permit|no viable|no se atien|no aplica|no elegible/i.test(s || '');
+
+        // Apps Script a veces responde el doGet (redirect 302 intermitente) → reintentamos.
+        const runMotor = async (inputArr: any[]) => {
+            const payload = JSON.stringify({ templateId: cfg.googleSheetId, inputs: inputArr, outputs: outCells, outputsSheet: cfg.sheetTab || undefined, clear: cfg.clearRanges || [] });
+            let last: any = null, err = '';
+            for (let attempt = 0; attempt < 6; attempt++) {
+                try {
+                    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anon}` }, body: payload });
+                    const json = await resp.json();
+                    if (json?.error) { err = json.error; continue; }
+                    last = json;
+                    if (numFrom(json, cfg.outputCells.monto)) return { json, err: '' };
+                    // Error determinista de la hoja (no transitorio) → no reintentar.
+                    if (isNotViable(dispStr(json, cfg.outputCells.monto))) return { json, err: 'NOT_VIABLE' };
+                    err = 'El motor no devolvió resultados (reintentando)';
+                } catch (e: any) { err = e?.message || 'Error de red con el motor'; }
+            }
+            return { json: last, err };
+        };
+
+        let { json, err: lastErr } = await runMotor(inputs);
+        let monto = numFrom(json, cfg.outputCells.monto);
+
+        // Si falló y se envió pagaduría, reintentar SIN ella: a veces el nombre que manda
+        // Skala no coincide con la lista de la hoja → #N/A. La pagaduría casi no cambia el
+        // resultado, así que usar la default válida de la hoja es preferible a fallar.
+        const pagCells = (cfg.inputCells.pagaduria || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (!monto && pagCells.length && extra?.pagaduria) {
+            const r2 = await runMotor(inputs.filter(i => !pagCells.includes(i.a1)));
+            json = r2.json; lastErr = r2.err || lastErr;
+            monto = numFrom(json, cfg.outputCells.monto);
+        }
+
+        const desembolso = numFrom(json, cfg.outputCells.desembolso);
+        if (!monto) {
+            if (lastErr === 'NOT_VIABLE' || isNotViable(dispStr(json, cfg.outputCells.monto)))
+                throw new Error('La entidad no permite estas condiciones para este cliente (revisa la edad o el plazo).');
+            throw new Error(lastErr || 'El motor no devolvió un monto válido. Revisa el mapa de celdas en Administrar.');
+        }
+
+        // Tasa: si la hoja la calcula, la leemos; si no, la del producto.
+        const rate = tasaFrom(json, cfg.outputCells.tasa) || Number(product.rate || 0);
+
+        return {
+            monto: Math.floor(monto),
+            desembolso: Math.floor(desembolso || monto),
+            comision: Number(product.comision || 0),
+            rate,
+            discountPct: Number(product.discountPct || 0),
+            tasaLabel: product.nombre,
+        };
     },
 
     // Pide a la Edge Function la config firmada (JWT) de OnlyOffice para un simulador.

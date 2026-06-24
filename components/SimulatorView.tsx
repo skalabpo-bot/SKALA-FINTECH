@@ -84,6 +84,7 @@ const inputCls = 'w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded
 export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel, creditTypeId, assignedGestorId }) => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.PAYSTUB_UPLOAD);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [configuratorKey, setConfiguratorKey] = useState(0); // remonta el configurador solo con análisis nuevo
   const [loanConfig, setLoanConfig] = useState<LoanConfiguration | null>(null);
   const [simulations, setSimulations] = useState<SimulationResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -165,11 +166,24 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
 
   const handleAnalysisComplete = (result: AnalysisResult) => {
     setAnalysisResult(result);
+    setConfiguratorKey(k => k + 1); // configurador fresco para este análisis (re-init de cuota, etc.)
     setCurrentStep(AppStep.CONFIGURE_LOAN);
   };
 
-  const handleSimulate = async (config: LoanConfiguration) => {
+  const handleSimulate = async (config: LoanConfiguration, excelResults?: SimulationResult[], selIdx?: number | null) => {
     if (!analysisResult) return;
+
+    // ── MODO EXCEL: las cards ya se calcularon en Parametrización; no recalculamos.
+    if (config.calcMode === 'excel') {
+      setLoanConfig(config);
+      setSimulations(excelResults || []);
+      setSelectedSimIdx(selIdx ?? (excelResults && excelResults.length === 1 ? 0 : null));
+      setLineaCredito('');
+      setExcelCalcError(null);
+      setCurrentStep(AppStep.RESULTS);
+      return;
+    }
+
     setIsProcessing(true);
     try {
       const fpmTable = await getFPMTable();
@@ -188,6 +202,11 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       setIsProcessing(false);
     }
   };
+
+  // Estado del cálculo con el Excel real (modo excel)
+  // (El cálculo del simulador ahora ocurre en Parametrización; aquí solo se usan las cards.)
+  const [excelCalcLoading] = useState(false);
+  const [excelCalcError, setExcelCalcError] = useState<string | null>(null);
 
   const handleReconfigure = () => setCurrentStep(AppStep.CONFIGURE_LOAN);
 
@@ -266,11 +285,15 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     const fromSim: Record<string, any> = sim
       ? {
           monto: sim.maxAmount,
-          montoDesembolso: calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000),
+          montoDesembolso: sim.calcMode === 'excel'
+            ? (sim.disbursementOverride ?? sim.maxAmount)
+            : calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000),
           plazo: sim.term,
           tasa: sim.rate,
           entidadAliada: sim.entityName,
-          lineaCredito: lineaCredito || sim.product,
+          lineaCredito: lineaCredito || (sim.calcMode === 'excel' ? (PRODUCT_TO_LINE[sim.product] || '') : sim.product),
+          // Modo excel: la comisión la define el producto/tasa elegido (la respeta createCredit)
+          ...(sim.calcMode === 'excel' && sim.commissionPct != null ? { comisionPct: sim.commissionPct } : {}),
         }
       : loanConfig
       ? {
@@ -294,7 +317,11 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
 
     const fromPayroll: Record<string, any> = {
       tipoDesembolso: mapPaymentMethod(paymentMethod),
-      ...(employerName ? { pagaduria: employerName } : {}),
+      // Pagaduría OFICIAL = la que el asesor eligió en el gate inicial (coincide con la
+      // lista del sistema). El nombre que leyó la IA del desprendible se guarda aparte
+      // para trazabilidad, pero NO se usa como pagaduría (variaba y no coincidía).
+      ...((selectedPagaduria || employerName) ? { pagaduria: selectedPagaduria || employerName } : {}),
+      ...(employerName && employerName !== selectedPagaduria ? { empleadorDetectado: employerName } : {}),
       ...(analysisResult ? { cuotaDisponible: analysisResult.availableQuota + (loanConfig?.buyoutQuota || 0) } : {}),
       ...(loanConfig?.customQuota != null ? { cuotaUtilizar: loanConfig.customQuota } : {}),
       ...(tipoPension ? { tipoPension } : {}),
@@ -532,7 +559,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       {/* Paso 3: Configurar */}
       {currentStep === AppStep.CONFIGURE_LOAN && analysisResult && (
         <LoanConfigurator
-          key={Date.now()}
+          key={configuratorKey}
           analysis={analysisResult}
           onSimulate={handleSimulate}
           onBack={() => setCurrentStep(AppStep.PAYSTUB_UPLOAD)}
@@ -541,9 +568,15 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         />
       )}
 
-      {/* Paso 4: Resultados */}
+      {/* Paso 4: Resultados — las cards ya vienen calculadas desde Parametrización */}
       {currentStep === AppStep.RESULTS && analysisResult && loanConfig && (
         <div className="space-y-6">
+          {loanConfig.calcMode === 'excel' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 font-semibold">
+              ⚠️ Los valores son calculados con el simulador de la entidad; pueden variar en la radicación final.
+            </div>
+          )}
+
           <SimulationResults
             analysis={analysisResult}
             config={loanConfig}
@@ -587,6 +620,39 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               {/* Tarjeta única de la mejor oferta */}
               {selectedSimIdx !== null && (() => {
                 const sim = simulations[selectedSimIdx];
+
+                // ── MODO EXCEL: monto y desembolso vienen del simulador real ──
+                if (sim.calcMode === 'excel') {
+                  const cardBgX = `linear-gradient(135deg, ${entityCalc.primaryColor}, ${entityCalc.secondaryColor})`;
+                  const framePanelBgX = frameBg(entityCalc.frameColor, 0.82);
+                  const desembolsoX = sim.disbursementOverride ?? sim.maxAmount;
+                  return (
+                    <div style={{ background: cardBgX }} className="relative rounded-2xl p-6 text-white shadow-xl">
+                      <div className="absolute top-4 right-4"><CheckCircle2 size={22} className="text-white/80" /></div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-0.5">{sim.entityName}</p>
+                      <p className="text-base font-black">{sim.displayLabel || 'Simulador real'}</p>
+
+                      <div className="mt-4 mb-5">
+                        <p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Monto a Financiar</p>
+                        <p className="text-4xl font-mono font-extrabold">{fmt(sim.maxAmount)}</p>
+                      </div>
+
+                      <div style={{ background: framePanelBgX }} className="rounded-xl p-4 mb-4">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="font-black uppercase tracking-wide">A Desembolsar</span>
+                          <span className="font-black text-base">{fmt(desembolsoX)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between text-[11px] font-black opacity-80">
+                        <span>{sim.term} meses</span>
+                        <span>{sim.rate}% M.V.</span>
+                        {sim.commissionPct != null && <span>Comisión {sim.commissionPct}%</span>}
+                      </div>
+                    </div>
+                  );
+                }
+
                 const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
                 const seguroAval = Math.floor(sim.maxAmount * (sim.discountPct / 100));
                 const base = sim.maxAmount - seguroAval;
@@ -939,7 +1005,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       {/* Modal de confirmación antes de radicar */}
       {showConfirmRadicar && selectedSimIdx !== null && (() => {
         const sim = simulations[selectedSimIdx];
-        const disbursement = calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
+        const disbursement = sim.calcMode === 'excel'
+          ? (sim.disbursementOverride ?? sim.maxAmount)
+          : calculateDisbursement(sim.maxAmount, sim.discountPct, paymentMethod, entityCalc.cashFee, entityCalc.bankFee, entityCalc.aplica4x1000);
         return (
           <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-4 backdrop-blur-lg animate-fade-in">
             <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
@@ -961,7 +1029,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-slate-500 font-bold">Producto</span>
-                  <span className="text-sm font-black text-slate-800">{sim.product}</span>
+                  <span className="text-sm font-black text-slate-800">{sim.calcMode === 'excel' ? (sim.displayLabel || 'Simulador real') : sim.product}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-slate-500 font-bold">Monto Aprobado</span>
