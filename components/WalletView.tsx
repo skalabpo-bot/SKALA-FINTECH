@@ -112,6 +112,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ currentUser, onBack }) =
             <Wallet size={22} className="text-amber-500" /> Mi Billetera
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">Solo créditos desembolsados con comisión pendiente</p>
+          <p className="text-[10px] text-amber-600 font-bold mt-0.5">⚠️ Comisiones estimadas/aproximadas — pueden variar según las condiciones finales del crédito.</p>
         </div>
       </div>
 
