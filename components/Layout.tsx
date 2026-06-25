@@ -187,9 +187,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
           <NavItem view="notifications" icon={Bell} label="Notificaciones" badge={unreadCount} />
           {MockService.hasPermission(currentUser, 'CREATE_CREDIT') && <NavItem view="simulator" icon={PlusCircle} label="Nuevo Crédito" />}
           <NavItem view="credits" icon={FileText} label="Bandeja" />
-          {/* Academia: SOLO en hosts de prueba (localhost / *.netlify.app). Oculta en skalapp.co hasta aprobar.
-              Para abrirla a producción: cambiar isTestHost por hasPermission(currentUser,'VIEW_ACADEMIA'). */}
-          {(() => { const h = window.location.hostname; const isTestHost = h === 'localhost' || h === '127.0.0.1' || h.endsWith('.netlify.app'); return isTestHost && MockService.hasPermission(currentUser, 'VIEW_ACADEMIA'); })() && <NavItem view="academia" icon={GraduationCap} label="Academia" />}
+          {/* Academia: abierta a producción — visible para cualquier rol con permiso VIEW_ACADEMIA. */}
+          {MockService.hasPermission(currentUser, 'VIEW_ACADEMIA') && <NavItem view="academia" icon={GraduationCap} label="Academia" />}
           {(currentUser.role === 'SUPERVISOR_ASIGNADO' || currentUser.role === 'ADMIN') && <NavItem view="team" icon={Users} label={currentUser.role === 'ADMIN' ? 'Equipos' : 'Mi Equipo'} />}
           
           {MockService.hasPermission(currentUser, 'MANAGE_NEWS') && <NavItem view="news" icon={Megaphone} label="Novedades" />}
