@@ -203,6 +203,16 @@ export const AdminDashboard: React.FC = () => {
     await Promise.all([refreshEntityFactors(ent.name), loadEntityPolicy(ent.name)]);
   };
 
+  const toggleEntityActive = async (ent: FinancialEntity) => {
+    const next = ent.isActive === false; // estaba apagada → encender; estaba activa → apagar
+    try {
+      await saveEntity({ ...ent, isActive: next }, ent.id);
+      await refreshGlobalData();
+    } catch (err: any) {
+      showAlert('No se pudo cambiar el estado de la entidad: ' + (err.message || err), 'Error');
+    }
+  };
+
   const handleSaveEntityBranding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEntity.name) return showAlert("El nombre de la entidad es obligatorio.", "Validación");
@@ -619,6 +629,9 @@ export const AdminDashboard: React.FC = () => {
                                     {ent.logoUrl ? <img src={ent.logoUrl} className="w-full h-full object-contain" /> : <span className="font-bold text-slate-300 text-xl">{ent.name[0]}</span>}
                                 </div>
                                 <div className="flex gap-2">
+                                    <button onClick={() => toggleEntityActive(ent)} className={`p-2 rounded-full transition-colors ${ent.isActive === false ? 'text-slate-400 hover:bg-slate-100' : 'text-emerald-600 hover:bg-emerald-50'}`} title={ent.isActive === false ? 'Encender (permitir radicar)' : 'Apagar (bloquear radicación)'}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" /></svg>
+                                    </button>
                                     <button onClick={() => startEditEntity(ent)} className="text-primary-600 hover:bg-primary-50 p-2 rounded-full transition-colors" title="Editar">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                                     </button>
@@ -630,6 +643,7 @@ export const AdminDashboard: React.FC = () => {
                             <div className="flex items-center gap-2 mb-1">
                               <h4 className="font-bold text-slate-800 text-lg">{ent.name}</h4>
                               {entitiesWithPolicy.has(ent.name) && <span className="text-[8px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded font-bold">IA</span>}
+                              {ent.isActive === false && <span className="text-[8px] px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded font-bold">🚫 APAGADA</span>}
                             </div>
                             <div className="w-full h-2 rounded-full mb-3 shadow-inner" style={{background: `linear-gradient(to right, ${ent.primaryColor}, ${ent.secondaryColor})`}}></div>
                           </div>
@@ -928,6 +942,29 @@ export const AdminDashboard: React.FC = () => {
                                   {editingEntity.requiresFullForm
                                     ? 'El gestor llena TODOS los datos antes de radicar. El cliente queda completo desde el inicio.'
                                     : 'El gestor radica con datos mínimos (cédula + desprendible). El resto se llena después.'}
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+
+                          {/* Entidad activa / apagada */}
+                          <div className={`p-4 rounded-xl border ${editingEntity.isActive === false ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                            <h5 className={`text-xs font-bold uppercase tracking-wide mb-2 ${editingEntity.isActive === false ? 'text-red-800' : 'text-emerald-800'}`}>Estado de la entidad</h5>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editingEntity.isActive !== false}
+                                onChange={e => setEditingEntity({...editingEntity, isActive: e.target.checked})}
+                                className="w-4 h-4 mt-0.5 accent-emerald-500"
+                              />
+                              <div>
+                                <p className={`text-sm font-bold ${editingEntity.isActive === false ? 'text-red-900' : 'text-emerald-900'}`}>
+                                  {editingEntity.isActive === false ? '🚫 Apagada (no se puede radicar)' : '✅ Activa (permite radicar)'}
+                                </p>
+                                <p className={`text-[11px] ${editingEntity.isActive === false ? 'text-red-700' : 'text-emerald-700'}`}>
+                                  {editingEntity.isActive === false
+                                    ? 'La entidad NO aparece para los asesores y se bloquea cualquier radicación con ella. Reactívala cuando quieras.'
+                                    : 'La entidad aparece en el simulador y los asesores pueden radicar con ella.'}
                                 </p>
                               </div>
                             </label>

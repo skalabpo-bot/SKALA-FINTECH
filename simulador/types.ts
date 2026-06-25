@@ -26,6 +26,7 @@ export interface FinancialEntity {
   cardFrameColor?: string; // 3er color: marcos/paneles internos de las tarjetas
   creditTypeIds?: string[]; // Tipos de crédito que atiende (UUIDs de credit_types)
   validationUrl?: string; // URL de validación de identidad del cliente (centrales de riesgo)
+  isActive?: boolean; // Si false, la entidad está APAGADA: no aparece al asesor ni permite radicar (default true)
 }
 
 export interface FPMEntry {

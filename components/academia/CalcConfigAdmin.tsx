@@ -19,6 +19,7 @@ const emptyCfg = (entityName: string): EntityCalcConfig => ({
   inputCells: { cuota: '', plazo: '', fechaNacimiento: '', pagaduria: '', tipo: '' },
   outputCells: { monto: '', desembolso: '' },
   products: [emptyProduct()],
+  commissionByRate: {},
   isActive: true,
 });
 
@@ -46,6 +47,9 @@ export const CalcConfigAdmin: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string>('');
 
+  // Tabla tasa→comisión (editada como filas; se convierte a objeto al guardar)
+  const [commRows, setCommRows] = useState<{ tasa: string; comision: string }[]>([]);
+
   useEffect(() => {
     getAllEntities()
       .then((e: any[]) => { const names = (e || []).map(x => x.name); setEntities(names); if (names[0]) setEntity(names[0]); })
@@ -57,8 +61,10 @@ export const CalcConfigAdmin: React.FC = () => {
     if (!entity) return;
     setMsg(''); setTestResult('');
     MockService.getEntityCalcConfig(entity).then((c: EntityCalcConfig | null) => {
-      setCfg(c || emptyCfg(entity));
-      setTestProduct(c?.products?.[0]?.nombre || '');
+      const cc = c || emptyCfg(entity);
+      setCfg(cc);
+      setTestProduct(cc?.products?.[0]?.nombre || '');
+      setCommRows(Object.entries(cc.commissionByRate || {}).map(([t, v]) => ({ tasa: String(t), comision: String(v) })));
     });
   }, [entity]);
 
@@ -110,10 +116,13 @@ export const CalcConfigAdmin: React.FC = () => {
     if (!cfg) return;
     setSaving(true); setMsg('');
     try {
-      await MockService.saveEntityCalcConfig({ ...cfg, googleSheetId: extractSheetId(cfg.googleSheetId) });
+      // Construir la tabla tasa→comisión desde las filas (solo tasas válidas)
+      const commissionByRate: Record<string, number> = {};
+      commRows.forEach(r => { const t = parseFloat(r.tasa); if (!isNaN(t)) commissionByRate[String(t)] = Number(r.comision) || 0; });
+      await MockService.saveEntityCalcConfig({ ...cfg, commissionByRate, googleSheetId: extractSheetId(cfg.googleSheetId) });
       setMsg('✓ Guardado');
       const fresh = await MockService.getEntityCalcConfig(entity);
-      if (fresh) setCfg(fresh);
+      if (fresh) { setCfg(fresh); setCommRows(Object.entries(fresh.commissionByRate || {}).map(([t, v]) => ({ tasa: String(t), comision: String(v) }))); }
     } catch (e: any) { setMsg(e.message || 'Error al guardar'); }
     finally { setSaving(false); }
   };
@@ -213,12 +222,12 @@ export const CalcConfigAdmin: React.FC = () => {
       {/* Productos */}
       <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Productos (cada tasa = una comisión)</p>
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Productos (variantes/tasas del simulador) · la comisión se define abajo por tasa</p>
           <button onClick={addProduct} className="flex items-center gap-1 text-xs font-bold text-primary hover:text-orange-600"><Plus size={14} /> Producto</button>
         </div>
         {cfg.products.map((p, i) => (
           <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div className="col-span-2 sm:col-span-1">
                 <label className={lbl}>Nombre</label>
                 <input value={p.nombre} onChange={e => patchProduct(i, { nombre: e.target.value })} placeholder="1.5% NMV" className={inp} />
@@ -226,10 +235,6 @@ export const CalcConfigAdmin: React.FC = () => {
               <div>
                 <label className={lbl}>Tasa</label>
                 <input type="number" step="0.01" value={p.rate} onChange={e => patchProduct(i, { rate: Number(e.target.value) })} className={`${inp} font-mono`} />
-              </div>
-              <div>
-                <label className={lbl}>Comisión %</label>
-                <input type="number" step="0.01" value={p.comision} onChange={e => patchProduct(i, { comision: Number(e.target.value) })} className={`${inp} font-mono`} />
               </div>
               <div>
                 <label className={lbl}>Seg+Aval % (info)</label>
@@ -263,6 +268,34 @@ export const CalcConfigAdmin: React.FC = () => {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Comisiones por tasa (se emparejan con la tasa usada al radicar) */}
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-black text-emerald-800 uppercase tracking-widest">Comisiones por tasa</p>
+            <p className="text-[11px] text-emerald-700 mt-0.5">Escribe la comisión (%) de cada tasa. Al radicar/editar, la comisión se empareja con la tasa que use el simulador.</p>
+          </div>
+          <button onClick={() => setCommRows(r => [...r, { tasa: '', comision: '' }])} className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"><Plus size={14} /> Tasa</button>
+        </div>
+        <div className="space-y-2">
+          {commRows.length === 0 && <p className="text-[11px] text-slate-400 italic">Sin comisiones. Agrega una tasa (ej. 1.5 → 3%).</p>}
+          {commRows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div className="relative w-28">
+                <input type="number" step="0.01" value={row.tasa} onChange={e => setCommRows(rows => rows.map((r, j) => j === i ? { ...r, tasa: e.target.value } : r))} placeholder="Tasa" className="w-full px-2 py-1.5 pr-6 bg-white border border-emerald-200 rounded-lg text-sm font-mono outline-none focus:border-emerald-500" />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+              </div>
+              <span className="text-slate-300">→</span>
+              <div className="relative w-28">
+                <input type="number" step="0.01" value={row.comision} onChange={e => setCommRows(rows => rows.map((r, j) => j === i ? { ...r, comision: e.target.value } : r))} placeholder="Comisión" className="w-full px-2 py-1.5 pr-6 bg-white border border-emerald-200 rounded-lg text-sm font-mono outline-none focus:border-emerald-500" />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+              </div>
+              <button onClick={() => setCommRows(rows => rows.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Guardar */}

@@ -347,6 +347,22 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
           </div>
         </div>
 
+        {/* Reintentar cálculo — disponible tras leer un desprendible (por si el cálculo salió mal) */}
+        {hasUploadedPaystub && lastFile && !isAnalizing && (
+          <div className="flex justify-center -mt-2">
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 text-xs font-bold rounded-xl transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              Reintentar cálculo (vuelve a leer el desprendible)
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-lg text-sm flex items-center gap-3 animate-fade-in shadow-sm">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">

@@ -565,6 +565,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           onBack={() => setCurrentStep(AppStep.PAYSTUB_UPLOAD)}
           selectedPagaduria={selectedPagaduria}
           selectedCreditTypeId={creditTypeId}
+          paystubFile={paystubFile}
+          onCupoRecalculated={(r) => setAnalysisResult(r)}
         />
       )}
 

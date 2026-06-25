@@ -121,7 +121,9 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           getRadicacionAbierta(),
         ]);
         if (!cancelled) {
-          dispatch({ type: 'SET_CACHED_DATA', entities, fpmTable, smmlv, radicacionAbierta });
+          // El asesor solo ve entidades ACTIVAS (las apagadas en admin no aparecen ni se pueden radicar).
+          const activeEntities = entities.filter(e => e.isActive !== false);
+          dispatch({ type: 'SET_CACHED_DATA', entities: activeEntities, fpmTable, smmlv, radicacionAbierta });
         }
       } catch (e) {
         console.error('Error loading simulator data:', e);

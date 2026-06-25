@@ -81,6 +81,7 @@ export interface EntityCalcConfig {
   outputCells: { monto?: string; desembolso?: string; [k: string]: string | undefined };
   products: EntityCalcProduct[];
   clearRanges?: string[];  // rangos pesados a limpiar en la copia de trabajo (ej. "Hoja!A30:M214") → motor más rápido
+  commissionByRate?: Record<string, number>; // tabla tasa(%)→comisión(%): la comisión se empareja por la tasa usada
   isActive: boolean;
 }
 

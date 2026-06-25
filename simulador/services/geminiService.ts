@@ -291,8 +291,41 @@ export const analyzePaystubDocument = async (
     CAMPO 8 — manualQuota
     SOLO aplicable si entityType es "CREMIL" o "CASUR".
     Los desprendibles de CREMIL y CASUR frecuentemente muestran el CUPO DISPONIBLE directamente, que es el valor que el pensionado tiene libre para endeudarse.
-    Busca etiquetas como: "Cupo Disponible", "Cupo Libre", "Cupo Autorizado", "Cupo para Libranza", "Disponible Libranza", "Saldo Cupo".
+    Busca etiquetas como: "Cupo Disponible", "Cupo Libre", "Cupo Autorizado", "Cupo para Libranza", "Disponible Libranza", "Saldo Cupo", o frases tipo "puede comprometer hasta $X".
     Si encuentras este valor en un desprendible CREMIL o CASUR, ponlo aquí. De lo contrario, pon 0.
+
+    ──────────────────────────────────────────────────────────────
+    REGLAS POR PAGADURÍA / RÉGIMEN (clasifica bien cada cifra; de esto depende la capacidad)
+    Después se calcula la capacidad así: (devengado − deducciones de ley) × 50% − otras deducciones.
+    Por eso es CRÍTICO ubicar cada valor en el campo correcto según la pagaduría del documento:
+
+    • POLICÍA NACIONAL / FUERZAS MILITARES EN SERVICIO ACTIVO:
+      En monthlyIncome (devengado) NO incluyas prima de orden público, bonificaciones, prima de
+      riesgo, viáticos ni asignaciones variables u ocasionales. Solo ingresos CONSTANTES
+      (asignación básica / sueldo / haber). El "incremento" o "distinción" se incluye SOLO si
+      aparece igual en los dos últimos desprendibles. En mandatoryDeductions incluye los aportes
+      institucionales obligatorios además de salud: CASUR/APOAFP, CAPROVIMPO, APOEPS.
+
+    • CASUR (Caja de Sueldos de Retiro – Policía):
+      En mandatoryDeductions incluye, además de salud, el 1% (CasurAutom) y el 4% (Servimedi);
+      son aportes obligatorios que se restan ANTES del 50%.
+
+    • CREMIL (Caja de Retiro de las Fuerzas Militares):
+      Régimen Ley 50 (sobre el bruto). Reporta igualmente salud/pensión en mandatoryDeductions si
+      aparecen; el motor decide el régimen. NO confundir CREMIL con CASUR.
+
+    • PENSIONADOS (Colpensiones, FOPEP, Fiduprevisora/FOMAG, Mapfre, Porvenir, Protección,
+      Asulado, SURA, Colfondos, Seguros Bolívar, Andina Vida, BBVA Seguros, Positiva, Colpensiones):
+      mandatoryDeductions = SOLO salud (los pensionados NO aportan a pensión). Todo lo demás
+      (libranzas, cooperativas, seguros, créditos) va en otherDeductions y en detailedDeductions.
+
+    • SEGUROS ALFA: ten en cuenta que esta pagaduría reserva un 2% adicional (caja de
+      compensación). No alteres las cifras; solo extrae fiel — el motor aplica ese 2%.
+
+    Regla general: lo que es aporte de LEY/obligatorio va en mandatoryDeductions; los descuentos
+    por libranzas/créditos/seguros/cooperativas van SIEMPRE en otherDeductions + detailedDeductions.
+    Nunca mezcles ambos. Si dudas de un valor, no lo inventes.
+    ──────────────────────────────────────────────────────────────
 
     Retorna SOLO JSON válido. Sin markdown, sin explicaciones.
   `;

@@ -376,6 +376,57 @@ export const ProductionService = {
             }
         }
 
+        // Validar CORREO duplicado: no permitir radicar si ya existe un crédito del mismo
+        // correo en un estado NO final, MISMA pagaduría (igual que la regla de cédula: se
+        // permite otro crédito solo si es con una pagaduría diferente). Si no hay correo, no valida.
+        {
+            const correo = (rest.correo || rest.email || '').toString().trim().toLowerCase();
+            if (correo) {
+                const { data: emailCredits } = await supabase
+                    .from('credits')
+                    .select('id, status_id, client_data')
+                    .filter('client_data->>correo', 'ilike', correo);
+                if (emailCredits && emailCredits.length > 0) {
+                    const finalStateIds = states.filter(s => s.isFinal).map(s => s.id);
+                    const activeByEmail = emailCredits.filter((c: any) => {
+                        const existingEmail = (c.client_data?.correo || c.client_data?.email || '').toString().trim().toLowerCase();
+                        return existingEmail === correo && !finalStateIds.includes(c.status_id);
+                    });
+                    if (activeByEmail.length > 0) {
+                        const newPagaduria = (rest.pagaduria || '').toString().trim().toUpperCase();
+                        const conflict = activeByEmail.find((c: any) => {
+                            const existingPagaduria = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
+                            return !existingPagaduria || !newPagaduria || existingPagaduria === newPagaduria;
+                        });
+                        if (conflict) {
+                            const stName = states.find(s => s.id === conflict.status_id)?.name || 'en trámite';
+                            const nom = (conflict.client_data?.nombreCompleto || conflict.client_data?.fullName || `${conflict.client_data?.nombres || ''} ${conflict.client_data?.apellidos || ''}`).toString().trim();
+                            const existingPag = (conflict.client_data?.pagaduria || '');
+                            throw new Error(
+                                `Ya existe un crédito en trámite con el correo ${correo}` +
+                                (nom ? ` (cliente: ${nom})` : '') +
+                                (existingPag ? ` con pagaduría ${existingPag}` : '') +
+                                ` (estado: ${stName}). Solo puedes radicar otro crédito con el mismo correo si es con una pagaduría diferente.`
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validar ENTIDAD apagada: si la entidad está desactivada (is_active=false) en el admin,
+        // no se permite radicar con ella (refuerzo autoritativo del filtro de UI).
+        if (entidadAliada) {
+            const { data: entRow } = await supabase
+                .from('financial_entities')
+                .select('is_active')
+                .eq('name', entidadAliada)
+                .maybeSingle();
+            if (entRow && entRow.is_active === false) {
+                throw new Error(`La entidad ${entidadAliada} está apagada actualmente y no permite radicar. Selecciona otra entidad o pide a un administrador que la reactive.`);
+            }
+        }
+
         const nombres = rest.nombres || '';
         const apellidos = rest.apellidos || '';
         const nombreCompleto = (nombres || apellidos) ? `${nombres} ${apellidos}`.trim() : (rest.nombreCompleto || '');
@@ -600,8 +651,12 @@ export const ProductionService = {
         let commPercent = 0;
         try {
             const cfg = await ProductionService.getEntityCalcConfig(entityName);
-            const p = cfg?.products?.find((pr: any) => Number(pr.rate) === Number(finalTasa));
-            if (p && p.comision != null) commPercent = Number(p.comision);
+            const m = ProductionService._commissionForRate(cfg?.commissionByRate, finalTasa);
+            if (m != null) commPercent = m; // tabla tasa→comisión (match)
+            else {
+                const p = cfg?.products?.find((pr: any) => Number(pr.rate) === Number(finalTasa));
+                if (p && p.comision != null) commPercent = Number(p.comision);
+            }
         } catch (_) {}
         if (!commPercent) {
             try {
@@ -1552,8 +1607,18 @@ export const ProductionService = {
         outputCells: r.output_cells || {},
         products: Array.isArray(r.products) ? r.products : [],
         clearRanges: Array.isArray(r.clear_ranges) ? r.clear_ranges : [],
+        commissionByRate: r.commission_by_rate || {},
         isActive: r.is_active !== false,
     }),
+
+    // Empareja una tasa (%) con la tabla comisión-por-tasa (tolerancia para decimales).
+    _commissionForRate: (map: Record<string, number> | undefined, rate: number): number | null => {
+        if (!map || !rate) return null;
+        for (const k of Object.keys(map)) {
+            if (Math.abs(Number(k) - Number(rate)) < 0.01) return Number(map[k]);
+        }
+        return null;
+    },
 
     // Config de cálculo de una entidad (null si no tiene → usa factores).
     getEntityCalcConfig: async (entityName: string): Promise<EntityCalcConfig | null> => {
@@ -1578,6 +1643,7 @@ export const ProductionService = {
             output_cells: cfg.outputCells || {},
             products: cfg.products || [],
             clear_ranges: cfg.clearRanges || [],
+            commission_by_rate: cfg.commissionByRate || {},
             is_active: cfg.isActive !== false,
             updated_at: new Date().toISOString(),
         };
@@ -1740,11 +1806,14 @@ export const ProductionService = {
 
         // Tasa: si la hoja la calcula, la leemos; si no, la del producto.
         const rate = tasaFrom(json, cfg.outputCells.tasa) || Number(product.rate || 0);
+        // Comisión: se EMPAREJA por la tasa usada con la tabla comisión-por-tasa; si no
+        // hay match, cae a la del producto.
+        const comision = ProductionService._commissionForRate(cfg.commissionByRate, rate) ?? Number(product.comision || 0);
 
         return {
             monto: Math.floor(monto),
             desembolso: Math.floor(desembolso || monto),
-            comision: Number(product.comision || 0),
+            comision,
             rate,
             discountPct: Number(product.discountPct || 0),
             tasaLabel: product.nombre,

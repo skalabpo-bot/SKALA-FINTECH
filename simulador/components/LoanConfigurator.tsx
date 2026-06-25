@@ -7,6 +7,7 @@ import { entityCardGradient } from '../services/colorUtils';
 import { useSimulator } from '../context/SimulatorContext';
 import { MockService } from '../../services/mockService';
 import { EntityCalcConfig } from '../../types';
+import { recalcCuotaDisponible } from '../services/paystubAnalysis';
 
 interface LoanConfiguratorProps {
   analysis: AnalysisResult;
@@ -14,15 +15,37 @@ interface LoanConfiguratorProps {
   onBack: () => void;
   selectedPagaduria?: string;
   selectedCreditTypeId?: string;
+  paystubFile?: File | null;
+  onCupoRecalculated?: (result: AnalysisResult) => void;
 }
 
-export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria, selectedCreditTypeId }) => {
-  const { state: { entities, fpmTable } } = useSimulator();
+export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria, selectedCreditTypeId, paystubFile, onCupoRecalculated }) => {
+  const { state: { entities, fpmTable, smmlv } } = useSimulator();
 
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
   const [selectedTerm, setSelectedTerm] = useState<number | null>(null);
   const [cushion, setCushion] = useState<number>(0);
   const [customQuota, setCustomQuota] = useState<number>(analysis.availableQuota);
+  const [recalcLoading, setRecalcLoading] = useState(false);
+  const [recalcErr, setRecalcErr] = useState<string | null>(null);
+
+  // Si el cupo se recalcula (re-leyendo el desprendible), sincroniza la cuota editable.
+  useEffect(() => { setCustomQuota(analysis.availableQuota); }, [analysis.availableQuota]);
+
+  // Reintentar el cálculo de la CUOTA DISPONIBLE (re-lee el desprendible y recalcula la capacidad de ley).
+  const handleRecalcCupo = async () => {
+    // Sin archivo de desprendible (entrada manual) → ir a corregir al paso de nómina.
+    if (!paystubFile || !onCupoRecalculated) { onBack(); return; }
+    setRecalcLoading(true); setRecalcErr(null);
+    try {
+      const result = await recalcCuotaDisponible(paystubFile, selectedPagaduria, smmlv);
+      onCupoRecalculated(result);
+    } catch (e: any) {
+      setRecalcErr('No se pudo recalcular el cupo. Reintenta o corrige manualmente.');
+    } finally {
+      setRecalcLoading(false);
+    }
+  };
 
   // ── Motor de cálculo por entidad (modo excel) ──────────────────────────────
   const [calcConfigs, setCalcConfigs] = useState<Record<string, EntityCalcConfig>>({});
@@ -317,6 +340,27 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                <span className="font-mono font-bold text-red-400">- {formatCurrency(analysis.others + analysis.embargos)}</span>
              </div>
           </div>
+
+          {/* Reintentar el cálculo de la CUOTA DISPONIBLE (re-lee el desprendible y recalcula la capacidad de ley) */}
+          <button
+            type="button"
+            onClick={handleRecalcCupo}
+            disabled={recalcLoading}
+            className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-60"
+            title={paystubFile ? 'Vuelve a leer el desprendible y recalcula la cuota disponible' : 'Corregir la cuota en el paso anterior'}
+          >
+            {recalcLoading ? (
+              <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></span> Recalculando cupo…</>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                {paystubFile ? 'Reintentar cálculo del cupo' : 'Corregir cupo'}
+              </>
+            )}
+          </button>
+          {recalcErr && <p className="mt-2 text-[11px] text-red-300 font-semibold text-center">{recalcErr}</p>}
         </div>
       </div>
 
@@ -508,7 +552,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Plazo (Meses)</label>
                 {terms.length === 0 ? (
                   <div className="text-center p-4 border-dashed border-2 border-amber-200 rounded-xl text-amber-600 bg-amber-50 text-sm font-medium">
-                    {selectedEntity ? `No hay factores para ${selectedEntity.name}. Configure en Admin.` : 'Seleccione una entidad.'}
+                    {selectedEntity ? `${selectedEntity.name} aún no tiene simulador configurado. Configúrala en Academia → Cálculo.` : 'Seleccione una entidad.'}
                   </div>
                 ) : terms.length <= 12 ? (
                   <div className="flex flex-wrap gap-2">
@@ -772,7 +816,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
               {/* FPM Validation Warning (solo modo factores) */}
               {!isExcelMode && selectedEntity && selectedTerm && !hasFactorsForSelection && (
                 <div className="p-4 bg-amber-50 border-l-4 border-amber-500 text-amber-700 rounded-r-lg text-sm font-medium">
-                  No hay factores FPM para <strong>{selectedEntity.name}</strong> a <strong>{selectedTerm} meses</strong>. Configure los factores en Admin.
+                  <strong>{selectedEntity.name}</strong> aún no está configurada con simulador para <strong>{selectedTerm} meses</strong>. Configúrala en Academia → Cálculo.
                 </div>
               )}
 
