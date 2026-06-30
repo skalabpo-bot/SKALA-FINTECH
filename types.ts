@@ -406,8 +406,8 @@ export type AutomationEvent =
 
 export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; description: string; category: string }[] = [
     // Créditos
-    { value: 'credit_status_change', label: 'Cambio de estado de crédito', description: 'Datos del crédito, cliente, gestor, nuevo estado, motivo', category: 'Créditos' },
-    { value: 'credit_created', label: 'Crédito radicado', description: 'Datos del nuevo crédito, cliente, gestor, monto, entidad, tasa', category: 'Créditos' },
+    { value: 'credit_status_change', label: 'Cambio de estado de crédito', description: 'crédito (monto, desembolso, cuota, tasa, plazo, comisión), cliente, gestor, nuevo estado, motivo', category: 'Créditos' },
+    { value: 'credit_created', label: 'Crédito radicado', description: 'crédito (monto, desembolso, cuota, tasa, plazo, entidad, comisión), cliente, gestor', category: 'Créditos' },
     { value: 'credit_edited', label: 'Crédito editado', description: 'Datos actualizados del crédito y cliente', category: 'Créditos' },
     { value: 'credit_deleted', label: 'Crédito eliminado', description: 'ID del crédito eliminado y quién lo eliminó', category: 'Créditos' },
     // Comunicación

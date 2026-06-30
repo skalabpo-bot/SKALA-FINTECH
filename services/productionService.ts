@@ -608,11 +608,16 @@ export const ProductionService = {
                 correo: rest.correo || ''
             },
             credito: {
-                monto: Number(monto),
+                monto: Number(monto),                                       // monto solicitado / a financiar
+                monto_desembolso: Number(montoDesembolso || monto || 0),     // monto a desembolsar
+                cuota: Number(rest.cuotaUtilizar || rest.cuota || 0),        // cuota mensual usada
                 plazo: Number(plazo),
                 entidad: entidadAliada,
                 tasa: Number(tasa),
-                comision_estimada: commEst
+                comision_estimada: commEst,
+                comision_porcentaje: commPercent,
+                linea_credito: lineaCredito || '',
+                solicitud_number: data.solicitud_number
             }
         });
 
@@ -1227,10 +1232,16 @@ export const ProductionService = {
                 correo: clientData.correo || ''
             },
             credito: {
-                monto: credit?.amount,
+                monto: credit?.amount,                                          // monto solicitado / a financiar
+                monto_desembolso: credit?.disbursement_amount,                  // monto a desembolsar
+                cuota: Number(clientData.cuotaUtilizar || clientData.cuota || 0), // cuota mensual usada
                 plazo: credit?.term,
                 entidad: credit?.entity_name,
-                tasa: credit?.interest_rate
+                tasa: credit?.interest_rate,
+                comision_estimada: credit?.commission_est,
+                comision_porcentaje: credit?.commission_percent,
+                linea_credito: clientData.lineaCredito || '',
+                solicitud_number: credit?.solicitud_number
             }
         });
     },
@@ -2793,13 +2804,15 @@ export const ProductionService = {
             credito: {
                 id: creditId,
                 solicitud_number: creditRow.solicitud_number,
-                monto: Number(creditRow.amount || 0),
+                monto: Number(creditRow.amount || 0),                            // monto solicitado / a financiar
+                monto_desembolso: Number(creditRow.disbursement_amount || 0),    // monto a desembolsar
+                cuota: Number(clientData.cuotaUtilizar || clientData.cuota || 0), // cuota mensual usada
                 plazo: Number(creditRow.term || 0),
                 entidad: creditRow.entity_name,
                 tasa: Number(creditRow.interest_rate || 0),
                 comision_estimada: Number(creditRow.commission_est || 0),
                 comision_porcentaje: Number(creditRow.commission_percent || 0),
-                monto_desembolso: Number(creditRow.disbursement_amount || 0),
+                linea_credito: clientData.lineaCredito || '',
                 estado: creditRow.status_id
             },
             // Marca opcional para que n8n sepa que es disparo manual (no obligatorio procesarla)
