@@ -4000,20 +4000,10 @@ export const ProductionService = {
         const docImages: { name: string; type: string; images: { base64: string; mimeType: string }[] }[] = [];
         for (const doc of docContents) docImages.push({ name: doc.name, type: doc.type, images: await toImages(doc.base64, doc.mimeType, doc.name, 20) });
 
-        // 7. Llamar a Gemini
-        progress('Enviando a Gemini IA para análisis...');
-        const API_KEYS = [
-            import.meta.env.VITE_GEMINI_API_KEY,
-            import.meta.env.VITE_GEMINI_API_KEY_2,
-            import.meta.env.VITE_GEMINI_API_KEY_3,
-        ].filter(Boolean);
-
-        const apiKey = API_KEYS[0];
-        if (!apiKey) throw new Error('No hay API key de Gemini configurada');
-
-        const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI({ apiKey });
-
+        // 7. Analizar con IA — SIEMPRE vía Edge Function `analyze-document` (keys del lado
+        //    servidor: cascada Gemini → OpenAI → Groq). NUNCA se llama a Gemini/OpenAI desde el
+        //    cliente, para no exponer ninguna llave en el bundle de producción.
+        progress('Preparando análisis...');
         const parts: any[] = [];
 
         // Agregar archivos de política primero (ya convertidos a imágenes)
@@ -4091,10 +4081,22 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
             for (const im of doc.images) parts.push({ inlineData: { data: im.base64, mimeType: im.mimeType } });
         }
 
-        let analysis: PolicyAnalysis;
-        const MODEL_IA = 'gemini-2.5-flash';
+        // Convertir parts (texto + imágenes) al formato de la Edge Function: un solo prompt + imágenes.
+        const images: { base64: string; mimeType: string }[] = [];
+        const promptChunks: string[] = [];
+        for (const p of parts) {
+            if ('text' in p) promptChunks.push(p.text);
+            else if ('inlineData' in p) images.push({ base64: p.inlineData.data, mimeType: p.inlineData.mimeType });
+        }
+        const iaPrompt = promptChunks.join('\n\n') + '\n\nIMPORTANTE: Responde SOLO con JSON válido, sin markdown ni backticks.';
+
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        if (!SUPA_URL) throw new Error('Supabase no configurado');
+
         const MAX_IA_RETRIES = 3;
         const IA_DELAYS = [2000, 4000, 8000];
+        let lastErr = '';
 
         for (let attempt = 0; attempt <= MAX_IA_RETRIES; attempt++) {
             try {
@@ -4102,13 +4104,17 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                     progress(`Reintentando análisis (${attempt}/${MAX_IA_RETRIES})...`);
                     await new Promise(r => setTimeout(r, IA_DELAYS[attempt-1]));
                 }
-                const response = await ai.models.generateContent({
-                    model: MODEL_IA,
-                    contents: [{ role: 'user', parts }],
+                progress('Analizando documentos con IA (servidor)...');
+                const resp = await fetch(`${SUPA_URL}/functions/v1/analyze-document`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPA_ANON}` },
+                    body: JSON.stringify({ type: 'legal', images, prompt: iaPrompt, model: 'gpt-4o' }),
                 });
-                const text = response.text?.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim() || '';
-                const parsed = JSON.parse(text);
-                analysis = {
+                if (!resp.ok) throw new Error(`Edge Function ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+                const json = await resp.json();
+                if (json.error) throw new Error(json.error);
+                const parsed = json.data || {};
+                const analysis: PolicyAnalysis = {
                     status: parsed.status || 'amarillo',
                     resumen: parsed.resumen || 'Sin resumen disponible',
                     hallazgos: (parsed.hallazgos || []).map((h: any) => ({
@@ -4120,13 +4126,11 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                     entityName: creditData?.entity_name || 'General',
                 };
 
-                // 6. Guardar en client_data
+                // Guardar en client_data + historial
                 progress('Guardando resultado del análisis...');
                 const clientData = creditData?.client_data || {};
                 clientData.legalAnalysis = analysis;
                 await supabase.from('credits').update({ client_data: clientData }).eq('id', creditId);
-
-                // 7. Registrar en historial
                 await supabase.from('credit_history').insert({
                     credit_id: creditId,
                     action: 'ANÁLISIS IA',
@@ -4135,72 +4139,14 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                     user_name: user.name,
                     user_role: user.role,
                 });
-
                 return analysis;
             } catch (e: any) {
-                const msg = e.message || '';
-                // Key suspendida/inválida o sin permisos → no reintentar Gemini, ir directo a OpenAI.
-                if (/403|suspend|PERMISSION_DENIED|API key not valid|API_KEY_INVALID|invalid/i.test(msg)) break;
-                if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
-                    if (attempt < MAX_IA_RETRIES) continue;
-                }
-                if (attempt >= MAX_IA_RETRIES) break; // intentar OpenAI
+                lastErr = e.message || String(e);
+                console.warn(`Análisis legal intento ${attempt + 1} falló:`, lastErr);
+                if (attempt >= MAX_IA_RETRIES) break;
             }
         }
 
-        // Fallback: OpenAI GPT-4o
-        const oaiKey = import.meta.env.VITE_OPENAI_API_KEY;
-        if (oaiKey) {
-            try {
-                progress('Gemini no disponible. Intentando con OpenAI GPT-4o...');
-                const { default: OpenAI } = await import('openai');
-                const openaiClient = new OpenAI({ apiKey: oaiKey, dangerouslyAllowBrowser: true });
-
-                // Convertir parts a formato OpenAI
-                const oaiContent: any[] = [];
-                for (const p of parts) {
-                    if ('text' in p) oaiContent.push({ type: 'text', text: p.text });
-                    else if ('inlineData' in p) oaiContent.push({ type: 'image_url', image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } });
-                }
-                oaiContent.push({ type: 'text', text: '\n\nIMPORTANTE: Responde SOLO con JSON válido, sin markdown ni backticks.' });
-
-                const oaiResp = await openaiClient.chat.completions.create({
-                    model: 'gpt-4o',
-                    response_format: { type: 'json_object' },
-                    messages: [{ role: 'user', content: oaiContent }],
-                });
-                const oaiText = oaiResp.choices[0]?.message?.content || '';
-                const parsed = JSON.parse(oaiText);
-                analysis = {
-                    status: parsed.status || 'amarillo',
-                    resumen: parsed.resumen || 'Sin resumen disponible',
-                    hallazgos: (parsed.hallazgos || []).map((h: any) => ({
-                        tipo: h.tipo || 'RIESGO',
-                        descripcion: h.descripcion || '',
-                        severidad: h.severidad || 'medio',
-                    })),
-                    analyzedAt: new Date().toISOString(),
-                    entityName: creditData?.entity_name || 'General',
-                };
-
-                progress('Guardando resultado del análisis...');
-                const clientData = creditData?.client_data || {};
-                clientData.legalAnalysis = analysis;
-                await supabase.from('credits').update({ client_data: clientData }).eq('id', creditId);
-                await supabase.from('credit_history').insert({
-                    credit_id: creditId,
-                    action: 'ANÁLISIS IA',
-                    description: `Análisis de documentos legales (OpenAI): ${analysis.status.toUpperCase()} — ${analysis.hallazgos.length} hallazgo(s)`,
-                    user_id: user.id,
-                    user_name: user.name,
-                    user_role: user.role,
-                });
-                return analysis;
-            } catch (oaiErr: any) {
-                console.warn('❌ OpenAI fallback también falló:', oaiErr.message);
-            }
-        }
-
-        throw new Error('No se pudo completar el análisis. Gemini y OpenAI no disponibles.');
+        throw new Error('No se pudo completar el análisis con la IA. Intenta de nuevo en un momento.' + (lastErr ? ` (${lastErr})` : ''));
     },
 };
