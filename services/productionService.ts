@@ -3977,6 +3977,29 @@ export const ProductionService = {
             if (result) policyFilesData.push({ name: pf.name, ...result });
         }
 
+        // 6.5 Convertir TODO a IMÁGENES. OpenAI/Groq NO leen PDFs (los rechazan), así que sin
+        //     esto el fallback a OpenAI falla cuando los documentos son PDF. Gemini también
+        //     funciona bien con imágenes. Convertimos cada PDF a una imagen por página.
+        progress('Preparando documentos (convirtiendo PDF a imagen)...');
+        const { pdfToImages } = await import('../simulador/services/pdfToImage');
+        const toImages = async (base64: string, mimeType: string, name: string, maxPages: number): Promise<{ base64: string; mimeType: string }[]> => {
+            const isPdf = /pdf/i.test(mimeType || '') || /\.pdf$/i.test(name || '');
+            if (!isPdf) return [{ base64, mimeType: mimeType || 'image/jpeg' }];
+            try {
+                const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+                const file = new File([bytes], name || 'doc.pdf', { type: 'application/pdf' });
+                const imgs = await pdfToImages(file, maxPages, 2);
+                return imgs.map(im => ({ base64: im.base64, mimeType: im.mimeType }));
+            } catch (e) {
+                console.warn('No se pudo convertir PDF a imagen:', name, e);
+                return []; // no enviar el PDF crudo (OpenAI lo rechaza)
+            }
+        };
+        const policyImages: { name: string; images: { base64: string; mimeType: string }[] }[] = [];
+        for (const pf of policyFilesData) policyImages.push({ name: pf.name, images: await toImages(pf.base64, pf.mimeType, pf.name, 15) });
+        const docImages: { name: string; type: string; images: { base64: string; mimeType: string }[] }[] = [];
+        for (const doc of docContents) docImages.push({ name: doc.name, type: doc.type, images: await toImages(doc.base64, doc.mimeType, doc.name, 20) });
+
         // 7. Llamar a Gemini
         progress('Enviando a Gemini IA para análisis...');
         const API_KEYS = [
@@ -3993,12 +4016,12 @@ export const ProductionService = {
 
         const parts: any[] = [];
 
-        // Agregar archivos de política primero
-        if (policyFilesData.length > 0) {
-            parts.push({ text: `📋 DOCUMENTOS DE POLÍTICA DE CRÉDITO (${policyFilesData.length} documento${policyFilesData.length > 1 ? 's' : ''} de referencia):` });
-            for (const pf of policyFilesData) {
+        // Agregar archivos de política primero (ya convertidos a imágenes)
+        if (policyImages.length > 0) {
+            parts.push({ text: `📋 DOCUMENTOS DE POLÍTICA DE CRÉDITO (${policyImages.length} documento${policyImages.length > 1 ? 's' : ''} de referencia):` });
+            for (const pf of policyImages) {
                 parts.push({ text: `📋 Política: ${pf.name}` });
-                parts.push({ inlineData: { data: pf.base64, mimeType: pf.mimeType } });
+                for (const im of pf.images) parts.push({ inlineData: { data: im.base64, mimeType: im.mimeType } });
             }
         }
 
@@ -4062,10 +4085,10 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
 - amarillo: Hay obligaciones a comprar/sanear o situaciones a revisar pero el crédito puede ser viable
 - rojo: Hay factores que bloquean o condicionan seriamente el crédito (embargos, listas, mora extrema)` });
 
-        // Agregar documentos del crédito
-        for (const doc of docContents) {
+        // Agregar documentos del crédito (ya convertidos a imágenes)
+        for (const doc of docImages) {
             parts.push({ text: `📄 Documento: ${doc.name} (${doc.type})` });
-            parts.push({ inlineData: { data: doc.base64, mimeType: doc.mimeType } });
+            for (const im of doc.images) parts.push({ inlineData: { data: im.base64, mimeType: im.mimeType } });
         }
 
         let analysis: PolicyAnalysis;
@@ -4116,6 +4139,8 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
                 return analysis;
             } catch (e: any) {
                 const msg = e.message || '';
+                // Key suspendida/inválida o sin permisos → no reintentar Gemini, ir directo a OpenAI.
+                if (/403|suspend|PERMISSION_DENIED|API key not valid|API_KEY_INVALID|invalid/i.test(msg)) break;
                 if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
                     if (attempt < MAX_IA_RETRIES) continue;
                 }
