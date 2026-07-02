@@ -250,6 +250,35 @@ export const ProductionService = {
                console.error('Error al enviar notificaciones a admins:', err);
            }
 
+           // 3b. Notificar al SUPERVISOR de la zona que un gestor solicitó crear su cuenta.
+           //     Usa supabaseAdmin (bypassa RLS) porque el usuario recién registrado (PENDING)
+           //     no tiene permisos para leer perfiles ajenos ni insertar notificaciones a terceros.
+           try {
+               const db = supabaseAdmin || supabase;
+               if (zonaId) {
+                   const { data: supervisors } = await db
+                       .from('profiles')
+                       .select('id')
+                       .eq('zone_id', zonaId)
+                       .eq('role', 'SUPERVISOR_ASIGNADO')
+                       .eq('status', 'ACTIVE');
+                   if (supervisors && supervisors.length > 0) {
+                       await db.from('notifications').insert(
+                           supervisors.map((s: any) => ({
+                               user_id: s.id,
+                               title: 'Nueva solicitud de gestor en tu zona',
+                               message: `${name} solicitó crear una cuenta de Gestor en tu zona. Está pendiente de aprobación.`,
+                               type: 'info',
+                               is_read: false,
+                               credit_id: null,
+                           }))
+                       );
+                   }
+               }
+           } catch (err) {
+               console.warn('No se pudo notificar al supervisor de la zona (registro):', err);
+           }
+
            // 4. Disparar webhooks
            ProductionService.triggerWebhooks('user_registered', {
                usuario: {
@@ -2428,19 +2457,20 @@ export const ProductionService = {
             });
         } catch { /* notificación opcional */ }
 
-        // Si es gestor, notificar al supervisor de su zona
+        // Si es gestor, notificar al supervisor de su zona que su gestor fue ACEPTADO
         if (profile?.role === 'GESTOR' || profile?.role === 'ANALISTA') {
             try {
-                const { data: updatedProfile } = await supabase.from('profiles').select('zone_id').eq('id', id).single();
+                const db = supabaseAdmin || supabase;
+                const { data: updatedProfile } = await db.from('profiles').select('zone_id').eq('id', id).single();
                 if (updatedProfile?.zone_id) {
-                    const { data: supervisors } = await supabase.from('profiles').select('id').eq('zone_id', updatedProfile.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                    const { data: supervisors } = await db.from('profiles').select('id').eq('zone_id', updatedProfile.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
                     if (supervisors && supervisors.length > 0) {
-                        await supabase.from('notifications').insert(
+                        await db.from('notifications').insert(
                             supervisors.map((s: any) => ({
                                 user_id: s.id,
-                                title: 'Nuevo miembro en tu zona',
-                                message: `${profile?.full_name || 'Un usuario'} fue aprobado como ${(profile?.role || '').replace(/_/g, ' ')} en tu zona.`,
-                                type: 'info',
+                                title: 'Tu gestor fue aprobado',
+                                message: `${profile?.full_name || 'Un usuario'} fue aprobado como ${(profile?.role || '').replace(/_/g, ' ')} en tu zona y ya puede operar.`,
+                                type: 'success',
                                 is_read: false,
                                 credit_id: null,
                             }))
