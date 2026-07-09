@@ -4,6 +4,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- El editor OnlyOffice (iframe) puede pedir recursos por http; esto hace que el navegador
+         los suba a https automáticamente en vez de bloquearlos por contenido mixto. -->
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
     <link rel="icon" type="image/png" href="/skala.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#EA580C" />
