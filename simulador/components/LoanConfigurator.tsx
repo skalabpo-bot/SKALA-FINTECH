@@ -74,7 +74,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   // Visible entities filtered by pagaduría AND credit type
   const pagKey = selectedPagaduria?.toUpperCase().trim() ?? '';
   const visibleEntities = useMemo(() => {
-    let list = entities;
+    // Ocultar entidades inactivas (ej. La Hipotecaria mientras no esté lista): no se pueden simular.
+    let list = entities.filter(e => (e as any).isActive !== false);
     if (selectedPagaduria) {
       list = list.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey));
     }
@@ -112,6 +113,9 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
       if (!exists) setExcelProduct(excelCfg.products[0]?.nombre || '');
     }
   }, [excelCfg]);
+
+  // Entidad con preaprobación externa (La Hipotecaria): no usa el motor de cálculo.
+  const isPreaprobacion = !!selectedEntity?.preaprobacionExterna;
 
   const terms = useMemo(() => {
     if (!selectedEntity) return [];
@@ -190,6 +194,24 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // ── PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor, sin plazo obligatorio ──
+    if (selectedEntity?.preaprobacionExterna) {
+      onSimulate({
+        entityName: selectedEntity.name,
+        termMonths: selectedTerm || 72,
+        safetyCushion: 0,
+        buyoutQuota: 0,
+        cashFee: selectedEntity.cashFee ?? 15157,
+        bankFee: selectedEntity.bankFee ?? 7614,
+        commissions: selectedEntity.commissions,
+        primaryColor: selectedEntity.primaryColor,
+        secondaryColor: selectedEntity.secondaryColor,
+        cardFrameColor: selectedEntity.cardFrameColor,
+        preaprobacion: true,
+        preaprobacionUrl: selectedEntity.preaprobacionUrl,
+      });
+      return;
+    }
     if (selectedEntity && selectedTerm) {
       const carteraItems: CarteraItem[] = [];
       if (analysis.detailedDeductions) {
@@ -546,8 +568,16 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                 </>
               )}
 
+              {/* PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor de cálculo */}
+              {isPreaprobacion && (
+                <div className="p-5 rounded-2xl border-2 border-teal-200 bg-teal-50">
+                  <p className="text-sm font-black text-teal-800 flex items-center gap-2">🔗 {selectedEntity?.name} usa preaprobación en línea</p>
+                  <p className="text-xs text-teal-700 mt-1.5">Esta entidad no usa el motor de cálculo de Skala. Al continuar verás el panel de preaprobación: consultamos el monto/cuota/tasa y formalizamos con el código que recibe el cliente — todo dentro de Skala.</p>
+                </div>
+              )}
+
               {/* Term Selector — MODO FACTORES */}
-              {!isExcelMode && (
+              {!isExcelMode && !isPreaprobacion && (
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Plazo (Meses)</label>
                 {terms.length === 0 ? (
@@ -832,10 +862,10 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                     <button type="button" onClick={onBack} className="px-6 py-3 text-slate-500 font-bold hover:text-slate-800 transition-colors flex-1 sm:flex-none">Volver</button>
                     <button
                         type="submit"
-                        disabled={!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || (isExcelMode ? selectedCardIdx == null : !hasFactorsForSelection)}
+                        disabled={isPreaprobacion ? !selectedEntityId : (!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || (isExcelMode ? selectedCardIdx == null : !hasFactorsForSelection))}
                         className="bg-primary-600 text-white px-8 py-4 rounded-xl font-bold shadow-xl shadow-primary-600/20 hover:bg-primary-700 hover:shadow-2xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
                     >
-                      {isExcelMode ? 'Continuar' : 'Realizar Simulacion'}
+                      {isPreaprobacion ? 'Continuar a preaprobación' : (isExcelMode ? 'Continuar' : 'Realizar Simulacion')}
                     </button>
                  </div>
               </div>

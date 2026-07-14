@@ -235,11 +235,18 @@ export const UserManagement = () => {
       }, 500); 
   };
   
-  const handleReject = async (id: string) => { 
-      if(confirm('¿Rechazar solicitud? El usuario será eliminado.')) { 
-          await MockService.rejectUser(id); 
-          await refreshUsers(); 
-      } 
+  const handleReject = async (id: string) => {
+      if(confirm('¿Rechazar solicitud? Quedará como RECHAZADO (no se elimina). Podrás reactivarlo después desde la lista de "Rechazados".')) {
+          await MockService.rejectUser(id);
+          await refreshUsers();
+      }
+  };
+
+  const handleReactivate = async (id: string) => {
+      if(confirm('¿Reactivar este usuario? Pasará a ACTIVO y podrá iniciar sesión con su correo y contraseña.')) {
+          await MockService.approveUser(id);
+          await refreshUsers();
+      }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -261,6 +268,7 @@ export const UserManagement = () => {
 
   const pendingUsers = users.filter(u => u.status === 'PENDING' && matchesSearch(u));
   const activeUsers = users.filter(u => u.status === 'ACTIVE' && matchesSearch(u));
+  const rejectedUsers = users.filter(u => u.status === 'REJECTED' && matchesSearch(u));
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -357,6 +365,7 @@ export const UserManagement = () => {
                 </div>
             </div>
         ) : activeTab === 'PENDING' ? (
+          <div className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {pendingUsers.length === 0 && <div className="col-span-2 text-center text-slate-400 py-10">No hay solicitudes pendientes.</div>}
                 {pendingUsers.map(u => (
@@ -395,6 +404,32 @@ export const UserManagement = () => {
                     </div>
                 ))}
             </div>
+
+            {/* RECHAZADOS — reactivables (evita el "ya existe" al recrear) */}
+            {rejectedUsers.length > 0 && (
+                <div>
+                    <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">Rechazados ({rejectedUsers.length})</h3>
+                    <p className="text-xs text-slate-400 mb-3">Estos usuarios existen pero están rechazados. Reactívalos aquí en vez de crearlos de nuevo (evita el error "ya existe").</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {rejectedUsers.map(u => (
+                            <div key={u.id} className="bg-white rounded-2xl border border-red-100 p-4 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <img src={u.avatar} className="w-10 h-10 rounded-full border border-red-100 shrink-0"/>
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 truncate">{u.name}</p>
+                                        <p className="text-xs text-slate-500 truncate">{u.email} · CC {u.cedula}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button onClick={() => setViewDetailUser(u)} title="Ver" className="text-slate-400 hover:text-primary p-2"><Eye size={16}/></button>
+                                    <button onClick={() => handleReactivate(u.id)} className="px-3 py-2 rounded-lg bg-green-500 text-white font-bold text-xs hover:bg-green-600 flex items-center gap-1.5"><CheckCircle size={15}/> Reactivar</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+          </div>
         ) : (
             /* ── IMPORTAR / EXPORTAR ── */
             <div className="space-y-6">

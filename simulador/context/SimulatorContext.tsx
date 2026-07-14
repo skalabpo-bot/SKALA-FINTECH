@@ -122,7 +122,10 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ]);
         if (!cancelled) {
           // El asesor solo ve entidades ACTIVAS (las apagadas en admin no aparecen ni se pueden radicar).
-          const activeEntities = entities.filter(e => e.isActive !== false);
+          // EXCEPCIÓN: en localhost mostramos también las de preaprobación externa aunque estén apagadas,
+          // para probarlas en local sin exponerlas en producción (la BD de entidades es compartida).
+          const isLocalhost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+          const activeEntities = entities.filter(e => e.isActive !== false || (isLocalhost && e.preaprobacionExterna));
           dispatch({ type: 'SET_CACHED_DATA', entities: activeEntities, fpmTable, smmlv, radicacionAbierta });
         }
       } catch (e) {

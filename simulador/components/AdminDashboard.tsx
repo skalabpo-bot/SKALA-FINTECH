@@ -896,6 +896,36 @@ export const AdminDashboard: React.FC = () => {
                             <p className="text-[10px] text-indigo-500 mt-1.5">Se agregarán automáticamente los parámetros: ?nombre=...&documento=...&telefono=...</p>
                           </div>
 
+                          {/* Preaprobación externa (La Hipotecaria) */}
+                          <div className={`p-4 rounded-xl border ${editingEntity.preaprobacionExterna ? 'bg-teal-50 border-teal-300' : 'bg-slate-50 border-slate-200'}`}>
+                            <h5 className={`text-xs font-bold uppercase tracking-wide mb-2 ${editingEntity.preaprobacionExterna ? 'text-teal-800' : 'text-slate-600'}`}>Preaprobación Externa</h5>
+                            <label className="flex items-start gap-3 cursor-pointer mb-2">
+                              <input
+                                type="checkbox"
+                                checked={!!editingEntity.preaprobacionExterna}
+                                onChange={e => setEditingEntity({...editingEntity, preaprobacionExterna: e.target.checked})}
+                                className="w-4 h-4 mt-0.5 accent-teal-500"
+                              />
+                              <div>
+                                <p className={`text-sm font-bold ${editingEntity.preaprobacionExterna ? 'text-teal-900' : 'text-slate-700'}`}>
+                                  {editingEntity.preaprobacionExterna ? '🔗 Usa preaprobación externa' : 'Motor de cálculo normal'}
+                                </p>
+                                <p className={`text-[11px] ${editingEntity.preaprobacionExterna ? 'text-teal-700' : 'text-slate-500'}`}>
+                                  Si se activa, esta entidad NO usa el motor de cálculo: en el simulador muestra el panel de preaprobación (consulta al portal externo por debajo y radica con el resultado).
+                                </p>
+                              </div>
+                            </label>
+                            {editingEntity.preaprobacionExterna && (
+                              <input
+                                type="url"
+                                className={inputClass}
+                                value={editingEntity.preaprobacionUrl ?? ''}
+                                onChange={e => setEditingEntity({...editingEntity, preaprobacionUrl: e.target.value || undefined})}
+                                placeholder="https://app.lahipotecaria.com/surveys/credito-de-libranza"
+                              />
+                            )}
+                          </div>
+
                           {/* Tipos de Crédito que atiende */}
                           <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
                             <h5 className="text-xs font-bold text-purple-800 uppercase tracking-wide mb-2">Tipos de Crédito que Atiende</h5>

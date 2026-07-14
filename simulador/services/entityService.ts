@@ -24,6 +24,8 @@ const mapFromDb = (row: any): FinancialEntity => ({
   creditTypeIds: Array.isArray(row.credit_type_ids) ? row.credit_type_ids : [],
   validationUrl: row.validation_url ?? undefined,
   isActive: row.is_active ?? true,
+  preaprobacionExterna: row.preaprobacion_externa ?? false,
+  preaprobacionUrl: row.preaprobacion_url ?? undefined,
 });
 
 export const getAllEntities = async (): Promise<FinancialEntity[]> => {
@@ -89,6 +91,8 @@ export const saveEntity = async (entity: Omit<FinancialEntity, 'id'>, id?: strin
     card_frame_color: entity.cardFrameColor ?? '#0f172a',
     credit_type_ids: entity.creditTypeIds ?? [],
     is_active: entity.isActive ?? true,
+    preaprobacion_externa: entity.preaprobacionExterna ?? false,
+    preaprobacion_url: entity.preaprobacionUrl ?? null,
   };
 
   if (id) {

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { FinancialForm } from '../simulador/components/FinancialForm';
 import { LoanConfigurator } from '../simulador/components/LoanConfigurator';
 import { SimulationResults } from '../simulador/components/SimulationResults';
+import { PreaprobacionPanel, PreData } from '../simulador/components/PreaprobacionPanel';
 import { SimulatorProvider } from '../simulador/context/SimulatorContext';
 import { getRadicacionAbierta } from '../simulador/services/settingsService';
 import {
@@ -128,6 +129,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const [isCreating, setIsCreating] = useState(false);
   const [radicacionAbierta, setRadicacionAbierta] = useState(true);
 
+  // Preaprobación externa (La Hipotecaria): datos consolidados para radicar
+  const [preData, setPreData] = useState<PreData | null>(null);
+
   // Cargar líneas de crédito, tipos de pensión, ciudades y pagadurías desde la BD
   useEffect(() => {
     MockService.getCreditLines().then((lines: string[]) => setCreditLines(lines));
@@ -172,6 +176,17 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
 
   const handleSimulate = async (config: LoanConfiguration, excelResults?: SimulationResult[], selIdx?: number | null) => {
     if (!analysisResult) return;
+
+    // ── MODO PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor; el panel maneja todo.
+    if (config.preaprobacion) {
+      setLoanConfig(config);
+      setSimulations([]);
+      setSelectedSimIdx(null);
+      setLineaCredito('');
+      setPreData(null);
+      setCurrentStep(AppStep.RESULTS);
+      return;
+    }
 
     // ── MODO EXCEL: las cards ya se calcularon en Parametrización; no recalculamos.
     if (config.calcMode === 'excel') {
@@ -265,6 +280,40 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
 
   /** Construye el objeto de datos del crédito con todo lo disponible */
   const buildCreditData = async () => {
+    // ── PREAPROBACIÓN EXTERNA (La Hipotecaria): monto/tasa/plazo vienen del panel ──
+    if (loanConfig?.preaprobacion && preData) {
+      const documents = await uploadDocuments();
+      return {
+        nombres: preData.nombres,
+        apellidos: preData.apellidos,
+        nombreCompleto: `${preData.nombres} ${preData.apellidos}`.trim(),
+        numeroDocumento: preData.numeroDocumento,
+        tipoDocumento: 'CEDULA',
+        monto: preData.monto,
+        montoDesembolso: preData.montoDesembolso || preData.monto,
+        plazo: preData.plazo,
+        tasa: preData.tasa,
+        entidadAliada: loanConfig.entityName,
+        lineaCredito: lineaCredito || 'LIBRE INVERSION',
+        correo: preData.correo,
+        telefonoCelular: preData.telefonoCelular,
+        ...(selectedPagaduria || preData.pagaduria ? { pagaduria: selectedPagaduria || preData.pagaduria } : {}),
+        ...(preData.cuota ? { cuotaUtilizar: preData.cuota } : {}),
+        tipoDesembolso: 'EFECTIVO',
+        // Campos de preaprobación (viajan verbatim a client_data)
+        preaprobacionEstado: preData.preaprobado ? 'SI' : 'NO',
+        ...(preData.preaprobacionNumero ? { preaprobacionNumero: preData.preaprobacionNumero } : {}),
+        preaprobacionMontoAprobado: preData.monto,
+        preaprobacionTasaAprobada: preData.tasa,
+        preaprobacionPlazoAprobado: preData.plazo,
+        otpVerified: preData.otpConfirmado === true, // OTP del correo validado antes de radicar
+        preaprobacionOtpConfirmado: preData.otpConfirmado ? 'SI' : 'NO',
+        ...(documents.length > 0 ? { documents } : {}),
+        ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
+        ...(assignedGestorId ? { assignedGestorId } : {}),
+      };
+    }
+
     const sim = selectedSimIdx !== null ? simulations[selectedSimIdx] : null;
 
     const fromClient: Record<string, any> = {
@@ -364,6 +413,31 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       if (result?.id) onCreditCreated(result.id);
     } catch (err: any) {
       console.error('Error creando crédito:', err);
+      alert(`Error al crear el crédito: ${err.message || 'Error desconocido'}`);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  /** Radicar una preaprobación externa (La Hipotecaria) con los datos del panel */
+  const handleRadicarPreaprobado = async () => {
+    if (!preData || !preData.listo) {
+      alert('Completa la preaprobación en el panel antes de radicar.');
+      return;
+    }
+    // Regla La Hipotecaria: el OTP del correo debe estar confirmado antes de radicar.
+    if (!preData.otpConfirmado) {
+      alert('Debes confirmar el código OTP que llegó al correo del cliente antes de radicar.');
+      return;
+    }
+    if (!radicacionAbierta) { alert('La radicación está cerrada temporalmente.'); return; }
+    setIsCreating(true);
+    try {
+      const creditData = await buildCreditData();
+      const result = await MockService.createCredit(creditData, currentUser);
+      if (result?.id) onCreditCreated(result.id);
+    } catch (err: any) {
+      console.error('Error creando crédito (preaprobación):', err);
       alert(`Error al crear el crédito: ${err.message || 'Error desconocido'}`);
     } finally {
       setIsCreating(false);
@@ -570,8 +644,43 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         />
       )}
 
+      {/* Paso 4 (PREAPROBACIÓN EXTERNA): panel nativo La Hipotecaria */}
+      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && loanConfig.preaprobacion && (
+        <div className="space-y-6">
+          <PreaprobacionPanel
+            entityName={loanConfig.entityName}
+            prefill={{
+              ingresos: analysisResult.rawIncome,
+              gastos: analysisResult.mandatory + analysisResult.others + analysisResult.embargos,
+              pagaduria: selectedPagaduria,
+              plazo: loanConfig.termMonths,
+              correo, celular: telefonoCelular,
+              nombres: clientData?.firstName, apellidos: clientData?.lastName, documento: clientData?.idNumber,
+            }}
+            onChange={setPreData}
+          />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+            <div className="text-sm text-slate-500">
+              {preData?.listo
+                ? <span className="text-teal-700 font-bold flex items-center gap-2"><CheckCircle2 size={16} /> Listo para radicar: {fmt(preData.monto)} · {preData.tasa}% · {preData.plazo} meses</span>
+                : <span>Consulta la preaprobación y formaliza (o marca "resultado manual") para habilitar la radicación.</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={handleReset} className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-800">Reiniciar</button>
+              <button
+                onClick={handleRadicarPreaprobado}
+                disabled={!preData?.listo || isCreating || !radicacionAbierta}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-xl hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isCreating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Radicar preaprobado
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Paso 4: Resultados — las cards ya vienen calculadas desde Parametrización */}
-      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && (
+      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && !loanConfig.preaprobacion && (
         <div className="space-y-6">
           {loanConfig.calcMode === 'excel' && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 font-semibold">

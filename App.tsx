@@ -28,7 +28,8 @@ import { cleanupAllSubscriptions } from './services/realtimeService';
 import { SupervisorRegistration } from './components/SupervisorRegistration';
 import { PoliticaDatos } from './components/PoliticaDatos';
 import { AutorizacionCentrales } from './components/AutorizacionCentrales';
-import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound, Star } from 'lucide-react';
+import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound, Star, Upload } from 'lucide-react';
+import { BulkStatusUpdate } from './components/BulkStatusUpdate';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     window.dispatchEvent(new CustomEvent('app-alert', { detail: { message, type } }));
@@ -335,22 +336,25 @@ const App = () => {
     const [showFilters, setShowFilters] = useState(false);
     const [togglingComm, setTogglingComm] = useState<string | null>(null);
     const [creditReadMap, setCreditReadMap] = useState<Record<string, Date>>({});
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const canBulkStatus = MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS');
+
+    const fetchData = async () => {
+        const [cr, st, ent, ct, readMap] = await Promise.all([
+            MockService.getCredits(currentUser!),
+            MockService.getStates(),
+            MockService.getEntities(),
+            MockService.getCreditTypes ? MockService.getCreditTypes() : Promise.resolve([]),
+            MockService.getCreditReadMap(currentUser!.id)
+        ]);
+        setCredits(cr);
+        setStates(st);
+        setEntities(ent);
+        setCreditTypes(ct || []);
+        setCreditReadMap(readMap);
+    };
 
     useEffect(() => {
-        const fetchData = async () => {
-            const [cr, st, ent, ct, readMap] = await Promise.all([
-                MockService.getCredits(currentUser!),
-                MockService.getStates(),
-                MockService.getEntities(),
-                MockService.getCreditTypes ? MockService.getCreditTypes() : Promise.resolve([]),
-                MockService.getCreditReadMap(currentUser!.id)
-            ]);
-            setCredits(cr);
-            setStates(st);
-            setEntities(ent);
-            setCreditTypes(ct || []);
-            setCreditReadMap(readMap);
-        };
         fetchData();
     }, [currentView]);
 
@@ -440,6 +444,16 @@ const App = () => {
                         <Search size={14} />
                         Filtros {activeFilterCount > 0 && <span className="bg-white text-primary text-[9px] px-1.5 py-0.5 rounded-full font-black">{activeFilterCount}</span>}
                     </button>
+                    {canBulkStatus && (
+                        <button
+                            onClick={() => setShowBulkModal(true)}
+                            className="flex items-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent bg-slate-900 text-white hover:bg-slate-800 whitespace-nowrap"
+                            title="Actualizar estados en masa desde un CSV"
+                        >
+                            <Upload size={14} />
+                            Masivo (CSV)
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -607,6 +621,15 @@ const App = () => {
             </tbody>
           </table>
         </div>
+        {showBulkModal && (
+          <BulkStatusUpdate
+            credits={credits}
+            states={states}
+            currentUser={currentUser!}
+            onClose={() => setShowBulkModal(false)}
+            onApplied={fetchData}
+          />
+        )}
       </div>
     );
   };

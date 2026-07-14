@@ -7,7 +7,7 @@ import { Download, Filter, CheckSquare, Square, Loader2, Calendar, FileText, Sma
 const ALL_AVAILABLE_COLUMNS = [
     'fecha_creacion', 'solicitud_numero',
     'gestor_nombre', 'gestor_id', 'gestor_telefono', 'gestor_cedula', 'gestor_email', 'gestor_ciudad',
-    'supervisor_nombre', 'supervisor_telefono', 'zona',
+    'supervisor_nombre', 'supervisor_telefono', 'supervisor_email', 'zona',
     'cliente_nombre', 'cliente_documento', 'tipo_documento', 'cliente_celular', 'correo_cliente',
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',
     'pagaduria', 'clave_pagaduria',
@@ -49,8 +49,8 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-        } catch (err) {
-            alert("Error al exportar. Verifique su conexión con Supabase.");
+        } catch (err: any) {
+            alert(err?.message || "Error al exportar. Verifique su conexión con Supabase.");
         } finally {
             setIsExporting(false);
         }

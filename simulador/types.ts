@@ -27,6 +27,8 @@ export interface FinancialEntity {
   creditTypeIds?: string[]; // Tipos de crédito que atiende (UUIDs de credit_types)
   validationUrl?: string; // URL de validación de identidad del cliente (centrales de riesgo)
   isActive?: boolean; // Si false, la entidad está APAGADA: no aparece al asesor ni permite radicar (default true)
+  preaprobacionExterna?: boolean; // Si true, usa el flujo de preaprobación externa (La Hipotecaria) en vez del motor de cálculo
+  preaprobacionUrl?: string; // URL del portal de preaprobación (referencia + conector backend)
 }
 
 export interface FPMEntry {
@@ -118,6 +120,9 @@ export interface LoanConfiguration {
   excelProductName?: string;     // producto/tasa elegido (define comisión y celdas)
   birthDate?: string;            // fecha de nacimiento (la edad afecta el cálculo, ej. COLTE)
   creditTipo?: string;           // tipo de crédito (ej. "Compra Cartera" / "Libre Inversión") → celda tipo
+  // ── Modo PREAPROBACIÓN EXTERNA (La Hipotecaria) ────────────────────────────
+  preaprobacion?: boolean;       // Si true, RESULTS usa el panel de preaprobación externa (sin motor)
+  preaprobacionUrl?: string;     // Referencia del portal externo
 }
 
 export type CalcMode = 'factor' | 'excel';

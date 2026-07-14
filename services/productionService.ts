@@ -445,13 +445,17 @@ export const ProductionService = {
 
         // Validar ENTIDAD apagada: si la entidad está desactivada (is_active=false) en el admin,
         // no se permite radicar con ella (refuerzo autoritativo del filtro de UI).
+        // EXCEPCIÓN: en localhost se permite radicar entidades de preaprobación externa apagadas
+        // (se mantienen apagadas para no exponerlas en producción, pero deben poder probarse en local).
         if (entidadAliada) {
             const { data: entRow } = await supabase
                 .from('financial_entities')
-                .select('is_active')
+                .select('is_active, preaprobacion_externa')
                 .eq('name', entidadAliada)
                 .maybeSingle();
-            if (entRow && entRow.is_active === false) {
+            const isLocalhost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+            const permitidoEnLocal = isLocalhost && entRow?.preaprobacion_externa === true;
+            if (entRow && entRow.is_active === false && !permitidoEnLocal) {
                 throw new Error(`La entidad ${entidadAliada} está apagada actualmente y no permite radicar. Selecciona otra entidad o pide a un administrador que la reactive.`);
             }
         }
@@ -495,6 +499,7 @@ export const ProductionService = {
             commission_percent: commPercent,
             commission_est: commEst,
             credit_type_id: creditTypeId || null,
+            otp_verified: rest.otpVerified === true, // La Hipotecaria: OTP del correo confirmado antes de radicar
             client_data: { ...rest, nombreCompleto, lineaCredito: lineaCredito || '' }
         };
         if (supervisorIdSnapshot) insertPayload.assigned_supervisor_id = supervisorIdSnapshot;
@@ -506,6 +511,15 @@ export const ProductionService = {
         if (error && /assigned_supervisor_id/.test(error.message || '')) {
             console.warn('assigned_supervisor_id no existe aún, reintentando sin snapshot');
             delete insertPayload.assigned_supervisor_id;
+            const retry = await supabase.from('credits').insert(insertPayload).select().single();
+            data = retry.data;
+            error = retry.error;
+        }
+
+        // Fallback: si la columna otp_verified no existe en la DB (la info igual queda en client_data)
+        if (error && /otp_verified/.test(error.message || '')) {
+            console.warn('otp_verified no existe aún, reintentando sin esa columna');
+            delete insertPayload.otp_verified;
             const retry = await supabase.from('credits').insert(insertPayload).select().single();
             data = retry.data;
             error = retry.error;
@@ -1088,6 +1102,138 @@ export const ProductionService = {
                 changedAt: new Date(h.created_at)
             };
         });
+    },
+
+    // Actualización MASIVA de estados (desde CSV). Agrupa por statusId para eficiencia;
+    // DESEMBOLSADO se maneja por crédito (estampa fechaDesembolso). NO dispara webhooks y
+    // NO auto-asigna analista (decisiones de producto para el bulk). Notifica solo al gestor.
+    bulkUpdateCreditStatusByRows: async (
+        rows: { creditId: string; statusId: string; motivo?: string; tasks?: { title: string; requiresDoc?: boolean }[] }[],
+        user: User,
+        defaultComment: string,
+        options?: { notifyGestor?: boolean }
+    ): Promise<{ updatedCount: number; failedIds: string[]; failed: { creditId: string; reason: string }[] }> => {
+        if (!ProductionService.hasPermission(user, 'CHANGE_CREDIT_STATUS')) {
+            throw new Error('No tienes permiso para cambiar estados.');
+        }
+        const rawValid = (rows || []).filter(r => r.creditId && r.statusId);
+        // Dedup por crédito: si el CSV repite la misma cédula/crédito, gana la última fila
+        // (evita contar dos veces y el last-write-wins de estados en conflicto).
+        const validMap = new Map<string, typeof rawValid[number]>();
+        for (const r of rawValid) validMap.set(r.creditId, r);
+        const valid = [...validMap.values()];
+        if (valid.length === 0) throw new Error('No hay filas válidas para actualizar.');
+        if (!defaultComment?.trim() && valid.some(r => !r.motivo?.trim())) {
+            throw new Error('Falta el motivo del cambio.');
+        }
+
+        const states = await ProductionService.getStates();
+        const stateOf = (id: string) => states.find(s => s.id === id);
+        const stateName = (id: string) => stateOf(id)?.name || 'N/A';
+        // Estados que requieren tocar client_data por crédito: desembolso (fecha) o devolución (tareas).
+        const needsClientData = (id: string) => { const s = stateOf(id); return !!s && ((s as any).enableTasks || /DESEMBOLSADO/i.test(s.name)); };
+
+        const db: any = supabaseAdmin || supabase;
+        const now = new Date().toISOString();
+        const failedIds: string[] = [];
+        const failed: { creditId: string; reason: string }[] = [];
+        const markFail = (id: string, reason: any) => {
+            failedIds.push(id);
+            failed.push({ creditId: id, reason: String((reason && (reason.message || reason.details)) || reason || 'Error desconocido') });
+        };
+        let updatedCount = 0;
+
+        const special = valid.filter(r => needsClientData(r.statusId)); // por crédito
+        const simple = valid.filter(r => !needsClientData(r.statusId));  // en lote
+
+        // Simples: agrupar por estado destino y actualizar en un solo statement por estado
+        const byStatus = new Map<string, string[]>();
+        for (const r of simple) {
+            if (!byStatus.has(r.statusId)) byStatus.set(r.statusId, []);
+            byStatus.get(r.statusId)!.push(r.creditId);
+        }
+        for (const [statusId, ids] of byStatus) {
+            let groupError: any = null;
+            try {
+                const { error } = await db.from('credits').update({ status_id: statusId, updated_at: now }).in('id', ids);
+                groupError = error || null;
+            } catch (e) { groupError = e; }
+            if (!groupError) { updatedCount += ids.length; continue; }
+            // El lote falló: reintentar crédito por crédito para AISLAR cuáles fallan de verdad
+            // (antes se marcaba todo el grupo como fallido aunque el error fuera de uno solo).
+            for (const id of ids) {
+                try {
+                    const { error } = await db.from('credits').update({ status_id: statusId, updated_at: now }).eq('id', id);
+                    if (error) markFail(id, error); else updatedCount++;
+                } catch (e) { markFail(id, e); }
+            }
+        }
+
+        // Especiales: por crédito (mergea client_data: fechaDesembolso y/o tareas de devolución)
+        for (const r of special) {
+            try {
+                const s = stateOf(r.statusId);
+                const { data: cur } = await db.from('credits').select('client_data').eq('id', r.creditId).single();
+                const existing = cur?.client_data || {};
+                const client_data: any = { ...existing };
+                if (/DESEMBOLSADO/i.test(s?.name || '') && !existing.fechaDesembolso) client_data.fechaDesembolso = now;
+                if ((s as any)?.enableTasks && r.tasks && r.tasks.length) {
+                    client_data.devolucionTasks = r.tasks;
+                    client_data.subsanacionHabilitada = false;
+                }
+                const { error } = await db.from('credits').update({ status_id: r.statusId, updated_at: now, client_data }).eq('id', r.creditId);
+                if (error) markFail(r.creditId, error); else updatedCount++;
+            } catch (e) { markFail(r.creditId, e); }
+        }
+
+        const okRows = valid.filter(r => !failedIds.includes(r.creditId));
+
+        // Historial (batch) — con tareas si es una devolución
+        try {
+            if (okRows.length) await db.from('credit_history').insert(okRows.map(r => {
+                const s = stateOf(r.statusId);
+                const hasTasks = !!((s as any)?.enableTasks && r.tasks && r.tasks.length);
+                const tasksTxt = hasTasks ? `\nTareas requeridas:\n${r.tasks!.map((t, i) => `${i + 1}. ${t.title}${t.requiresDoc ? ' (requiere adjunto)' : ''}`).join('\n')}` : '';
+                return {
+                    credit_id: r.creditId,
+                    user_id: user.id,
+                    action: hasTasks ? 'DEVOLUCIÓN CON TAREAS (MASIVO)' : 'CAMBIO ESTADO (MASIVO)',
+                    description: `Estado cambiado a ${stateName(r.statusId)}. Motivo: ${(r.motivo?.trim() || defaultComment.trim())}${tasksTxt}`
+                };
+            }));
+        } catch (e) { console.warn('Bulk: historial no insertado', e); }
+
+        // Comentario de sistema (batch)
+        try {
+            if (okRows.length) await db.from('comments').insert(okRows.map(r => ({
+                credit_id: r.creditId,
+                user_id: user.id,
+                text: `Nuevo Estado: ${stateName(r.statusId)}.`,
+                is_system: true
+            })));
+        } catch (e) { console.warn('Bulk: comentarios no insertados', e); }
+
+        // Notificar a gestores (batch)
+        if (options?.notifyGestor && okRows.length) {
+            try {
+                const ids = okRows.map(r => r.creditId);
+                const { data: creds } = await db.from('credits').select('id, assigned_gestor_id, client_data').in('id', ids);
+                const statusById = new Map(okRows.map(r => [r.creditId, r.statusId]));
+                const notifs = (creds || [])
+                    .filter((c: any) => c.assigned_gestor_id && c.assigned_gestor_id !== user.id)
+                    .map((c: any) => ({
+                        user_id: c.assigned_gestor_id,
+                        title: 'Cambio de Estado en tu Crédito',
+                        message: `El crédito de ${c.client_data?.nombreCompleto || 'tu cliente'} cambió a: ${stateName(statusById.get(c.id) || '')}.`,
+                        type: 'info',
+                        is_read: false,
+                        credit_id: c.id,
+                    }));
+                if (notifs.length) await db.from('notifications').insert(notifs);
+            } catch (e) { console.warn('Bulk: notificaciones no enviadas', e); }
+        }
+
+        return { updatedCount, failedIds, failed };
     },
 
     updateCreditStatus: async (creditId: string, statusId: string, user: User, comment: string, devolucionTasks?: any[]) => {
@@ -3143,6 +3289,18 @@ export const ProductionService = {
             ProductionService.getZones().catch(() => [])
         ]);
 
+        // 0 créditos cargados NO es normal para quien exporta reportes: casi siempre es una
+        // sesión vencida (RLS devuelve vacío sin error). Avisar en vez de bajar un CSV en blanco.
+        if (credits.length === 0) {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) throw new Error('Tu sesión expiró. Recarga la página e inicia sesión de nuevo para exportar.');
+            } catch (e: any) {
+                if (/sesión expiró/.test(e?.message || '')) throw e;
+            }
+            throw new Error('No se cargó ningún crédito (0). Recarga la página e intenta de nuevo; si persiste, revisa tu conexión.');
+        }
+
         // Obtener zona, cédula, email y supervisor de cada gestor
         let gestorZoneMap: Record<string, string> = {};
         let gestorCedulaMap: Record<string, string> = {};
@@ -3150,8 +3308,9 @@ export const ProductionService = {
         let gestorCityMap: Record<string, string> = {};
         let gestorSupervisorMap: Record<string, string> = {};
         let gestorSupervisorPhoneMap: Record<string, string> = {};
+        let gestorSupervisorEmailMap: Record<string, string> = {};
 
-        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono'].includes(c));
+        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono','supervisor_email'].includes(c));
         if (needsGestorData) {
             const gestorIds = [...new Set(credits.map(c => c.assignedGestorId).filter(Boolean))];
             if (gestorIds.length > 0) {
@@ -3159,12 +3318,12 @@ export const ProductionService = {
                 if (gestorProfiles) {
                     // Obtener todos los supervisores de una vez
                     const zoneIds = [...new Set(gestorProfiles.map((gp: any) => gp.zone_id).filter(Boolean))];
-                    let supervisorMap: Record<string, { name: string; phone: string }> = {};
+                    let supervisorMap: Record<string, { name: string; phone: string; email: string }> = {};
                     if (zoneIds.length > 0) {
-                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, zone_id').eq('role', 'SUPERVISOR_ASIGNADO').in('zone_id', zoneIds);
+                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, email, zone_id').eq('role', 'SUPERVISOR_ASIGNADO').in('zone_id', zoneIds);
                         if (supervisors) {
                             for (const s of supervisors) {
-                                if (s.zone_id) supervisorMap[s.zone_id] = { name: s.full_name || '', phone: s.phone || '' };
+                                if (s.zone_id) supervisorMap[s.zone_id] = { name: s.full_name || '', phone: s.phone || '', email: s.email || '' };
                             }
                         }
                     }
@@ -3177,6 +3336,7 @@ export const ProductionService = {
                             gestorZoneMap[gp.id] = zone?.name || '';
                             gestorSupervisorMap[gp.id] = supervisorMap[gp.zone_id]?.name || '';
                             gestorSupervisorPhoneMap[gp.id] = supervisorMap[gp.zone_id]?.phone || '';
+                            gestorSupervisorEmailMap[gp.id] = supervisorMap[gp.zone_id]?.email || '';
                         }
                     }
                 }
@@ -3204,6 +3364,11 @@ export const ProductionService = {
         if (filters.entity) filtered = filtered.filter(c => c.entidadAliada === filters.entity);
         if ((filters as any).comisionPagada === 'pagada') filtered = filtered.filter(c => c.comisionPagada === true);
         if ((filters as any).comisionPagada === 'pendiente') filtered = filtered.filter(c => !c.comisionPagada);
+
+        // Aviso claro en vez de un CSV vacío que confunde.
+        if (filtered.length === 0) {
+            throw new Error(`Ningún crédito coincide con los filtros (revisé ${credits.length} créditos). Ajusta las fechas, el estado o el filtro de comisión.`);
+        }
 
         const columnMap: Record<string, (c: any) => string> = {
             'fecha_creacion': c => new Date(c.createdAt).toLocaleDateString(),
@@ -3260,6 +3425,7 @@ export const ProductionService = {
             'gestor_ciudad': c => gestorCityMap[c.assignedGestorId] || '',
             'supervisor_nombre': c => gestorSupervisorMap[c.assignedGestorId] || '',
             'supervisor_telefono': c => gestorSupervisorPhoneMap[c.assignedGestorId] || '',
+            'supervisor_email': c => gestorSupervisorEmailMap[c.assignedGestorId] || '',
         };
 
         const headers = selectedColumns.map(c => c.replace(/_/g, ' ').toUpperCase());
@@ -3946,6 +4112,61 @@ export const ProductionService = {
 
         const { error } = await supabase.from('entity_policies').upsert(upsertData, { onConflict: 'entity_name' });
         if (error) throw error;
+    },
+
+    // ─── LA HIPOTECARIA (preaprobación externa vía robot backend) ────────────
+    // Todo pasa por la Edge Function `lahipotecaria`; el front nunca habla directo con su sitio.
+    _lahipotecaria: async (action: string, payload: any) => {
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        if (!SUPA_URL) throw new Error('Supabase no configurado');
+        const token = (await supabase.auth.getSession()).data.session?.access_token || SUPA_ANON;
+        const resp = await fetch(`${SUPA_URL}/functions/v1/lahipotecaria`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SUPA_ANON },
+            body: JSON.stringify({ action, ...payload }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(json?.error || `Error ${resp.status} en La Hipotecaria`);
+        return json;
+    },
+
+    // ─── ADMIN: gestión de llaves de la API externa (solo rol ADMIN) ─────────
+    _adminApiKeys: async (body: any) => {
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        const token = (await supabase.auth.getSession()).data.session?.access_token || SUPA_ANON;
+        const resp = await fetch(`${SUPA_URL}/functions/v1/admin-api-keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SUPA_ANON },
+            body: JSON.stringify(body),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(json?.error || `Error ${resp.status}`);
+        return json;
+    },
+    listApiKeys: (): Promise<{ keys: any[] }> => ProductionService._adminApiKeys({ action: 'list' }),
+    createApiKey: (entity: string, opts: { scopes?: string[]; expiresInDays?: number; webhookUrl?: string; name?: string } = {}) => ProductionService._adminApiKeys({ action: 'create', entity, ...opts }),
+    rotateApiKey: (id: string) => ProductionService._adminApiKeys({ action: 'rotate', id }),
+    revokeApiKey: (id: string) => ProductionService._adminApiKeys({ action: 'revoke', id }),
+    enableApiKey: (id: string) => ProductionService._adminApiKeys({ action: 'enable', id }),
+    setApiKeyWebhook: (id: string, webhookUrl: string) => ProductionService._adminApiKeys({ action: 'set_webhook', id, webhookUrl }),
+    revealWebhookSecret: (id: string): Promise<{ webhook_secret: string | null }> => ProductionService._adminApiKeys({ action: 'reveal_webhook_secret', id }),
+
+    // Consulta la preaprobación (monto/cuota/tasa/plazo). Sin datos personales ni OTP.
+    lahipotecariaCalcular: async (params: { ingresos: number; gastos: number; pagaduria: string; plazo: number }): Promise<{ aprobado: boolean; monto: number; cuota: number; salud: number; tasa: number; plazo: number; mensaje: string }> => {
+        return ProductionService._lahipotecaria('calcular', params);
+    },
+
+    // Verifica la VIABILIDAD con los datos del cliente. Si es VIABLE, La Hipotecaria envía un
+    // OTP al CORREO del cliente y devuelve { otpEnviado:true, sessionId } para validarlo después.
+    lahipotecariaViabilidad: async (params: { nombres: string; apellidos: string; tipoDoc?: string; documento: string; correo: string; celular: string; vendedor?: string; ingresos: number; gastos: number; pagaduria: string; plazo: number }): Promise<{ viable: boolean; code?: string | null; mensaje: string; otpEnviado?: boolean; sessionId?: string; yaRegistrado?: boolean }> => {
+        return ProductionService._lahipotecaria('viabilidad', params);
+    },
+
+    // Valida el código OTP que llegó al correo del cliente → confirma la preaprobación.
+    lahipotecariaVerifyOtp: async (sessionId: string, codigo: string): Promise<{ ok: boolean; code?: string | null; mensaje: string }> => {
+        return ProductionService._lahipotecaria('verify-otp', { sessionId, codigo });
     },
 
     // ─── ANÁLISIS DE DOCUMENTOS LEGALES CON IA ──────────────────────────────

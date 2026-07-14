@@ -8,6 +8,7 @@ import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/componen
 import { CreditTypesAdmin } from './CreditTypesAdmin';
 import { StateBannersAdmin } from './StateBannersAdmin';
 import { FieldLibraryAdmin } from './FieldLibraryAdmin';
+import { ApiKeysAdmin } from './ApiKeysAdmin';
 import { getRadicacionAbierta, updateRadicacionAbierta } from '../simulador/services/settingsService';
 
 const STATE_COLORS = [
@@ -620,6 +621,18 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                 iconBg="bg-orange-100"
             >
                 <SimuladorAdminDashboard />
+            </AccordionSection>
+
+            {/* API / INTEGRACIONES — llaves por entidad */}
+            <AccordionSection openSections={openSections} onToggle={toggleSection}
+                id="api-keys"
+                title="API & Integraciones"
+                subtitle="Llaves de API por entidad/alianza (conexión de doble vía con aliados)"
+                icon={Globe}
+                iconColor="text-teal-600"
+                iconBg="bg-teal-100"
+            >
+                <ApiKeysAdmin />
             </AccordionSection>
 
             {/* LISTS ROW */}
