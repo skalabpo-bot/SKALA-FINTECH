@@ -35,7 +35,7 @@ Llave ausente/inválida/vencida → `401`. Sin el scope → `403`. En la BD solo
 - **Webhooks firmados (opcional):** si registras una URL HTTPS, Skala envía cada cambio de estado con `X-Skala-Signature: sha256=<HMAC>` (verificas con tu `webhook_secret`). Detalle y código de verificación en el manual §8.
 
 ## Errores
-`400` (campo/valor/estado inválido) · `401` (llave) · `403` (scope/entidad) · `404` (no existe o fuera de tu entidad) · `405` (método) · `413` (body > 64 KB) · `500`.
+`400` (campo/valor/estado inválido) · `401` (llave) · `403` (scope/entidad) · `404` (no existe o fuera de tu entidad) · `405` (método) · `409` (duplicado: misma cédula/correo + misma pagaduría en trámite) · `413` (body > 64 KB) · `500`.
 Formato: `{ "error": "mensaje", "request_id": "uuid" }` (sin detalles internos; usa el `request_id` para soporte).
 
 ## Seguridad

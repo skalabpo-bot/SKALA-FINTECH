@@ -63,7 +63,7 @@ function applyScope(q: any, identity: Identity) {
 }
 
 async function getStates() {
-  const { data } = await db().from('credit_states_config').select('id, name, order_index, enable_tasks').order('order_index');
+  const { data } = await db().from('credit_states_config').select('id, name, order_index, enable_tasks, is_final').order('order_index');
   return data || [];
 }
 
@@ -213,6 +213,36 @@ Deno.serve(async (req) => {
         if (ex) return json({ id: ex.id, solicitud_number: ex.solicitud_number, external_ref: externalRef, estado: states.find((s) => s.id === ex.status_id)?.name || initial.name }, 200);
       }
 
+      // ── ANTI-DUPLICADO por pagaduría (misma regla de capacidad que la UI de Skala) ──────
+      // No se puede radicar si ya existe un crédito NO final para la MISMA cédula (o correo)
+      // en la MISMA pagaduría. Se permite otro crédito solo si es con una pagaduría diferente.
+      // La comprobación es global (no solo dentro de la entidad): respeta la capacidad real del
+      // cliente en esa pagaduría. El mensaje es genérico (no expone datos de otras entidades).
+      const pagaduriaNorm = norm(String(cliente.pagaduria || ''));
+      if (pagaduriaNorm) {
+        const finalIds = new Set(states.filter((s: any) => s.is_final === true).map((s: any) => s.id));
+        const ced = cliente.numeroDocumento ? String(cliente.numeroDocumento).trim() : '';
+        const correoLc = cliente.correo ? String(cliente.correo).trim().toLowerCase() : '';
+        const candidatos: any[] = [];
+        if (ced) {
+          const { data } = await db().from('credits').select('id, status_id, client_data').filter('client_data->>numeroDocumento', 'eq', ced);
+          if (data) candidatos.push(...data);
+        }
+        if (correoLc) {
+          const { data } = await db().from('credits').select('id, status_id, client_data').filter('client_data->>correo', 'ilike', correoLc);
+          if (data) candidatos.push(...data);
+        }
+        const conflicto = candidatos.find((c: any) => {
+          if (finalIds.has(c.status_id)) return false; // ya cerrado → no bloquea
+          const p = norm(String(c.client_data?.pagaduria || ''));
+          return !p || p === pagaduriaNorm; // misma pagaduría (o sin pagaduría en el existente) → conflicto
+        });
+        if (conflicto) {
+          const stName = states.find((s) => s.id === conflicto.status_id)?.name || 'en trámite';
+          return fail(409, `Ya existe un crédito en trámite para este cliente en la pagaduría "${String(cliente.pagaduria).trim()}" (estado: ${stName}). Solo puedes radicar otro si es con una pagaduría diferente.`);
+        }
+      }
+
       // Saneo de client_data por whitelist (solo strings/números cortos).
       const cleanCliente: Record<string, any> = {};
       for (const [k, v] of Object.entries(cliente)) {
@@ -236,12 +266,12 @@ Deno.serve(async (req) => {
         idempotency_key: idem,
       };
 
-      const { data, error } = await db().from('credits').insert(insertPayload).select('id, solicitud_number').single();
+      const { data, error } = await db().from('credits').insert(insertPayload).select('id, solicitud_number, external_ref').single();
       if (error) {
         // Violación de idempotencia (23505) → devolver el existente en vez de error.
         if ((error as any).code === '23505' && idem) {
-          const { data: ex } = await db().from('credits').select('id, solicitud_number, status_id').eq('idempotency_key', idem).eq('api_key_id', identity.id).maybeSingle();
-          if (ex) return json({ id: ex.id, solicitud_number: ex.solicitud_number, estado: states.find((s) => s.id === ex.status_id)?.name || initial.name }, 200);
+          const { data: ex } = await db().from('credits').select('id, solicitud_number, status_id, external_ref').eq('idempotency_key', idem).eq('api_key_id', identity.id).maybeSingle();
+          if (ex) return json({ id: ex.id, solicitud_number: ex.solicitud_number, external_ref: ex.external_ref || null, estado: states.find((s) => s.id === ex.status_id)?.name || initial.name }, 200);
         }
         return fail(400, 'No se pudo crear el crédito.', error);
       }
@@ -252,7 +282,7 @@ Deno.serve(async (req) => {
         description: `Crédito creado vía API externa para ${nombreCompleto || cliente.numeroDocumento || ''}.`,
       }));
 
-      return json({ id: data.id, solicitud_number: data.solicitud_number, estado: initial.name }, 201);
+      return json({ id: data.id, solicitud_number: data.solicitud_number, external_ref: data.external_ref || null, estado: initial.name }, 201);
     }
 
     // ── GET /credits/:sol | ?solicitud= | ?cedula=  (uno)  |  GET /credits (lista) ──
@@ -362,7 +392,8 @@ Deno.serve(async (req) => {
       return json({ solicitud_number: credit.solicitud_number, estado: target.name, ...(conTareas ? { tareas: tareasGuardadas.length } : {}) });
     }
 
-    return fail(404, 'Método o ruta no soportada.');
+    // Llegamos aquí solo con rutas /credits válidas pero método/subruta no soportada → 405.
+    return fail(405, 'Método no soportado en esta ruta.');
   } catch (err) {
     return fail(500, 'Error interno.', err);
   }

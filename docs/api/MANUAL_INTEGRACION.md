@@ -1,6 +1,6 @@
 # Manual de Integración — API de Skala Fintech
 
-**Versión:** 1.1 · **Última actualización:** 2026-07-10
+**Versión:** 1.2 · **Última actualización:** 2026-07-15
 
 Guía completa para que una plataforma externa se integre con Skala: **radicar créditos**, **consultar** su estado y datos, **cambiar de estado**, gestionar **devoluciones con tareas**, agregar **comentarios**, y **recibir eventos** (webhooks salientes).
 
@@ -130,7 +130,7 @@ Scope: `credits:create`.
 | `tasa` | number | ✅ | 0 – 100. |
 | `cliente` | object | ✅ | Requiere al menos `numeroDocumento` **o** `nombres`. |
 | `montoDesembolso` | number | ➖ | Default = `monto`. |
-| `comisionPct` | number | ➖ | 0 – 100. Si se omite, Skala la calcula por la tasa. |
+| `comisionPct` | number | ➖ | 0 – 100. Si se omite, la comisión estimada queda en **0** (envíala si quieres fijarla). |
 | `lineaCredito` | string | ➖ | Ver [catálogo](#líneas-de-crédito). |
 | `external_ref` | string | ➖ | Tu propio ID del crédito (enlace + dedup). Ver [Convenciones](#5-convenciones). |
 | `gestorId` | uuid | ➖ | Si se envía, debe ser un gestor existente; si se omite, queda sin asignar. |
@@ -189,8 +189,12 @@ print(r.json())  # {'id': ..., 'solicitud_number': 1420, 'estado': 'RADICADO / P
 
 **Respuesta `201`:**
 ```json
-{ "id": "uuid", "solicitud_number": 1420, "estado": "RADICADO / PTE VALIDACIÓN" }
+{ "id": "uuid", "solicitud_number": 1420, "external_ref": "TU-ID-123 (o null si no lo enviaste)", "estado": "RADICADO / PTE VALIDACIÓN" }
 ```
+> **Nota:** si el crédito ya existía (mismo `Idempotency-Key` o mismo `external_ref`), la respuesta es **`200`** (no `201`) con el crédito ya creado — no se duplica.
+
+> **Regla anti-duplicado (por pagaduría) → `409`:** no puedes radicar si ya existe un crédito **en trámite** (estado no final) para la **misma cédula o el mismo correo** en la **misma pagaduría**. Puedes radicar otro **solo si es con una pagaduría diferente**, o si el anterior ya llegó a un estado final (DESEMBOLSADO / NEGADO / DESISTIDO). Respuesta: `409 { "error": "Ya existe un crédito en trámite para este cliente en la pagaduría \"…\" (estado: …). Solo puedes radicar otro si es con una pagaduría diferente.", "request_id": "…" }`.
+> *(Es la misma regla de capacidad que aplica Skala internamente; evita duplicar al cliente en la misma pagaduría.)*
 
 ---
 
@@ -442,6 +446,7 @@ Solo recibes webhooks de **tus** créditos (mismo aislamiento que la API). Nunca
 | `403` | La API key no tiene el scope requerido |
 | `404` | Crédito o ruta no encontrada (incluye créditos fuera de tu alcance) |
 | `405` | Método no soportado en esa ruta |
+| `409` | **Duplicado:** ya hay un crédito en trámite para esa cédula/correo en la misma pagaduría (ver §6.1) |
 | `413` | Body demasiado grande (máx 64 KB) |
 | `500` | Error interno |
 
@@ -510,6 +515,8 @@ Ejemplos frecuentes: `Colpensiones`, `CASUR`, `CREMIL`, `Caja de Retiro de las F
 
 **¿Cómo evito duplicar un crédito si mi request falla por timeout?** Usa `Idempotency-Key`; el reintento con la misma llave devuelve el crédito ya creado.
 
+**¿Puedo radicar el mismo cliente dos veces?** Sí, pero **no en la misma pagaduría** si el anterior sigue en trámite → responde `409`. Puedes con **otra pagaduría**, o cuando el anterior llegue a estado final. (Además, para el mismo crédito lógico usa `external_ref`/`Idempotency-Key` para no duplicar por reintentos.)
+
 **¿Cómo devuelvo un crédito para que corrijan algo?** `PATCH .../status` con un estado de devolución (ej. `DEVUELTO`) y el arreglo `tareas`.
 
 **¿La API valida que la transición de estado sea válida?** No; puedes mover a cualquier estado. Respeta el flujo de negocio.
@@ -523,6 +530,7 @@ Ejemplos frecuentes: `Colpensiones`, `CASUR`, `CREMIL`, `Caja de Retiro de las F
 ---
 
 ## Changelog
+- **1.2 (2026-07-15):** **regla anti-duplicado por pagaduría** (`409`): no se radica si ya hay un crédito en trámite para la misma cédula/correo en la misma pagaduría.
 - **1.1 (2026-07-10):** aislamiento **por entidad**; endpoint **`GET /credits`** (listar, paginado); campo **`external_ref`** (enlace de IDs + dedup); **webhooks firmados** (HMAC) + opción de **polling**; código `405` documentado.
 - **1.0 (2026-07-08):** versión inicial (crear, consultar, cambiar estado, devolver con tareas, comentar).
 
