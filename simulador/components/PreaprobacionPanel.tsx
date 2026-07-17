@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MockService } from '../../services/mockService';
 import { Loader2, CheckCircle2, XCircle, ShieldCheck, Search, Mail, AlertTriangle } from 'lucide-react';
 
@@ -28,7 +28,7 @@ const labelCls = 'block text-[10px] font-black text-slate-500 uppercase tracking
 
 export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, onChange }) => {
   // Datos financieros que ya vienen del flujo (no editables aquí; solo se usan para la oferta/radicación).
-  const [pagaduria] = useState(() => PAGADURIAS_LH.find(p => (prefill.pagaduria || '').toUpperCase().includes(p.toUpperCase())) || (prefill.pagaduria || ''));
+  const [pagaduria, setPagaduria] = useState(() => PAGADURIAS_LH.find(p => (prefill.pagaduria || '').toUpperCase().includes(p.toUpperCase())) || (prefill.pagaduria || ''));
   const [ingresos] = useState(prefill.ingresos ? String(Math.round(prefill.ingresos)) : '');
   const [gastos] = useState(prefill.gastos ? String(Math.round(prefill.gastos)) : '0');
   const [plazo] = useState(prefill.plazo || 72);
@@ -51,26 +51,45 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, onCha
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpMsg, setOtpMsg] = useState('');
 
+  // Monto/tasa/plazo EDITABLES para radicar (prellenados con la oferta; el gestor puede ajustar
+  // al valor que La Hipotecaria aprobó). Si la oferta no calcula (ej. sin ingresos), se ingresan a mano.
+  const [montoStr, setMontoStr] = useState('');
+  const [tasaStr, setTasaStr] = useState('');
+  const [plazoStr, setPlazoStr] = useState('');
+
+  // Con el OTP confirmado, emite el preData listo para radicar según los valores editables.
+  useEffect(() => {
+    if (!otpOk) return;
+    const m = Number(onlyDigits(montoStr));
+    onChange({
+      nombres: nombres.trim(), apellidos: apellidos.trim(), numeroDocumento: onlyDigits(documento), tipoDocumento: 'CEDULA',
+      correo: correo.trim(), telefonoCelular: onlyDigits(celular), pagaduria,
+      monto: m, montoDesembolso: m, tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo, cuota: oferta?.cuota || 0,
+      preaprobado: true, preaprobacionNumero: '', otpConfirmado: true, listo: m > 0,
+    });
+  }, [otpOk, montoStr, tasaStr, plazoStr, pagaduria]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const buildParams = () => ({
     nombres: nombres.trim(), apellidos: apellidos.trim(), documento: onlyDigits(documento),
     correo: correo.trim(), celular: onlyDigits(celular),
     ingresos: Number(onlyDigits(ingresos)), gastos: Number(onlyDigits(gastos)), pagaduria, plazo,
   });
 
-  // Trae la oferta (monto/cuota/tasa) y arma el preData. SOLO se llama tras confirmar el OTP,
-  // así que `listo`/`otpConfirmado` siempre quedan en true (regla: obligar OTP antes de radicar).
+  // Tras confirmar el OTP: intenta traer la oferta (monto/tasa) de la calculadora y prellena los
+  // campos editables. Si no calcula (ej. entrada manual sin ingresos), quedan para que el gestor
+  // ingrese el monto que La Hipotecaria aprobó. El useEffect de arriba emite el preData.
   const cargarOfertaYPreData = async (p: ReturnType<typeof buildParams>) => {
     try {
       const c = await MockService.lahipotecariaCalcular({ ingresos: p.ingresos, gastos: p.gastos, pagaduria, plazo });
-      const monto = c.aprobado ? c.monto : 0;
-      setOferta(c.aprobado ? { monto: c.monto, cuota: c.cuota, tasa: c.tasa, plazo: c.plazo } : null);
-      onChange({
-        nombres: p.nombres, apellidos: p.apellidos, numeroDocumento: p.documento, tipoDocumento: 'CEDULA',
-        correo: p.correo, telefonoCelular: p.celular, pagaduria,
-        monto, montoDesembolso: monto, tasa: c.tasa || 0, plazo: c.plazo || plazo, cuota: c.cuota || 0,
-        preaprobado: true, preaprobacionNumero: '', otpConfirmado: true, listo: monto > 0,
-      });
+      if (c.aprobado && c.monto > 0) {
+        setOferta({ monto: c.monto, cuota: c.cuota, tasa: c.tasa, plazo: c.plazo });
+        setMontoStr(String(c.monto)); setTasaStr(String(c.tasa || '')); setPlazoStr(String(c.plazo || plazo));
+        return;
+      }
     } catch { /* la oferta es opcional; el OTP ya se confirmó */ }
+    // Sin oferta automática → el gestor pone el monto a mano.
+    setOferta(null);
+    if (!plazoStr) setPlazoStr(String(plazo));
   };
 
   const verificar = async () => {
@@ -122,18 +141,8 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, onCha
         </div>
       </div>
 
-      {/* La viabilidad de La Hipotecaria se decide SOLO por la cédula: pedimos únicamente los
-          datos personales. Pagaduría/ingresos/plazo (que ya se recogieron en el flujo) se usan
-          después para armar la oferta y radicar; aquí solo se muestran como referencia. */}
-      {(pagaduria || Number(ingresos) > 0 || plazo) ? (
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-          <span className="font-black uppercase tracking-widest text-slate-400">Para la oferta:</span>
-          {pagaduria && <span className="bg-slate-100 rounded-full px-3 py-1 font-bold">{pagaduria}</span>}
-          {Number(ingresos) > 0 && <span className="bg-slate-100 rounded-full px-3 py-1 font-bold">Ingresos {fmt(Number(ingresos))}</span>}
-          {plazo ? <span className="bg-slate-100 rounded-full px-3 py-1 font-bold">{plazo} meses</span> : null}
-        </div>
-      ) : null}
-
+      {/* La viabilidad de La Hipotecaria se decide SOLO por la cédula: aquí solo datos personales.
+          La pagaduría/monto/plazo del crédito se confirman abajo, después del OTP. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div><label className={labelCls}>Nombres</label><input value={nombres} onChange={e => setNombres(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Apellidos</label><input value={apellidos} onChange={e => setApellidos(e.target.value)} className={inputCls} /></div>
@@ -185,19 +194,27 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, onCha
         </div>
       )}
 
-      {/* Confirmado: SOLO con el OTP validado → oferta + listo para radicar */}
+      {/* Confirmado: SOLO con el OTP validado → monto/tasa/plazo editables + listo para radicar */}
       {viab?.viable && otpOk && (
         <div className="bg-teal-50 border-2 border-teal-200 rounded-2xl p-5 space-y-3">
           <p className="text-lg font-black text-teal-800 flex items-center gap-2"><CheckCircle2 size={22} /> OTP confirmado — preaprobación lista</p>
-          {oferta && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-white rounded-xl border border-teal-200 p-3"><p className="text-[10px] font-black text-slate-400 uppercase">Monto</p><p className="text-lg font-black text-teal-700">{fmt(oferta.monto)}</p></div>
-              <div className="bg-white rounded-xl border border-slate-200 p-3"><p className="text-[10px] font-black text-slate-400 uppercase">Cuota</p><p className="text-lg font-black text-slate-700">{fmt(oferta.cuota)}</p></div>
-              <div className="bg-white rounded-xl border border-slate-200 p-3"><p className="text-[10px] font-black text-slate-400 uppercase">Tasa</p><p className="text-lg font-black text-slate-700">{oferta.tasa}%</p></div>
-              <div className="bg-white rounded-xl border border-slate-200 p-3"><p className="text-[10px] font-black text-slate-400 uppercase">Plazo</p><p className="text-lg font-black text-slate-700">{oferta.plazo} m</p></div>
+          <p className="text-xs text-teal-700">{oferta ? 'Estos son los valores de la oferta; ajústalos si La Hipotecaria aprobó otro monto.' : 'Confirma la pagaduría e ingresa el monto aprobado por La Hipotecaria para radicar.'}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className={labelCls}>Pagaduría</label>
+              <select value={pagaduria} onChange={e => setPagaduria(e.target.value)} className={inputCls}>
+                {!PAGADURIAS_LH.includes(pagaduria) && pagaduria && <option value={pagaduria}>{pagaduria}</option>}
+                {PAGADURIAS_LH.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
             </div>
-          )}
-          <p className="text-[11px] text-teal-600">Puedes radicar el crédito con estos valores (botón abajo).</p>
+            <div>
+              <label className={labelCls}>Monto {Number(montoStr) > 0 && <span className="text-teal-600 normal-case font-bold">{fmt(Number(montoStr))}</span>}</label>
+              <input value={montoStr} onChange={e => setMontoStr(onlyDigits(e.target.value))} placeholder="5000000" className={`${inputCls} ${Number(montoStr) > 0 ? '' : 'border-amber-300'}`} inputMode="numeric" />
+            </div>
+            <div><label className={labelCls}>Tasa (%)</label><input value={tasaStr} onChange={e => setTasaStr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.85" className={inputCls} inputMode="decimal" /></div>
+            <div><label className={labelCls}>Plazo (meses)</label><input value={plazoStr} onChange={e => setPlazoStr(onlyDigits(e.target.value))} placeholder="72" className={inputCls} inputMode="numeric" /></div>
+          </div>
+          <p className="text-[11px] text-teal-600">{Number(montoStr) > 0 ? '✓ Listo para radicar (botón abajo).' : 'Falta el monto para habilitar la radicación.'}</p>
         </div>
       )}
     </div>

@@ -74,8 +74,11 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
   // Visible entities filtered by pagaduría AND credit type
   const pagKey = selectedPagaduria?.toUpperCase().trim() ?? '';
   const visibleEntities = useMemo(() => {
-    // Ocultar entidades inactivas (ej. La Hipotecaria mientras no esté lista): no se pueden simular.
-    let list = entities.filter(e => (e as any).isActive !== false);
+    // Ocultar entidades inactivas (ej. La Hipotecaria mientras no esté lista) SOLO en producción.
+    // En local (dev/localhost) se muestran para poder hacer demos y pruebas.
+    const isLocal = (import.meta as any).env?.DEV === true ||
+      (typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname));
+    let list = entities.filter(e => isLocal || (e as any).isActive !== false);
     if (selectedPagaduria) {
       list = list.filter(e => e.pagadurias.length > 0 && e.pagadurias.some(p => p.toUpperCase().trim() === pagKey));
     }

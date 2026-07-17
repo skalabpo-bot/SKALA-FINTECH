@@ -2477,8 +2477,8 @@ export const ProductionService = {
     },
     getZones: async () => { const { data } = await supabase.from('zones').select('*'); return data || []; },
     updateUserProfile: async (id: string, d: any) => {
-        // Obtener rol actual antes de actualizar para detectar cambio de rol
-        const { data: currentProfile } = await supabase.from('profiles').select('role, full_name, cedula').eq('id', id).single();
+        // Obtener rol/email actual antes de actualizar (para detectar cambios)
+        const { data: currentProfile } = await supabase.from('profiles').select('role, full_name, cedula, email').eq('id', id).single();
         const previousRole = currentProfile?.role;
 
         const updateData: any = {
@@ -2496,6 +2496,18 @@ export const ProductionService = {
         if (d.assignedEntities !== undefined) updateData.assigned_entities = d.assignedEntities || [];
         const { error } = await supabase.from('profiles').update(updateData).eq('id', id);
         if (error) throw error;
+
+        // Sincronizar el correo de LOGIN (auth.users) si cambió. Sin esto, el usuario seguiría
+        // entrando con el correo viejo aunque el perfil muestre el nuevo.
+        if (d.email && String(d.email).trim().toLowerCase() !== String(currentProfile?.email || '').toLowerCase()) {
+            if (!supabaseAdmin) throw new Error('Perfil guardado, pero para cambiar el correo de login se requiere VITE_SUPABASE_SERVICE_KEY.');
+            const { error: emailErr } = await supabaseAdmin.auth.admin.updateUserById(id, { email: String(d.email).trim(), email_confirm: true });
+            if (emailErr) {
+                // Revertir el email del perfil para no dejarlo desincronizado con el login.
+                await supabase.from('profiles').update({ email: currentProfile?.email || null }).eq('id', id).catch(() => {});
+                throw new Error(`No se pudo cambiar el correo: ${/already|registered|exists/i.test(emailErr.message) ? 'ese correo ya está en uso por otra cuenta.' : emailErr.message}`);
+            }
+        }
 
         // Si cambió a SUPERVISOR_ASIGNADO, crear zona automáticamente
         const newRole = d.role || previousRole;
@@ -4135,14 +4147,23 @@ export const ProductionService = {
     _adminApiKeys: async (body: any) => {
         const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
         const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-        const token = (await supabase.auth.getSession()).data.session?.access_token || SUPA_ANON;
+        // Token de la sesión del admin. Si no hay o está vencido, intentar refrescar antes de fallar.
+        let session = (await supabase.auth.getSession()).data.session;
+        if (!session?.access_token) {
+            session = (await supabase.auth.refreshSession()).data.session;
+        }
+        if (!session?.access_token) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
         const resp = await fetch(`${SUPA_URL}/functions/v1/admin-api-keys`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SUPA_ANON },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPA_ANON },
             body: JSON.stringify(body),
         });
         const json = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(json?.error || `Error ${resp.status}`);
+        if (!resp.ok) {
+            // Mensaje más claro si el backend rechazó la sesión.
+            if (json?.error === 'Sesión inválida' || resp.status === 401) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
+            throw new Error(json?.error || `Error ${resp.status}`);
+        }
         return json;
     },
     listApiKeys: (): Promise<{ keys: any[] }> => ProductionService._adminApiKeys({ action: 'list' }),

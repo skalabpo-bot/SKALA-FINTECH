@@ -7,7 +7,7 @@
 
 **Asunto:** Integración API Skala ↔ La Hipotecaria
 
-Hola [NOMBRE],
+Buen día,
 
 Habilitamos la conexión por **API** para integrar nuestras dos plataformas. Con esto, los créditos de **La Hipotecaria** viven en ambos lados: pueden crearse desde su sistema o desde Skala, y los cambios de estado (con tareas/devoluciones) se reflejan **automáticamente** en la otra plataforma.
 
@@ -58,4 +58,4 @@ curl -X PATCH '.../api/credits/{solicitud}/status' \
 Cualquier duda técnica, con gusto agendamos una llamada para dejarlo andando.
 
 Saludos,
-[TU NOMBRE] — Skala
+Camilo Moncada — Skala
