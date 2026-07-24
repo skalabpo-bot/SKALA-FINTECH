@@ -43,21 +43,25 @@ const compressImage = (file: File): Promise<string> => {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1024;
+        // Un desprendible tiene 20-30 líneas de cifras pequeñas: a 1024px los dígitos se vuelven
+        // ilegibles y el OCR adivina (disponible errado, distinto en cada foto). 2000px + calidad
+        // alta conservan las cifras legibles sin inflar demasiado el peso del envío.
+        const MAX_WIDTH = 2000;
         const scaleSize = MAX_WIDTH / img.width;
 
         if (scaleSize < 1) {
             canvas.width = MAX_WIDTH;
-            canvas.height = img.height * scaleSize;
+            canvas.height = Math.round(img.height * scaleSize);
         } else {
             canvas.width = img.width;
             canvas.height = img.height;
         }
 
         const ctx = canvas.getContext('2d');
+        if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         resolve(dataUrl.split(',')[1]);
       };
       img.onerror = (err) => reject(err);
@@ -94,6 +98,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
   });
   const [isAnalizing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocrWarning, setOcrWarning] = useState<string | null>(null);
   const [hasUploadedPaystub, setHasUploadedPaystub] = useState(false);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [loadingStage, setLoadingStage] = useState(0);
@@ -166,6 +171,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     setLastFile(file);
     setIsAnalyzing(true);
     setError(null);
+    setOcrWarning(null);
 
     try {
       let images: { base64: string; mimeType: string }[];
@@ -194,6 +200,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
         manualQuota: extractedData.manualQuota || prev.manualQuota,
       }));
 
+      // Aviso si la reconciliación contra las cifras de control del desprendible ajustó algo.
+      setOcrWarning(extractedData.ocrWarning || null);
       setHasUploadedPaystub(true);
       handleCalculate(extractedData);
 
@@ -360,6 +368,16 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
               </svg>
               Reintentar cálculo (vuelve a leer el desprendible)
             </button>
+          </div>
+        )}
+
+        {/* Aviso de reconciliación: el OCR no cuadró contra el neto/total del desprendible y se ajustó */}
+        {ocrWarning && !isAnalizing && (
+          <div className="p-4 bg-amber-50 border-l-4 border-amber-500 text-amber-800 rounded-r-lg text-sm flex items-start gap-3 animate-fade-in shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <span className="flex-1"><b>Verifica el desprendible:</b> {ocrWarning}</span>
           </div>
         )}
 

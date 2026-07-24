@@ -81,6 +81,9 @@ export interface FinancialData {
   detailedDeductions?: DeductionItem[]; // AI extracted list of deductions
   manualQuota?: number; // New field for direct quota entry
   employerName?: string; // AI extracted employer/pagaduría name
+  netPay?: number; // Neto a pagar impreso (ancla de verificación del OCR)
+  totalDeductions?: number; // Total deducciones impreso (ancla de verificación del OCR)
+  ocrWarning?: string; // Aviso si el OCR no cuadró contra las anclas y hubo que ajustar
 }
 
 export interface AnalysisResult {

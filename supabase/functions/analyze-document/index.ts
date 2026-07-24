@@ -143,6 +143,7 @@ async function callOpenAI(images: any[], prompt: string, model: string): Promise
     body: JSON.stringify({
       model,
       response_format: { type: 'json_object' },
+      temperature: 0, // determinista: la misma imagen debe dar SIEMPRE las mismas cifras
       messages: [{ role: 'user', content: [...imageParts, { type: 'text', text: prompt }] }],
     }),
   });

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { FinancialData, ClientData } from "../types";
+import { FinancialData, ClientData, DeductionItem } from "../types";
 
 // CONSTANTES DE LÍMITE
 const MAX_RPM = 15;
@@ -211,6 +211,72 @@ export interface PaystubImage {
   mimeType: string;
 }
 
+/**
+ * Normaliza y RECONCILIA lo que devolvió el OCR contra las cifras de control del propio
+ * desprendible (neto a pagar y total deducciones). Un desprendible cumple siempre:
+ *   devengado − total_deducciones = neto_a_pagar
+ * Si esas dos anclas son coherentes entre sí, se usan como verdad para detectar deducciones
+ * mal clasificadas o faltantes (la causa de que el disponible salga a veces alto, a veces bajo).
+ * El ajuste va SIEMPRE a "otros descuentos" (nunca a los de ley), y del lado conservador.
+ */
+const normalizePaystub = (data: any): FinancialData => {
+  const num = (v: any) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n) : 0; };
+  const income = num(data.monthlyIncome);
+  let mandatory = num(data.mandatoryDeductions);
+  let others = num(data.otherDeductions);
+  const embargos = num(data.embargos);
+  const netPay = num(data.netPay);
+  let totalDed = num(data.totalDeductions);
+  const detailed: DeductionItem[] = Array.isArray(data.detailedDeductions)
+    ? data.detailedDeductions.map((d: any) => ({ name: String(d?.name || '').trim(), amount: num(d?.amount) })).filter((d: DeductionItem) => d.amount > 0)
+    : [];
+  let warning = '';
+
+  // 1) Si "otros" no cuadra con la suma línea-por-línea, la lista manda (es más granular y verificable).
+  const sumDetail = detailed.reduce((s, d) => s + d.amount, 0);
+  if (sumDetail > 0 && others > 0 && Math.abs(sumDetail - others) > Math.max(5000, others * 0.02)) {
+    others = sumDetail;
+  }
+
+  // 2) Total de deducciones de control: el impreso, o el derivado del neto (devengado − neto).
+  const derivedFromNet = income > 0 && netPay > 0 && netPay < income ? income - netPay : 0;
+  if (!totalDed && derivedFromNet) totalDed = derivedFromNet;
+  // Las anclas se usan SOLO si son coherentes entre sí (evita corromper con una lectura mala del neto).
+  const anchorsConsistent = totalDed > 0 && derivedFromNet > 0 && Math.abs(totalDed - derivedFromNet) <= Math.max(10000, income * 0.01);
+  const anchorTotal = anchorsConsistent ? Math.round((totalDed + derivedFromNet) / 2) : (totalDed || derivedFromNet);
+
+  // 3) Reconciliar la clasificación contra el total de control.
+  if (anchorTotal > 0 && income > 0) {
+    const classified = mandatory + others + embargos;
+    const diff = anchorTotal - classified; // >0 faltan descuentos; <0 se clasificaron de más
+    const tol = Math.max(8000, income * 0.01);
+    if (diff > tol) {
+      // Faltan descuentos → van a "otros" (conservador: baja el disponible, evita sobre-aprobar).
+      others += diff;
+      warning = `El OCR omitió ~${diff.toLocaleString('es-CO')} en descuentos (el neto del desprendible no cuadraba). Se sumaron a "otros"; revisa el desglose.`;
+    } else if (diff < -tol) {
+      // Se clasificaron descuentos de más → recortar de "otros" sin dejarlo negativo.
+      const corte = Math.min(-diff, others);
+      others -= corte;
+      warning = `El OCR contó ~${(-diff).toLocaleString('es-CO')} de más en descuentos. Se ajustó "otros"; verifica el desprendible.`;
+    }
+  }
+
+  return {
+    monthlyIncome: income,
+    mandatoryDeductions: mandatory,
+    otherDeductions: others,
+    embargos,
+    detailedDeductions: detailed,
+    entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
+    employerName: data.employerName || '',
+    manualQuota: num(data.manualQuota),
+    netPay,
+    totalDeductions: totalDed,
+    ocrWarning: warning || undefined,
+  };
+};
+
 export const analyzePaystubDocument = async (
   base64DataOrImages: string | PaystubImage[],
   mimeType?: string
@@ -288,7 +354,15 @@ export const analyzePaystubDocument = async (
     - "SEGUROS_ALFA" si dice "Seguros Alfa" o "ALFA"
     - "GENERAL" en cualquier otro caso
 
-    CAMPO 8 — manualQuota
+    CAMPO 8 — netPay (NETO A PAGAR impreso)
+    Copia el valor de "Neto a Pagar", "Total a Pagar", "Líquido a Pagar", "Valor a Consignar" o
+    equivalente: la plata que efectivamente recibe la persona. Es una cifra de CONTROL. Si no aparece, 0.
+
+    CAMPO 9 — totalDeductions (TOTAL DEDUCCIONES impreso)
+    Copia el valor de "Total Deducciones", "Total Descuentos" o equivalente (la suma de TODOS los
+    descuentos, tal como la imprime el documento). Es una cifra de CONTROL. Si no aparece, 0.
+
+    CAMPO 10 — manualQuota
     SOLO aplicable si entityType es "CREMIL" o "CASUR".
     Los desprendibles de CREMIL y CASUR frecuentemente muestran el CUPO DISPONIBLE directamente, que es el valor que el pensionado tiene libre para endeudarse.
     Busca etiquetas como: "Cupo Disponible", "Cupo Libre", "Cupo Autorizado", "Cupo para Libranza", "Disponible Libranza", "Saldo Cupo", o frases tipo "puede comprometer hasta $X".
@@ -336,19 +410,10 @@ export const analyzePaystubDocument = async (
   if (EDGE_FN_URL) {
     try {
       console.log(`📡 Llamando Edge Function (cascada: Gemini → Groq → OpenAI) para desprendible (${images.length} página(s))...`);
-      const edgePrompt = prompt + `\n\nIMPORTANTE: Responde SOLO con JSON válido con esta estructura: {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}. En detailedDeductions incluye CADA libranza, crédito, cartera individual.`;
+      const edgePrompt = prompt + `\n\nIMPORTANTE: Responde SOLO con JSON válido con esta estructura: {"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"netPay":number,"totalDeductions":number,"manualQuota":number}. En detailedDeductions incluye CADA libranza, crédito, cartera individual. netPay y totalDeductions son las cifras de control impresas en el desprendible.`;
       const data = await callEdgeFunction('paystub', images, edgePrompt);
       console.log('✅ Desprendible leído vía Edge Function', data);
-      return {
-        monthlyIncome: data.monthlyIncome || 0,
-        mandatoryDeductions: data.mandatoryDeductions || 0,
-        otherDeductions: data.otherDeductions || 0,
-        embargos: data.embargos || 0,
-        detailedDeductions: data.detailedDeductions || [],
-        entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
-        employerName: data.employerName || '',
-        manualQuota: data.manualQuota || 0
-      };
+      return normalizePaystub(data);
     } catch (edgeErr: any) {
       console.warn('⚠️ Edge Function falló, intentando Gemini directo como último recurso:', edgeErr.message);
       lastError = edgeErr;
@@ -399,6 +464,8 @@ export const analyzePaystubDocument = async (
                     }
                   }
                 },
+                netPay: { type: Type.NUMBER },
+                totalDeductions: { type: Type.NUMBER },
                 manualQuota: { type: Type.NUMBER }
               },
               required: ["entityType", "employerName", "monthlyIncome", "mandatoryDeductions", "otherDeductions", "embargos", "manualQuota"]
@@ -408,17 +475,7 @@ export const analyzePaystubDocument = async (
 
         if (response.text) {
           console.log(`✅ ÉXITO: Respuesta recibida del modelo ${MODEL}`);
-          const data = JSON.parse(response.text);
-          return {
-            monthlyIncome: data.monthlyIncome || 0,
-            mandatoryDeductions: data.mandatoryDeductions || 0,
-            otherDeductions: data.otherDeductions || 0,
-            embargos: data.embargos || 0,
-            detailedDeductions: data.detailedDeductions || [],
-            entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
-            employerName: data.employerName || '',
-            manualQuota: data.manualQuota || 0
-          };
+          return normalizePaystub(JSON.parse(response.text));
         }
       } catch (error: any) {
         const msg = error.message || '';
@@ -442,21 +499,13 @@ export const analyzePaystubDocument = async (
       console.log('🔄 Fallback a OpenAI GPT-4o-mini vía Edge Function para desprendible...');
       const oaiPrompt = prompt + `\n\nIMPORTANTE:
 1. Responde SOLO con JSON válido con esta estructura exacta:
-{"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"manualQuota":number}
+{"entityType":"string","employerName":"string","monthlyIncome":number,"mandatoryDeductions":number,"otherDeductions":number,"embargos":number,"detailedDeductions":[{"name":"string","amount":number}],"netPay":number,"totalDeductions":number,"manualQuota":number}
 2. En detailedDeductions DEBES incluir CADA libranza, crédito, préstamo, cartera, cooperativa, seguro y cualquier otro descuento individual que NO sea salud, pensión o embargo. Cada uno como un objeto separado con su nombre exacto y monto.
-3. La suma de todos los amounts de detailedDeductions DEBE ser igual a otherDeductions.`;
+3. La suma de todos los amounts de detailedDeductions DEBE ser igual a otherDeductions.
+4. netPay = neto/líquido a pagar impreso; totalDeductions = total de descuentos impreso. Son cifras de CONTROL para verificar la lectura.`;
       const data = await callEdgeFunction('paystub', images, oaiPrompt);
       console.log('✅ ÉXITO: Desprendible leído vía Edge Function', data);
-      return {
-        monthlyIncome: data.monthlyIncome || 0,
-        mandatoryDeductions: data.mandatoryDeductions || 0,
-        otherDeductions: data.otherDeductions || 0,
-        embargos: data.embargos || 0,
-        detailedDeductions: data.detailedDeductions || [],
-        entityType: (['CREMIL', 'CASUR', 'MIN_DEFENSA', 'SEGUROS_ALFA'].includes(data.entityType) ? data.entityType : 'GENERAL') as any,
-        employerName: data.employerName || '',
-        manualQuota: data.manualQuota || 0
-      };
+      return normalizePaystub(data);
     } catch (edgeErr: any) {
       console.warn('❌ Edge Function falló:', edgeErr.message);
       lastError = edgeErr;
