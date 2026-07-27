@@ -3,7 +3,7 @@
 // con el header X-Robot-Secret. NUNCA se expone al navegador.
 require('dotenv').config();
 const express = require('express');
-const { crearCodigo } = require('./crear-codigo');
+const { crearCodigo, debugLogin } = require('./crear-codigo');
 
 const { ROBOT_SECRET, PORT = 3000 } = process.env;
 
@@ -36,6 +36,17 @@ app.post('/codigos', async (req, res) => {
   }
 
   const b = req.body || {};
+
+  // Diagnóstico: navega al login y devuelve lo que Browserless realmente ve (sin llenar nada).
+  if (b.debug === true) {
+    try {
+      const info = await debugLogin();
+      return res.status(200).json(info);
+    } catch (err) {
+      return res.status(500).json({ ok: false, mensaje: 'debug falló: ' + (err?.message || String(err)) });
+    }
+  }
+
   const cliente = {
     documento: String(b.documento || '').trim(),
     nombresCompletos: String(b.nombresCompletos || '').trim(),

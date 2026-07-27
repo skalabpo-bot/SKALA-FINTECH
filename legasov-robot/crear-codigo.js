@@ -18,6 +18,32 @@ async function conectarNavegador() {
     : chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
 }
 
+/**
+ * DIAGNÓSTICO: navega al login y devuelve lo que Browserless realmente ve
+ * (url, título, y todos los inputs). Sirve para saber por qué no aparece el selector.
+ */
+async function debugLogin() {
+  const browser = await conectarNavegador();
+  const context = await browser.newContext({ locale: 'es-CO' });
+  const page = await context.newPage();
+  try {
+    const resp = await page.goto(`${BASE}/admin/login`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(3000); // dar chance a Livewire de pintar
+    const url = page.url();
+    const title = await page.title().catch(() => '');
+    const status = resp ? resp.status() : null;
+    const inputs = await page.$$eval('input, select, textarea', (els) =>
+      els.map((e) => ({ tag: e.tagName.toLowerCase(), id: e.id || '', name: e.getAttribute('name') || '', type: e.getAttribute('type') || '', placeholder: e.getAttribute('placeholder') || '' }))
+    ).catch(() => []);
+    const bodySnippet = (await page.evaluate(() => document.body?.innerText?.slice(0, 400) || '').catch(() => '')) || '';
+    const tieneDocInput = await page.locator('#data\\.numero_documento').count().catch(() => 0);
+    return { ok: true, debug: true, url, title, httpStatus: status, tieneDocInput, inputs, bodySnippet };
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
 /** Inicia sesión en el panel admin. El login es por NÚMERO DE DOCUMENTO (no email). */
 async function login(page) {
   await page.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle' });
@@ -132,4 +158,4 @@ async function capturarPantalla(page, cliente) {
   console.warn('[legasov-robot] screenshot de error guardado en', path);
 }
 
-module.exports = { crearCodigo };
+module.exports = { crearCodigo, debugLogin };
