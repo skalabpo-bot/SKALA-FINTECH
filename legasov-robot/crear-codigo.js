@@ -57,6 +57,12 @@ async function crearCodigo(cliente) {
     // Celular SMS (obligatorio).
     await page.locator('#data\\.celular').fill(cliente.celular);
 
+    // MODO PRUEBA: si llegamos hasta aquí, login + todos los selectores funcionaron.
+    // NO se envía el formulario → no se crea ningún cliente real en Legasov.
+    if (cliente.dryRun) {
+      return { ok: true, dryRun: true, mensaje: 'Prueba OK: login y todos los campos se llenaron. NO se envió el formulario (no se creó cliente).' };
+    }
+
     // Enviar. "Crear" EXACTO para no chocar con "Crear y crear otro".
     await page.getByRole('button', { name: 'Crear', exact: true }).click();
 

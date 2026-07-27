@@ -43,6 +43,7 @@ app.post('/codigos', async (req, res) => {
     correo: String(b.correo || '').trim(),
     celular: String(b.celular || '').trim(),
     creditId: b.creditId ? String(b.creditId) : undefined,
+    dryRun: b.dryRun === true, // prueba: llena todo pero NO envía (no crea cliente real)
   };
 
   if (!cliente.documento || !cliente.nombresCompletos) {
