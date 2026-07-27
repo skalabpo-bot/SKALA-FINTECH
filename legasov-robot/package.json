@@ -1,0 +1,15 @@
+{
+  "name": "legasov-robot",
+  "version": "1.0.0",
+  "description": "Robot server-side que crea el Codigo (cliente) en LegasovApp. Puro llena-formularios: recibe los datos por HTTP y maneja el panel Filament conectándose a un Chrome de Browserless. Corre en EasyPanel.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "playwright-core": "^1.46.0"
+  }
+}
