@@ -8,14 +8,21 @@ const { chromium } = require('playwright-core');
 const BASE = process.env.LEGASOV_BASE || 'https://legasovapp.com';
 const { LEGASOV_NUMERO_DOCUMENTO, LEGASOV_PASSWORD, BROWSER_WS_ENDPOINT, BROWSER_PROTOCOL = 'cdp' } = process.env;
 
-/** Conecta al Chrome remoto de Browserless (no lanza navegador local). */
+/**
+ * Obtiene un navegador. Dos modos:
+ *  - Si hay BROWSER_WS_ENDPOINT → Chrome remoto de Browserless (sale por la IP de ese servidor).
+ *  - Si NO → lanza el Chrome LOCAL de esta máquina (sale por la IP de esta máquina).
+ * Legasov bloquea IPs de datacenter/extranjero, así que el robot debe correr en una máquina
+ * colombiana y usar el modo LOCAL (sin BROWSER_WS_ENDPOINT).
+ */
 async function conectarNavegador() {
-  if (!BROWSER_WS_ENDPOINT) throw new Error('Falta BROWSER_WS_ENDPOINT (Chrome de Browserless).');
-  // "playwright" → endpoint que habla el protocolo Playwright (Browserless v2 /chromium/playwright).
-  // "cdp" (default) → protocolo CDP, el más compatible.
-  return BROWSER_PROTOCOL === 'playwright'
-    ? chromium.connect(BROWSER_WS_ENDPOINT)
-    : chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
+  if (BROWSER_WS_ENDPOINT) {
+    return BROWSER_PROTOCOL === 'playwright'
+      ? chromium.connect(BROWSER_WS_ENDPOINT)
+      : chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
+  }
+  // Chrome local (usa el navegador instalado; no descarga nada).
+  return chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 }
 
 // Contexto que parece un navegador real (Browserless por defecto manda "HeadlessChrome",
@@ -133,10 +140,18 @@ async function crearCodigo(cliente) {
  * <li role="option"> que coincide. (Hoy "La Hipotecaria" = data-value="200", única opción.)
  */
 async function seleccionarEntidadProducto(page, valor) {
+  // 1) Abrir el dropdown: el buscador de Choices está OCULTO hasta que se hace clic en la caja visible.
+  const choices = page.locator('.choices', { has: page.locator('#data\\.entidad_id') }).first();
+  const caja = (await choices.count()) ? choices.locator('.choices__inner') : page.locator('.choices__inner').first();
+  await caja.click();
+
+  // 2) Escribir para filtrar (pressSequentially dispara los eventos que Choices necesita).
   const buscador = page.getByPlaceholder('Teclee para buscar...');
-  await buscador.click();
-  await buscador.fill(valor).catch(() => {}); // filtra la lista; si no acepta fill, igual queda abierta
-  const opcion = page.getByRole('option', { name: valor, exact: false }).first();
+  await buscador.waitFor({ state: 'visible', timeout: 8000 });
+  await buscador.pressSequentially(valor, { delay: 40 });
+
+  // 3) Elegir la opción que coincide dentro del dropdown abierto.
+  const opcion = page.locator('.choices__list--dropdown [role="option"]', { hasText: new RegExp(valor, 'i') }).first();
   await opcion.waitFor({ state: 'visible', timeout: 8000 });
   await opcion.click();
 }
