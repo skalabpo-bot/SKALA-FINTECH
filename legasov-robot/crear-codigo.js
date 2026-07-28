@@ -18,15 +18,37 @@ async function conectarNavegador() {
     : chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
 }
 
+// Contexto que parece un navegador real (Browserless por defecto manda "HeadlessChrome",
+// que muchos WAF bloquean con 403). UA + headers de Chrome real en Windows.
+const UA_REAL = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const nuevoContexto = (browser) => browser.newContext({
+  locale: 'es-CO',
+  userAgent: UA_REAL,
+  viewport: { width: 1366, height: 768 },
+  extraHTTPHeaders: {
+    'Accept-Language': 'es-CO,es;q=0.9,en;q=0.8',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Upgrade-Insecure-Requests': '1',
+  },
+});
+
 /**
  * DIAGNÓSTICO: navega al login y devuelve lo que Browserless realmente ve
  * (url, título, y todos los inputs). Sirve para saber por qué no aparece el selector.
  */
 async function debugLogin() {
   const browser = await conectarNavegador();
-  const context = await browser.newContext({ locale: 'es-CO' });
+  const context = await nuevoContexto(browser);
   const page = await context.newPage();
   try {
+    // IP de salida (la que ve Legasov). Si el 403 es por IP de datacenter, se le pide a Legasov
+    // que habilite esta IP.
+    let egressIp = '';
+    try {
+      await page.goto('https://api.ipify.org?format=text', { timeout: 15000 });
+      egressIp = (await page.evaluate(() => document.body.innerText || '')).trim();
+    } catch { /* opcional */ }
+
     const resp = await page.goto(`${BASE}/admin/login`, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(3000); // dar chance a Livewire de pintar
     const url = page.url();
@@ -37,7 +59,7 @@ async function debugLogin() {
     ).catch(() => []);
     const bodySnippet = (await page.evaluate(() => document.body?.innerText?.slice(0, 400) || '').catch(() => '')) || '';
     const tieneDocInput = await page.locator('#data\\.numero_documento').count().catch(() => 0);
-    return { ok: true, debug: true, url, title, httpStatus: status, tieneDocInput, inputs, bodySnippet };
+    return { ok: true, debug: true, egressIp, url, title, httpStatus: status, tieneDocInput, inputs, bodySnippet };
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
@@ -60,7 +82,7 @@ async function login(page) {
 /** Rellena y envía el formulario de creación de Codigo. Devuelve {ok, codigoId?, mensaje}. */
 async function crearCodigo(cliente) {
   const browser = await conectarNavegador();
-  const context = await browser.newContext({ locale: 'es-CO' });
+  const context = await nuevoContexto(browser);
   const page = await context.newPage();
 
   try {
