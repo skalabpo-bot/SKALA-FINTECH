@@ -15,10 +15,8 @@ if (!ROBOT_SECRET) {
   console.error('Falta ROBOT_SECRET en el entorno (secreto compartido con Skala).');
   process.exit(1);
 }
-if (!process.env.BROWSER_WS_ENDPOINT) {
-  console.error('Falta BROWSER_WS_ENDPOINT (Chrome de Browserless).');
-  process.exit(1);
-}
+// El navegador puede ser Browserless (BROWSER_WS_ENDPOINT) o Chromium local. No se exige ninguno
+// aquí: si faltan ambos, se lanza Chromium local por defecto (ver conectarNavegador).
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
