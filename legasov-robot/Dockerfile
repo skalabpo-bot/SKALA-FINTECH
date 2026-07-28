@@ -1,16 +1,18 @@
-# Imagen LIVIANA: el navegador NO va aquí — corre en Browserless (servicio aparte en EasyPanel).
-# El robot solo usa playwright-core para conectarse por WebSocket a ese Chrome remoto.
-FROM node:20-slim
+# Imagen oficial de Playwright: trae Chromium listo. El robot lanza Chromium LOCAL en el contenedor
+# y sale a internet por el PROXY residencial colombiano (Legasov bloquea IPs de datacenter/extranjero).
+# Fija la versión a la MISMA de playwright-core en package.json.
+FROM mcr.microsoft.com/playwright:v1.46.0-jammy
 
 WORKDIR /app
 
-# Dependencias primero (mejor cache). Sin navegador → sin descarga pesada.
 COPY package.json ./
 RUN npm install --omit=dev
 
 COPY . .
 
 ENV NODE_ENV=production
+# Vacío = usa el Chromium empaquetado de la imagen (no el canal 'chrome').
+ENV CHROME_CHANNEL=
 EXPOSE 3000
 
 CMD ["node", "server.js"]

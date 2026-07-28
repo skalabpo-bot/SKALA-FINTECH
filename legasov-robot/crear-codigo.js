@@ -21,8 +21,20 @@ async function conectarNavegador() {
       ? chromium.connect(BROWSER_WS_ENDPOINT)
       : chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
   }
-  // Chrome local (usa el navegador instalado; no descarga nada).
-  return chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  // Chrome/Chromium local. Si hay PROXY_SERVER (proxy residencial colombiano), sale por esa IP →
+  // así funciona 24/7 en la nube (EasyPanel) sin que Legasov lo bloquee por IP de datacenter.
+  const proxy = process.env.PROXY_SERVER
+    ? { server: process.env.PROXY_SERVER, username: process.env.PROXY_USERNAME || undefined, password: process.env.PROXY_PASSWORD || undefined }
+    : undefined;
+  // CHROME_CHANNEL='chrome' → usa Chrome instalado (máquina local). Vacío → Chromium empaquetado
+  // (imagen Playwright en EasyPanel). Se omite la clave cuando está vacío para usar el bundled.
+  const channel = process.env.CHROME_CHANNEL || undefined;
+  return chromium.launch({
+    ...(channel ? { channel } : {}),
+    headless: true,
+    proxy,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
 }
 
 // Contexto que parece un navegador real (Browserless por defecto manda "HeadlessChrome",
