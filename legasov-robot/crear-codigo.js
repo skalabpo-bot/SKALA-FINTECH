@@ -182,13 +182,17 @@ async function esperarResultado(page) {
       page.waitForURL(indexUrl, { timeout: 12000 }),
     ]);
   } catch {
-    // Ni éxito ni redirect → buscar errores de validación de Filament.
+    // Ni éxito ni redirect → buscar errores de validación de Filament (solo el mensaje de error real,
+    // no los asteriscos "*" de campo requerido).
     const errores = await page
-      .locator('.fi-fo-field-wrp-error-message, [data-validation-error], .text-danger-600, .fi-fo-field-wrp .fi-error')
+      .locator('.fi-fo-field-wrp-error-message, [data-validation-error]')
       .allTextContents()
       .catch(() => []);
-    const msg = errores.map((s) => s.trim()).filter(Boolean).join(' · ');
-    return { ok: false, mensaje: msg || 'LegasovApp no confirmó la creación (sin toast de éxito ni error visible).' };
+    const msg = errores
+      .map((s) => s.replace(/\s+/g, ' ').trim())
+      .filter((s) => s && s !== '*' && s.length > 1)
+      .join(' · ');
+    return { ok: false, mensaje: msg || 'LegasovApp rechazó el formulario (posible dato faltante: celular/correo).' };
   }
 
   // Intento best-effort de capturar el ID/código creado (si Filament lo muestra en la URL o la tabla).
