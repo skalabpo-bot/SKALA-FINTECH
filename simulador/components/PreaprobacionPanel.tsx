@@ -80,6 +80,11 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   const [error, setError] = useState('');
   const [viab, setViab] = useState<{ viable: boolean; mensaje: string; yaRegistrado?: boolean } | null>(null);
   const [oferta, setOferta] = useState<{ monto: number; cuota: number; tasa: number; plazo: number } | null>(null);
+  // Cuota mensual que se radica. Viene de la oferta cuando existe; si no, se sugiere por
+  // amortización sobre monto/tasa/plazo confirmados. `cuotaTocada` frena el auto-relleno
+  // en cuanto el asesor escribe la suya (la de la entidad manda sobre la sugerencia).
+  const [cuotaStr, setCuotaStr] = useState('');
+  const [cuotaTocada, setCuotaTocada] = useState(false);
 
   // Paso OTP (correo)
   const [sessionId, setSessionId] = useState('');
@@ -109,6 +114,24 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   const [formMsg, setFormMsg] = useState('');
   const [formEnviado, setFormEnviado] = useState(false);
 
+  // Cuota sugerida (sistema francés) sobre los valores confirmados: cuota = M·i / (1-(1+i)^-n).
+  // Solo es una sugerencia editable; no reemplaza la cuota real de la entidad.
+  const cuotaAmortizacion = (montoV: number, tasaPct: number, plazoV: number): number => {
+    const i = tasaPct / 100;
+    if (!(montoV > 0) || !(plazoV > 0)) return 0;
+    if (!(i > 0)) return Math.round(montoV / plazoV);
+    return Math.round((montoV * i) / (1 - Math.pow(1 + i, -plazoV)));
+  };
+
+  // Prellenar la cuota: la de la oferta manda; si no hay, se sugiere la amortización.
+  // Se detiene apenas el asesor escribe la suya (cuotaTocada).
+  useEffect(() => {
+    if (!otpOk || cuotaTocada) return;
+    if (oferta?.cuota && oferta.cuota > 0) { setCuotaStr(String(Math.round(oferta.cuota))); return; }
+    const sugerida = cuotaAmortizacion(Number(onlyDigits(montoStr)), Number(tasaStr) || 0, Number(plazoStr) || plazo);
+    setCuotaStr(sugerida > 0 ? String(sugerida) : '');
+  }, [otpOk, oferta, montoStr, tasaStr, plazoStr, cuotaTocada]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Con el OTP confirmado Y el formulario de ellos enviado, emite el preData listo para radicar.
   useEffect(() => {
     if (!otpOk) return;
@@ -117,7 +140,8 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
     onChange({
       nombres: nombres.trim(), apellidos: apellidos.trim(), numeroDocumento: onlyDigits(documento), tipoDocumento: 'CEDULA',
       correo: correo.trim(), telefonoCelular: onlyDigits(celular), pagaduria,
-      monto: m, montoDesembolso: m, tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo, cuota: oferta?.cuota || 0,
+      monto: m, montoDesembolso: m, tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo,
+      cuota: Number(onlyDigits(cuotaStr)) || oferta?.cuota || 0,
       preaprobado: true, preaprobacionNumero: '', otpConfirmado: true,
       respuestasLH: formEnviado ? [...(respuestasPrevias || []), ...entradasSeccion()] : undefined,
       // La comisión NO sale del corretaje (son cosas distintas): La Hipotecaria paga 3% fijo,
@@ -125,7 +149,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       documentosLH: formEnviado ? Object.entries(filesLH).map(([campo, f]) => ({ tipo: tipoDoc(f.label, campo), label: f.label, file: f.file })) : undefined,
       listo: m > 0 && !faltaForm,
     });
-  }, [otpOk, montoStr, tasaStr, plazoStr, pagaduria, spec, formEnviado, valores, respuestasPrevias, filesLH]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [otpOk, montoStr, tasaStr, plazoStr, cuotaStr, oferta, pagaduria, spec, formEnviado, valores, respuestasPrevias, filesLH]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Nombre de tipo para guardar el documento en Skala (ej. "Certificación bancaria" → LH_CERTIFICACION_BANCARIA). */
   const tipoDoc = (label: string, campo: string) =>
@@ -489,7 +513,23 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
             <div><label className={labelCls}>Tasa (%)</label><input value={tasaStr} onChange={e => setTasaStr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.85" className={inputCls} inputMode="decimal" /></div>
             <div><label className={labelCls}>Plazo (meses)</label><input value={plazoStr} onChange={e => setPlazoStr(onlyDigits(e.target.value))} placeholder="72" className={inputCls} inputMode="numeric" /></div>
           </div>
-          <p className="text-[11px] text-teal-600">{Number(montoStr) > 0 ? '✓ Listo para radicar (botón abajo).' : 'Falta el monto para habilitar la radicación.'}</p>
+          {/* La cuota es dato operativo del crédito (lo que se descuenta por nómina). Cuando no
+              viene de una oferta del simulador hay que capturarla: si se deja vacía, el crédito
+              se radica sin cuota. Se sugiere la de la amortización, pero manda la de la entidad. */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="col-span-2">
+              <label className={labelCls}>Cuota mensual {Number(cuotaStr) > 0 && <span className="text-teal-600 normal-case font-bold">{fmt(Number(cuotaStr))}</span>}</label>
+              <input value={cuotaStr} onChange={e => { setCuotaTocada(true); setCuotaStr(onlyDigits(e.target.value)); }} placeholder="0" className={`${inputCls} ${Number(cuotaStr) > 0 ? '' : 'border-amber-300'}`} inputMode="numeric" />
+              {Number(cuotaStr) > 0 && !cuotaTocada && !oferta && (
+                <p className="text-[10px] text-teal-600 mt-1">Sugerida por amortización — ajústala a la cuota real de La Hipotecaria.</p>
+              )}
+            </div>
+          </div>
+          <p className="text-[11px] text-teal-600">
+            {Number(montoStr) > 0
+              ? (Number(cuotaStr) > 0 ? '✓ Listo para radicar (botón abajo).' : '⚠ Falta la cuota: el crédito se radicaría sin ella.')
+              : 'Falta el monto para habilitar la radicación.'}
+          </p>
         </div>
       )}
     </div>

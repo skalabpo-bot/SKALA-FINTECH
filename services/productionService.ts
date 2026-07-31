@@ -422,11 +422,15 @@ export const ProductionService = {
                     // Monto/tasa/plazo CONFIRMADOS por el asesor en el panel (puede haberlos ajustado);
                     // si vienen vacíos, se conserva lo que trajo la API.
                     const montoAd = Number(monto || adoptable.amount || 0);
+                    const cdPrevia = adoptable.client_data || {};
                     const mergedCd = {
-                        ...(adoptable.client_data || {}),
+                        ...cdPrevia,
                         ...rest, // datos del preaprobador (formulario, OTP, montos, contacto)
                         nombreCompleto: nombreCompletoAd,
-                        lineaCredito: lineaCredito || adoptable.client_data?.lineaCredito || '',
+                        lineaCredito: lineaCredito || cdPrevia.lineaCredito || '',
+                        // La cuota es dato operativo: se conserva la confirmada por el asesor y, si no
+                        // vino, la que ya traía el crédito de la API (antes se quedaba en blanco).
+                        cuotaUtilizar: Number(rest.cuotaUtilizar || rest.cuota || cdPrevia.cuotaUtilizar || cdPrevia.cuota || 0),
                     };
                     const adoptUpd: any = {
                         assigned_gestor_id: gestorId,
