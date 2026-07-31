@@ -243,6 +243,18 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Alias de campos: el aliado puede mandar el contacto con otro nombre (celular/telefono/email).
+      // Los normalizamos a los nombres canónicos ANTES del saneo para no perder el celular/correo.
+      const ALIAS: Record<string, string> = {
+        celular: 'telefonoCelular', telefono: 'telefonoCelular', telefonoMovil: 'telefonoCelular',
+        telefono_celular: 'telefonoCelular', movil: 'telefonoCelular', phone: 'telefonoCelular', celphone: 'telefonoCelular',
+        email: 'correo', correoElectronico: 'correo', correo_electronico: 'correo', mail: 'correo',
+        cedula: 'numeroDocumento', documento: 'numeroDocumento', numero_documento: 'numeroDocumento',
+      };
+      for (const [alias, canon] of Object.entries(ALIAS)) {
+        if (cliente[alias] != null && (cliente[canon] == null || cliente[canon] === '')) cliente[canon] = cliente[alias];
+      }
+
       // Saneo de client_data por whitelist (solo strings/números cortos).
       const cleanCliente: Record<string, any> = {};
       for (const [k, v] of Object.entries(cliente)) {
@@ -262,7 +274,8 @@ Deno.serve(async (req) => {
         assigned_gestor_id: gestorId,
         api_key_id: identity.id, // llave que originó el crédito (para trazabilidad)
         external_ref: externalRef, // ID del aliado para enlazar el mismo crédito en ambas apps
-        client_data: { ...cleanCliente, nombreCompleto, lineaCredito: body.lineaCredito || cliente.lineaCredito || '', origen_api: true },
+        // _apiCamposRecibidos: nombres de campos que envió el aliado (diagnóstico; sin valores).
+        client_data: { ...cleanCliente, nombreCompleto, lineaCredito: body.lineaCredito || cliente.lineaCredito || '', origen_api: true, _apiCamposRecibidos: Object.keys(cliente || {}) },
         idempotency_key: idem,
       };
 

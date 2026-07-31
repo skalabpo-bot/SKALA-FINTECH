@@ -17,9 +17,11 @@ interface LoanConfiguratorProps {
   selectedCreditTypeId?: string;
   paystubFile?: File | null;
   onCupoRecalculated?: (result: AnalysisResult) => void;
+  // true cuando el usuario logueado no puede ver comisiones (asesor TMK interno).
+  ocultarComisiones?: boolean;
 }
 
-export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria, selectedCreditTypeId, paystubFile, onCupoRecalculated }) => {
+export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, onSimulate, onBack, selectedPagaduria, selectedCreditTypeId, paystubFile, onCupoRecalculated, ocultarComisiones }) => {
   const { state: { entities, fpmTable, smmlv } } = useSimulator();
 
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
@@ -197,8 +199,11 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // ── PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor, sin plazo obligatorio ──
-    if (selectedEntity?.preaprobacionExterna) {
+    // ── PREAPROBACIÓN EXTERNA SIN SIMULADOR ──
+    // Solo se salta el motor si la entidad todavía NO tiene simulador configurado. Si ya lo tiene
+    // (Excel o factores), se hace la simulación normal como con cualquier otra entidad y el panel
+    // de preaprobación se muestra después, alimentado con la oferta calculada.
+    if (selectedEntity?.preaprobacionExterna && !isExcelMode && !hasFactorsForSelection) {
       onSimulate({
         entityName: selectedEntity.name,
         termMonths: selectedTerm || 72,
@@ -211,6 +216,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         secondaryColor: selectedEntity.secondaryColor,
         cardFrameColor: selectedEntity.cardFrameColor,
         preaprobacion: true,
+        preaprobacionSinMotor: true,
         preaprobacionUrl: selectedEntity.preaprobacionUrl,
       });
       return;
@@ -245,6 +251,8 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
         secondaryColor: selectedEntity.secondaryColor,
         cardFrameColor: selectedEntity.cardFrameColor,
         ...(isExcelMode ? { calcMode: 'excel' as const, birthDate: birthDate || undefined, creditTipo: excelTipo || undefined } : {}),
+        // La entidad simula normal PERO además requiere la preaprobación en su portal.
+        ...(isPreaprobacion ? { preaprobacion: true, preaprobacionUrl: selectedEntity.preaprobacionUrl } : {}),
       };
       if (isExcelMode) onSimulate(config, excelCards, selectedCardIdx);
       else onSimulate(config);
@@ -556,7 +564,7 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                                 <p className="text-[10px] font-bold opacity-80 mt-0.5">Desembolso: {formatCurrency(sim.disbursementOverride ?? sim.maxAmount)}</p>
                                 <div className="flex justify-between mt-2 text-[10px] font-bold opacity-70">
                                   <span>{sim.rate}% M.V.</span>
-                                  {sim.commissionPct != null && <span>Com {sim.commissionPct}%</span>}
+                                  {sim.commissionPct != null && !ocultarComisiones && <span>Com {sim.commissionPct}%</span>}
                                 </div>
                               </div>
                             );
@@ -571,16 +579,20 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                 </>
               )}
 
-              {/* PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor de cálculo */}
+              {/* PREAPROBACIÓN EXTERNA: con simulador se simula igual; sin simulador se salta el motor */}
               {isPreaprobacion && (
                 <div className="p-5 rounded-2xl border-2 border-teal-200 bg-teal-50">
-                  <p className="text-sm font-black text-teal-800 flex items-center gap-2">🔗 {selectedEntity?.name} usa preaprobación en línea</p>
-                  <p className="text-xs text-teal-700 mt-1.5">Esta entidad no usa el motor de cálculo de Skala. Al continuar verás el panel de preaprobación: consultamos el monto/cuota/tasa y formalizamos con el código que recibe el cliente — todo dentro de Skala.</p>
+                  <p className="text-sm font-black text-teal-800 flex items-center gap-2">🔗 {selectedEntity?.name} requiere preaprobación en línea</p>
+                  <p className="text-xs text-teal-700 mt-1.5">
+                    {(isExcelMode || hasFactorsForSelection)
+                      ? 'Se hace la simulación normal y, con la oferta elegida, se abre el panel de preaprobación para formalizar con el código que recibe el cliente — todo dentro de Skala.'
+                      : 'Esta entidad todavía no tiene simulador cargado, así que se salta el cálculo: al continuar verás directo el panel de preaprobación.'}
+                  </p>
                 </div>
               )}
 
-              {/* Term Selector — MODO FACTORES */}
-              {!isExcelMode && !isPreaprobacion && (
+              {/* Term Selector — MODO FACTORES (también aplica si la entidad de preaprobación ya tiene factores) */}
+              {!isExcelMode && (!isPreaprobacion || hasFactorsForSelection) && (
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 ml-1">Plazo (Meses)</label>
                 {terms.length === 0 ? (
@@ -865,10 +877,16 @@ export const LoanConfigurator: React.FC<LoanConfiguratorProps> = ({ analysis, on
                     <button type="button" onClick={onBack} className="px-6 py-3 text-slate-500 font-bold hover:text-slate-800 transition-colors flex-1 sm:flex-none">Volver</button>
                     <button
                         type="submit"
-                        disabled={isPreaprobacion ? !selectedEntityId : (!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || (isExcelMode ? selectedCardIdx == null : !hasFactorsForSelection))}
+                        // Preaprobación SIN simulador: basta elegir entidad. Con simulador, se exige
+                        // lo mismo que a cualquier otra entidad (plazo, cupo y oferta seleccionada).
+                        disabled={(isPreaprobacion && !isExcelMode && !hasFactorsForSelection)
+                          ? !selectedEntityId
+                          : (!selectedEntityId || !selectedTerm || availableAfterCushion <= 0 || (isExcelMode ? selectedCardIdx == null : !hasFactorsForSelection))}
                         className="bg-primary-600 text-white px-8 py-4 rounded-xl font-bold shadow-xl shadow-primary-600/20 hover:bg-primary-700 hover:shadow-2xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
                     >
-                      {isPreaprobacion ? 'Continuar a preaprobación' : (isExcelMode ? 'Continuar' : 'Realizar Simulacion')}
+                      {(isPreaprobacion && !isExcelMode && !hasFactorsForSelection)
+                        ? 'Continuar a preaprobación'
+                        : (isExcelMode ? 'Continuar' : 'Realizar Simulacion')}
                     </button>
                  </div>
               </div>

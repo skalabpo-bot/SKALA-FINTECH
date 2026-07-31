@@ -970,8 +970,8 @@ export const AdminDashboard: React.FC = () => {
                                 </p>
                                 <p className={`text-[11px] ${editingEntity.requiresFullForm ? 'text-orange-700' : 'text-emerald-700'}`}>
                                   {editingEntity.requiresFullForm
-                                    ? 'El gestor llena TODOS los datos antes de radicar. El cliente queda completo desde el inicio.'
-                                    : 'El gestor radica con datos mínimos (cédula + desprendible). El resto se llena después.'}
+                                    ? 'El asesor llena TODOS los datos antes de radicar. El cliente queda completo desde el inicio.'
+                                    : 'El asesor radica con datos mínimos (cédula + desprendible). El resto se llena después.'}
                                 </p>
                               </div>
                             </label>

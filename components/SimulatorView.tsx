@@ -19,7 +19,7 @@ import { simulateLoan, calculateDisbursement } from '../simulador/services/calcu
 import { frameBg } from '../simulador/services/colorUtils';
 import { getFPMTable } from '../simulador/services/fpmService';
 import { MockService, COLOMBIAN_CITIES } from '../services/mockService';
-import { User } from '../types';
+import { User, puedeVerComisiones } from '../types';
 import { X, Loader2, CheckCircle2, FileText, Zap } from 'lucide-react';
 
 interface SimulatorViewProps {
@@ -177,8 +177,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const handleSimulate = async (config: LoanConfiguration, excelResults?: SimulationResult[], selIdx?: number | null) => {
     if (!analysisResult) return;
 
-    // ── MODO PREAPROBACIÓN EXTERNA (La Hipotecaria): sin motor; el panel maneja todo.
-    if (config.preaprobacion) {
+    // ── PREAPROBACIÓN EXTERNA SIN SIMULADOR: no hay motor, el panel maneja todo.
+    // Si la entidad YA tiene simulador, se sigue el flujo normal y el panel se muestra después.
+    if (config.preaprobacion && config.preaprobacionSinMotor) {
       setLoanConfig(config);
       setSimulations([]);
       setSelectedSimIdx(null);
@@ -261,6 +262,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     if (cedulaBack)  uploads.push({ file: cedulaBack,  docType: 'CEDULA_POSTERIOR' });
     if (resolucionPensionFile) uploads.push({ file: resolucionPensionFile, docType: 'RESOLUCION_PENSION' });
     if (dictamenFile) uploads.push({ file: dictamenFile, docType: 'DICTAMEN_INVALIDEZ' });
+    // Documentos que el gestor adjuntó en el formulario de la entidad externa: también quedan en Skala.
+    for (const d of preData?.documentosLH || []) uploads.push({ file: d.file, docType: d.tipo });
     for (const { file, docType } of uploads) {
       try {
         const url = await MockService.uploadImage(file);
@@ -308,6 +311,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         preaprobacionPlazoAprobado: preData.plazo,
         otpVerified: preData.otpConfirmado === true, // OTP del correo validado antes de radicar
         preaprobacionOtpConfirmado: preData.otpConfirmado ? 'SI' : 'NO',
+        // Respuestas del formulario de la entidad (referencias, dirección, ingresos…): quedan en
+        // Skala con su sección y etiqueta legible, igual que se llenaron allá.
+        ...(preData.respuestasLH?.length ? { preaprobacionFormulario: preData.respuestasLH } : {}),
+        // La comisión de La Hipotecaria es FIJA (3%): la aplica createCredit. No viene del corretaje.
         ...(documents.length > 0 ? { documents } : {}),
         ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
         ...(assignedGestorId ? { assignedGestorId } : {}),
@@ -492,7 +499,69 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   const STEP_LABELS = ['Nómina', 'Verificar', 'Configurar', 'Resultados'];
   const stepIndex = currentStep as number;
 
+  // Panel de preaprobación externa. Se muestra solo (si la entidad no tiene simulador) o
+  // debajo de las cards (si ya simula), alimentado con la oferta que calculó Skala.
+  const panelPreaprobacion = !analysisResult || !loanConfig ? null : (
+        <div className="space-y-6">
+          <PreaprobacionPanel
+            entityName={loanConfig.entityName}
+            prefill={{
+              ingresos: analysisResult.rawIncome,
+              gastos: analysisResult.mandatory + analysisResult.others + analysisResult.embargos,
+              pagaduria: selectedPagaduria,
+              plazo: loanConfig.termMonths,
+              correo, celular: telefonoCelular,
+              nombres: clientData?.firstName, apellidos: clientData?.lastName, documento: clientData?.idNumber,
+              // Del OCR de la cédula: prellenan los datos personales que pide su formulario.
+              sexo: clientData?.sex ? normalizeSex(clientData.sex) : undefined,
+              fechaExpedicion: clientData?.expeditionDate ? parseCedulaDate(clientData.expeditionDate) : undefined,
+              ciudadExpedicion: clientData?.expeditionCity ? matchCity(clientData.expeditionCity) : undefined,
+              fechaNacimiento: clientData?.birthDate ? parseCedulaDate(clientData.birthDate) : undefined,
+              ciudadNacimiento: clientData?.birthCity ? matchCity(clientData.birthCity) : undefined,
+            }}
+            // Documentos ya cargados aquí: se adjuntan solos al formulario de la entidad.
+            documentosSkala={[
+              ...(cedulaFront ? [{ tipo: 'CEDULA_FRONTAL', file: cedulaFront }] : []),
+              ...(cedulaBack ? [{ tipo: 'CEDULA_POSTERIOR', file: cedulaBack }] : []),
+              ...(paystubFile ? [{ tipo: 'DESPRENDIBLE_1', file: paystubFile }] : []),
+              ...(paystub2File ? [{ tipo: 'DESPRENDIBLE_2', file: paystub2File }] : []),
+              ...(resolucionPensionFile ? [{ tipo: 'RESOLUCION_PENSION', file: resolucionPensionFile }] : []),
+            ]}
+            // Oferta elegida en el simulador de Skala (si la entidad ya tiene simulador).
+            oferta={selectedSimIdx !== null && simulations[selectedSimIdx] ? {
+              monto: simulations[selectedSimIdx].maxAmount,
+              tasa: simulations[selectedSimIdx].rate,
+              plazo: simulations[selectedSimIdx].term,
+              cuota: simulations[selectedSimIdx].finalQuotaUsed,
+            } : undefined}
+            onChange={setPreData}
+          />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+            <div className="text-sm text-slate-500">
+              {preData?.listo
+                ? <span className="text-teal-700 font-bold flex items-center gap-2">
+                    <CheckCircle2 size={16} /> Listo para finalizar: {fmt(preData.monto)} · {preData.tasa}% · {preData.plazo} meses
+                    {puedeVerComisiones(currentUser) && <span className="text-emerald-600">· comisión 3% ({fmt(preData.monto * 0.03)})</span>}
+                  </span>
+                : <span>Consulta la preaprobación y completa el formulario para habilitar la finalización.</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={handleReset} className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-800">Reiniciar</button>
+              <button
+                onClick={handleRadicarPreaprobado}
+                disabled={!preData?.listo || isCreating || !radicacionAbierta}
+                title="La solicitud ya quedó creada en La Hipotecaria; esto la registra en tu bandeja de Skala."
+                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-xl hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isCreating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Finalizar solicitud
+              </button>
+            </div>
+          </div>
+        </div>
+  );
+
   return (
+
     <SimulatorProvider>
     <div className="animate-fade-in">
       {/* Radicación cerrada banner */}
@@ -641,46 +710,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           selectedCreditTypeId={creditTypeId}
           paystubFile={paystubFile}
           onCupoRecalculated={(r) => setAnalysisResult(r)}
+          ocultarComisiones={!puedeVerComisiones(currentUser)}
         />
       )}
 
-      {/* Paso 4 (PREAPROBACIÓN EXTERNA): panel nativo La Hipotecaria */}
-      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && loanConfig.preaprobacion && (
-        <div className="space-y-6">
-          <PreaprobacionPanel
-            entityName={loanConfig.entityName}
-            prefill={{
-              ingresos: analysisResult.rawIncome,
-              gastos: analysisResult.mandatory + analysisResult.others + analysisResult.embargos,
-              pagaduria: selectedPagaduria,
-              plazo: loanConfig.termMonths,
-              correo, celular: telefonoCelular,
-              nombres: clientData?.firstName, apellidos: clientData?.lastName, documento: clientData?.idNumber,
-            }}
-            onChange={setPreData}
-          />
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-            <div className="text-sm text-slate-500">
-              {preData?.listo
-                ? <span className="text-teal-700 font-bold flex items-center gap-2"><CheckCircle2 size={16} /> Listo para radicar: {fmt(preData.monto)} · {preData.tasa}% · {preData.plazo} meses</span>
-                : <span>Consulta la preaprobación y formaliza (o marca "resultado manual") para habilitar la radicación.</span>}
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={handleReset} className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-800">Reiniciar</button>
-              <button
-                onClick={handleRadicarPreaprobado}
-                disabled={!preData?.listo || isCreating || !radicacionAbierta}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-xl hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isCreating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Radicar preaprobado
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Paso 4: Resultados — las cards ya vienen calculadas desde Parametrización */}
-      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && !loanConfig.preaprobacion && (
+      {/* Resultados. En preaprobación externa se muestra igual (aunque no haya cards) porque de
+          aquí sale el lector de cédula: sin él no hay datos del cliente ni archivos que adjuntar. */}
+      {currentStep === AppStep.RESULTS && analysisResult && loanConfig && (
         <div className="space-y-6">
           {loanConfig.calcMode === 'excel' && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 font-semibold">
@@ -703,10 +740,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               setCedulaBack(back);
             }}
             onSimulationSelect={(idx) => setSelectedSimIdx(idx)}
+            preaprobacionSinCards={!!loanConfig.preaprobacion && simulations.length === 0}
+            ocultarComisiones={!puedeVerComisiones(currentUser)}
           />
 
           {/* Panel Crear Crédito */}
-          {viableSimulations.length > 0 && (
+          {/* En preaprobación externa la radicación la maneja su panel (abajo), no este bloque:
+              si no, quedarían dos botones de "radicar" compitiendo. */}
+          {viableSimulations.length > 0 && !loanConfig.preaprobacion && (
             <div className="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-xl space-y-6">
               <div>
                 <h3 className="text-xl font-display font-black text-slate-800">Crear Crédito</h3>
@@ -758,7 +799,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
                       <div className="flex justify-between text-[11px] font-black opacity-80">
                         <span>{sim.term} meses</span>
                         <span>{sim.rate}% M.V.</span>
-                        {sim.commissionPct != null && <span>Comisión {sim.commissionPct}%</span>}
+                        {sim.commissionPct != null && puedeVerComisiones(currentUser) && <span>Comisión {sim.commissionPct}%</span>}
                       </div>
                     </div>
                   );
@@ -1103,6 +1144,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
           )}
         </div>
       )}
+
+      {/* Preaprobación externa: el panel va DESPUÉS del lector de cédula (de ahí salen los datos
+          del cliente que lo prellenan) y, si la entidad ya simula, debajo de las cards. */}
+      {currentStep === AppStep.RESULTS && analysisResult && loanConfig?.preaprobacion && panelPreaprobacion}
 
       {isProcessing && (
         <div className="fixed inset-0 bg-white/60 z-50 flex items-center justify-center backdrop-blur-sm">

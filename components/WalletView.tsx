@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { User, Credit, WithdrawalRequest } from '../types';
+import { User, Credit, WithdrawalRequest, puedeVerComisiones } from '../types';
 import { MockService } from '../services/mockService';
 import { Wallet, ArrowLeft, AlertCircle, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -99,6 +99,10 @@ export const WalletView: React.FC<WalletViewProps> = ({ currentUser, onBack }) =
     if (estado === 'RECHAZADO') return <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-1 rounded-full uppercase">Rechazado</span>;
     return <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-1 rounded-full uppercase">Pendiente</span>;
   };
+
+  // Defensa dura (tras los hooks, para no romper su orden): el asesor TMK nunca ve la
+  // billetera de comisiones, aunque alguien le otorgue REQUEST_WITHDRAWAL a mano.
+  if (!puedeVerComisiones(currentUser)) return null;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">

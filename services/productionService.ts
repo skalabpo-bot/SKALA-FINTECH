@@ -2,8 +2,20 @@ import { supabase, supabaseAdmin } from './supabaseClient';
 import {
     Credit, User, UserRole, AlliedEntity, Notification, Permission, Comment,
     CreditDocument, CreditState, Zone, DashboardStats, ReportFilters, NewsItem, CreditHistoryItem,
-    WithdrawalRequest, PolicyAnalysis, EntityCalcConfig, CalcRealResult
+    WithdrawalRequest, PolicyAnalysis, EntityCalcConfig, CalcRealResult, puedeVerComisiones, etiquetaRol
 } from '../types';
+
+// Un campo del formulario de La Hipotecaria, leído de su HTML y pintado con la UI de Skala.
+export interface LhCampo {
+    name: string;
+    label: string;
+    hint?: string;
+    grupo?: string; // subtítulo del bloque en su formulario (ej. "PLAZO DEL PRÉSTAMO")
+    type: 'text' | 'select' | 'textarea' | 'file' | 'date';
+    required: boolean;
+    options?: { value: string; label: string }[];
+}
+export interface LhArchivo { nombre: string; tipo: string; base64: string; }
 
 // Ciudades y Bancos de Colombia (datos semilla / fallback si las tablas no existen)
 export const COLOMBIAN_CITIES = [
@@ -29,10 +41,14 @@ export const INITIAL_STATES: CreditState[] = [
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS', 'VIEW_ACADEMIA', 'MANAGE_ACADEMIA'],
     [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'REQUEST_WITHDRAWAL', 'VIEW_ACADEMIA'],
+    // Asesor interno (TMK): opera como GESTOR pero sin billetera/retiros — no ve comisiones.
+    [UserRole.ASESOR_TMK]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA'],
     [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_ACADEMIA'],
     [UserRole.ANALISTA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'VIEW_ACADEMIA'],
     [UserRole.TESORERIA]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EXPORT_DATA', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS', 'VIEW_ACADEMIA'],
     [UserRole.SUPERVISOR_ASIGNADO]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA'],
+    // Supervisor interno (TMK): igual que SUPERVISOR_ASIGNADO — no ve comisiones (puedeVerComisiones=false).
+    [UserRole.SUPERVISOR_TMK]: ['VIEW_DASHBOARD', 'VIEW_ZONE_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA'],
     [UserRole.ANALISTA_ENTIDAD]: ['VIEW_DASHBOARD', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA']
 };
 
@@ -157,7 +173,7 @@ export const ProductionService = {
         try {
             const { data: roleData } = await supabase.from('roles').select('display_name, default_permissions').eq('name', user.role).single();
             if (roleData) {
-                user.roleDisplayName = roleData.display_name || user.role.replace(/_/g, ' ');
+                user.roleDisplayName = roleData.display_name || etiquetaRol(user.role);
                 if (!user.permissions || user.permissions.length === 0) {
                     user.permissions = roleData.default_permissions || [];
                 }
@@ -168,10 +184,10 @@ export const ProductionService = {
             user.permissions = ROLE_DEFAULT_PERMISSIONS[user.role as UserRole] || [];
         }
         if (!user.roleDisplayName) {
-            user.roleDisplayName = user.role.replace(/_/g, ' ');
+            user.roleDisplayName = etiquetaRol(user.role);
         }
-        // Asegurar que SUPERVISOR_ASIGNADO siempre tenga VIEW_ZONE_CREDITS
-        if (user.role === 'SUPERVISOR_ASIGNADO' && user.permissions && !user.permissions.includes('VIEW_ZONE_CREDITS' as Permission)) {
+        // Asegurar que los supervisores (asignado y TMK) siempre tengan VIEW_ZONE_CREDITS
+        if (['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(user.role) && user.permissions && !user.permissions.includes('VIEW_ZONE_CREDITS' as Permission)) {
             user.permissions.push('VIEW_ZONE_CREDITS' as Permission);
         }
         // Asegurar que ANALISTA siempre tenga VIEW_ALL_CREDITS
@@ -260,14 +276,14 @@ export const ProductionService = {
                        .from('profiles')
                        .select('id')
                        .eq('zone_id', zonaId)
-                       .eq('role', 'SUPERVISOR_ASIGNADO')
+                       .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
                        .eq('status', 'ACTIVE');
                    if (supervisors && supervisors.length > 0) {
                        await db.from('notifications').insert(
                            supervisors.map((s: any) => ({
                                user_id: s.id,
-                               title: 'Nueva solicitud de gestor en tu zona',
-                               message: `${name} solicitó crear una cuenta de Gestor en tu zona. Está pendiente de aprobación.`,
+                               title: 'Nueva solicitud de asesor en tu zona',
+                               message: `${name} solicitó crear una cuenta de Asesor en tu zona. Está pendiente de aprobación.`,
                                type: 'info',
                                is_read: false,
                                credit_id: null,
@@ -310,7 +326,7 @@ export const ProductionService = {
             if (currentUser.role === 'ADMIN') {
                 // Admin puede asignar a cualquier gestor
                 gestorId = assignedGestorId;
-            } else if (currentUser.role === 'SUPERVISOR_ASIGNADO') {
+            } else if (['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser.role)) {
                 // Supervisor: solo a un asesor de SU zona (verificación contra DB)
                 try {
                     const { data: targetGestor } = await supabase
@@ -347,8 +363,12 @@ export const ProductionService = {
         // Comisión y validación de cédula solo aplican para libranza
         let commPercent = 0;
         if (requiresEntity) {
+          // La Hipotecaria: comisión FIJA 3% (no depende de tasa ni del corretaje).
+          if (String(entidadAliada || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim() === 'la hipotecaria') {
+            commPercent = 3;
+          }
           // Modo EXCEL: el simulador ya resolvió la comisión del producto/tasa elegido.
-          if (comisionPct != null && !isNaN(Number(comisionPct))) {
+          else if (comisionPct != null && !isNaN(Number(comisionPct))) {
             commPercent = Number(comisionPct);
           } else {
             try {
@@ -371,6 +391,82 @@ export const ProductionService = {
         // Obtener el primer estado del flujo (orden más bajo)
         const initialState = states.sort((a, b) => a.order - b.order)[0];
         if (!initialState) throw new Error('No hay estados configurados en el sistema.');
+
+        // ── ADOPTAR crédito huérfano de la API (solo La Hipotecaria) ──────────────
+        // La Hipotecaria mete el crédito por la API de aliados SIN gestor. Cuando el asesor
+        // "Finaliza", en vez de duplicar/bloquear se ADOPTA ese crédito: misma cédula + misma
+        // pagaduría + NO final + SIN gestor → se le asigna el asesor, la comisión (3%) y los datos
+        // del preaprobador. Si ya tiene otro gestor → el chequeo de abajo lo bloquea. Si es final
+        // u otra pagaduría → sigue el flujo normal y crea uno nuevo. Debe ir ANTES del anti-duplicado.
+        const esLaHipotecaria = String(entidadAliada || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim() === 'la hipotecaria';
+        if (esLaHipotecaria && requiresEntity) {
+            const cedulaAd = (rest.numeroDocumento || '').toString().trim();
+            const nuevaPag = (rest.pagaduria || '').toString().trim().toUpperCase();
+            if (cedulaAd) {
+                const { data: existentes } = await supabase
+                    .from('credits')
+                    .select('id, status_id, assigned_gestor_id, amount, client_data')
+                    .eq('entity_name', entidadAliada)
+                    .filter('client_data->>numeroDocumento', 'eq', cedulaAd);
+                const finalIdsAd = states.filter(s => s.isFinal).map(s => s.id);
+                const adoptable = (existentes || [])
+                    .filter((c: any) => !finalIdsAd.includes(c.status_id) && !c.assigned_gestor_id)
+                    .find((c: any) => {
+                        const p = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
+                        return !p || !nuevaPag || p === nuevaPag;
+                    });
+                if (adoptable) {
+                    const nombresAd = rest.nombres || '';
+                    const apellidosAd = rest.apellidos || '';
+                    const nombreCompletoAd = (nombresAd || apellidosAd) ? `${nombresAd} ${apellidosAd}`.trim() : (rest.nombreCompleto || adoptable.client_data?.nombreCompleto || '');
+                    // Monto/tasa/plazo CONFIRMADOS por el asesor en el panel (puede haberlos ajustado);
+                    // si vienen vacíos, se conserva lo que trajo la API.
+                    const montoAd = Number(monto || adoptable.amount || 0);
+                    const mergedCd = {
+                        ...(adoptable.client_data || {}),
+                        ...rest, // datos del preaprobador (formulario, OTP, montos, contacto)
+                        nombreCompleto: nombreCompletoAd,
+                        lineaCredito: lineaCredito || adoptable.client_data?.lineaCredito || '',
+                    };
+                    const adoptUpd: any = {
+                        assigned_gestor_id: gestorId,
+                        amount: montoAd,
+                        disbursement_amount: Number(montoDesembolso || monto || adoptable.amount || 0),
+                        commission_percent: commPercent,
+                        commission_est: (montoAd * commPercent) / 100,
+                        otp_verified: rest.otpVerified === true,
+                        client_data: mergedCd,
+                        updated_at: new Date().toISOString(),
+                    };
+                    if (Number(plazo) > 0) adoptUpd.term = Number(plazo);
+                    if (Number(tasa) > 0) adoptUpd.interest_rate = Number(tasa);
+                    // Update ATÓMICO: el guard `assigned_gestor_id IS NULL` hace que de dos asesores
+                    // concurrentes solo uno gane; el otro actualiza 0 filas y se entera (evita doble-adopción).
+                    const { data: adoptadas, error: adoptErr } = await supabase.from('credits')
+                        .update(adoptUpd)
+                        .eq('id', adoptable.id)
+                        .is('assigned_gestor_id', null)
+                        .select('id');
+                    if (adoptErr) throw new Error('No se pudo adoptar el crédito: ' + adoptErr.message);
+                    if (!adoptadas || adoptadas.length === 0) {
+                        throw new Error('Este crédito ya fue tomado por otro asesor. Refresca la página e intenta de nuevo.');
+                    }
+
+                    // Documentos que adjuntó el asesor → tabla documents
+                    if (documents?.length > 0) {
+                        const docs = documents.map((d: any) => ({ credit_id: adoptable.id, name: d.name, url: d.url, type: d.type }));
+                        const { error: dErr } = await supabase.from('documents').insert(docs);
+                        if (dErr && supabaseAdmin) await supabaseAdmin.from('documents').insert(docs).then(() => {}, () => {});
+                    }
+
+                    // Validación de identidad en LegasovApp (idempotente por client_data.legasov)
+                    ProductionService.crearCodigoLegasov(adoptable.id).catch(e =>
+                        console.warn('Legasov (adopción) falló:', e?.message || e));
+
+                    return { id: adoptable.id, adopted: true } as any;
+                }
+            }
+        }
 
         // Validar cédula duplicada SOLO para libranza (gate por pagaduría)
         if (requiresEntity) {
@@ -478,7 +574,7 @@ export const ProductionService = {
                 const { data: sup } = await supabase
                     .from('profiles')
                     .select('id')
-                    .eq('role', 'SUPERVISOR_ASIGNADO')
+                    .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
                     .eq('zone_id', gestorProfile.zone_id)
                     .limit(1)
                     .maybeSingle();
@@ -549,6 +645,8 @@ export const ProductionService = {
             `Cuota Utilizada: $${cuotaUtilizar.toLocaleString()}${cuotaDisponible > 0 ? ` (de $${cuotaDisponible.toLocaleString()} disponible)` : ''}`,
             `Entidad: ${entidadAliada}`,
             `Tasa: ${tasa}% NMV`,
+            // La traza de comisión SIEMPRE se escribe (auditoría para admin/analista/tesorería).
+            // El ocultamiento al asesor TMK se hace al LEER (CreditDetail filtra por el rol del lector).
             `Comisión: ${commPercent}% ($${commEst.toLocaleString()})`,
             `Nombres: ${rest.nombres || ''} ${rest.apellidos || ''}`,
             `Cédula: ${rest.numeroDocumento || ''}`,
@@ -571,7 +669,7 @@ export const ProductionService = {
         // (auditoría permanente de radicaciones "a nombre de otro").
         const radicadoPor = gestorId !== currentUser.id
             ? `Radicado por ${currentUser.name} (${currentUser.role}) A NOMBRE DE otro asesor.`
-            : 'Expediente radicado por el gestor.';
+            : 'Expediente radicado por el asesor.';
         const historyPayload = {
             credit_id: data.id,
             user_id: currentUser.id,
@@ -594,9 +692,11 @@ export const ProductionService = {
             const { error: docsError } = await supabase.from('documents').insert(docsToInsert);
             if (docsError) {
                 console.error('Error al guardar documentos:', docsError);
-                // Reintentar con supabaseAdmin por si es RLS
-                const { error: docsError2 } = await supabaseAdmin.from('documents').insert(docsToInsert);
-                if (docsError2) console.error('Error al guardar documentos (admin):', docsError2);
+                // Reintentar con supabaseAdmin por si es RLS (si está configurado).
+                if (supabaseAdmin) {
+                    const { error: docsError2 } = await supabaseAdmin.from('documents').insert(docsToInsert);
+                    if (docsError2) console.error('Error al guardar documentos (admin):', docsError2);
+                }
             }
         }
 
@@ -617,7 +717,7 @@ export const ProductionService = {
                     .from('profiles')
                     .select('id')
                     .eq('zone_id', currentUser.zoneId)
-                    .eq('role', 'SUPERVISOR_ASIGNADO')
+                    .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
                     .eq('status', 'ACTIVE');
                 if (supervisors && supervisors.length > 0) {
                     await supabase.from('notifications').insert(
@@ -663,6 +763,14 @@ export const ProductionService = {
                 solicitud_number: data.solicitud_number
             }
         });
+
+        // --- LEGASOVAPP: validación de identidad automática (solo La Hipotecaria) ---
+        // Fire-and-forget: el trabajo pesado (Playwright) queda server-side en la Edge Function
+        // → el robot; el navegador solo lo dispara. Si falla, el gestor lo reintenta con el botón.
+        if (String(entidadAliada || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim() === 'la hipotecaria') {
+            ProductionService.crearCodigoLegasov(data.id).catch(e =>
+                console.warn('No se pudo crear el Codigo en LegasovApp automáticamente:', e?.message || e));
+        }
 
         // Autorización de consulta deshabilitada — cada entidad maneja su propio flujo
 
@@ -873,8 +981,8 @@ export const ProductionService = {
             user_id: user.id,
             action: enable ? 'SUBSANACIÓN HABILITADA' : 'SUBSANACIÓN BLOQUEADA',
             description: enable
-                ? `${user.name} habilitó la edición al gestor para subsanar el expediente. El gestor podrá corregir los datos del cliente una sola vez. Las condiciones del crédito (monto, plazo, tasa, entidad) permanecen bloqueadas.`
-                : `${user.name} revocó el permiso de edición al gestor. El expediente queda bloqueado nuevamente.`
+                ? `${user.name} habilitó la edición al asesor para subsanar el expediente. El asesor podrá corregir los datos del cliente una sola vez. Las condiciones del crédito (monto, plazo, tasa, entidad) permanecen bloqueadas.`
+                : `${user.name} revocó el permiso de edición al asesor. El expediente queda bloqueado nuevamente.`
         });
     },
 
@@ -1012,7 +1120,7 @@ export const ProductionService = {
             setTimeout(() => ProductionService.autoArchiveExpiredDevuelto().catch(() => {}), 1500);
         }
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
-        const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
+        const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(user.role);
 
         // Construye la query con joins de analista (preferida) o sin ella (fallback)
         const buildQuery = (withAnalyst: boolean) => {
@@ -1358,7 +1466,7 @@ export const ProductionService = {
                         .from('profiles')
                         .select('id')
                         .eq('zone_id', gestorProfile2.zone_id)
-                        .eq('role', 'SUPERVISOR_ASIGNADO')
+                        .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
                         .eq('status', 'ACTIVE');
                     if (supervisors && supervisors.length > 0) {
                         const supervisorNotifs = supervisors
@@ -1635,7 +1743,7 @@ export const ProductionService = {
             try {
                 const { data: gestorP } = await supabase.from('profiles').select('zone_id').eq('id', gestorInfo.id).single();
                 if (gestorP?.zone_id) {
-                    const { data: supervisors } = await supabase.from('profiles').select('id').eq('zone_id', gestorP.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                    const { data: supervisors } = await supabase.from('profiles').select('id').eq('zone_id', gestorP.zone_id).in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).eq('status', 'ACTIVE');
                     (supervisors || []).forEach((s: any) => {
                         if (s.id !== user.id && !notifRecipients.includes(s.id)) notifRecipients.push(s.id);
                     });
@@ -1920,8 +2028,15 @@ export const ProductionService = {
 
         const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/simulador-calc`;
         const anon = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+        // Celdas de salida: las del producto si las define (hojas con una FILA por tasa), si no
+        // las globales de la entidad.
+        const out = {
+            monto: product.outputCells?.monto || cfg.outputCells.monto,
+            desembolso: product.outputCells?.desembolso || cfg.outputCells.desembolso,
+            tasa: product.outputCells?.tasa || cfg.outputCells.tasa,
+        };
         // Celdas de salida que necesitamos → el motor RÁPIDO devuelve solo estas (sin la grilla completa).
-        const outCells = [cfg.outputCells.monto, cfg.outputCells.desembolso, cfg.outputCells.tasa].filter(Boolean) as string[];
+        const outCells = [out.monto, out.desembolso, out.tasa].filter(Boolean) as string[];
 
         // Lee un número de la respuesta, sea formato rápido (cells) o viejo (grilla).
         const numFrom = (json: any, a1?: string): number => {
@@ -1961,9 +2076,9 @@ export const ProductionService = {
                     const json = await resp.json();
                     if (json?.error) { err = json.error; continue; }
                     last = json;
-                    if (numFrom(json, cfg.outputCells.monto)) return { json, err: '' };
+                    if (numFrom(json, out.monto)) return { json, err: '' };
                     // Error determinista de la hoja (no transitorio) → no reintentar.
-                    if (isNotViable(dispStr(json, cfg.outputCells.monto))) return { json, err: 'NOT_VIABLE' };
+                    if (isNotViable(dispStr(json, out.monto))) return { json, err: 'NOT_VIABLE' };
                     err = 'El motor no devolvió resultados (reintentando)';
                 } catch (e: any) { err = e?.message || 'Error de red con el motor'; }
             }
@@ -1971,7 +2086,7 @@ export const ProductionService = {
         };
 
         let { json, err: lastErr } = await runMotor(inputs);
-        let monto = numFrom(json, cfg.outputCells.monto);
+        let monto = numFrom(json, out.monto);
 
         // Si falló y se envió pagaduría, reintentar SIN ella: a veces el nombre que manda
         // Skala no coincide con la lista de la hoja → #N/A. La pagaduría casi no cambia el
@@ -1980,18 +2095,18 @@ export const ProductionService = {
         if (!monto && pagCells.length && extra?.pagaduria) {
             const r2 = await runMotor(inputs.filter(i => !pagCells.includes(i.a1)));
             json = r2.json; lastErr = r2.err || lastErr;
-            monto = numFrom(json, cfg.outputCells.monto);
+            monto = numFrom(json, out.monto);
         }
 
-        const desembolso = numFrom(json, cfg.outputCells.desembolso);
+        const desembolso = numFrom(json, out.desembolso);
         if (!monto) {
-            if (lastErr === 'NOT_VIABLE' || isNotViable(dispStr(json, cfg.outputCells.monto)))
+            if (lastErr === 'NOT_VIABLE' || isNotViable(dispStr(json, out.monto)))
                 throw new Error('La entidad no permite estas condiciones para este cliente (revisa la edad o el plazo).');
             throw new Error(lastErr || 'El motor no devolvió un monto válido. Revisa el mapa de celdas en Administrar.');
         }
 
         // Tasa: si la hoja la calcula, la leemos; si no, la del producto.
-        const rate = tasaFrom(json, cfg.outputCells.tasa) || Number(product.rate || 0);
+        const rate = tasaFrom(json, out.tasa) || Number(product.rate || 0);
         // Comisión: se EMPAREJA por la tasa usada con la tabla comisión-por-tasa; si no
         // hay match, cae a la del producto.
         const comision = ProductionService._commissionForRate(cfg.commissionByRate, rate) ?? Number(product.comision || 0);
@@ -2029,7 +2144,7 @@ export const ProductionService = {
             .from('profiles')
             .select('id, full_name')
             .eq('zone_id', zoneId)
-            .eq('role', 'GESTOR')
+            .in('role', ['GESTOR', 'ASESOR_TMK'])
             .eq('status', 'ACTIVE')
             .order('full_name');
         return (data || []).map((g: any) => ({ id: g.id, name: g.full_name }));
@@ -2040,7 +2155,7 @@ export const ProductionService = {
         const { data } = await supabase
             .from('profiles')
             .select('id, full_name')
-            .eq('role', 'GESTOR')
+            .in('role', ['GESTOR', 'ASESOR_TMK'])
             .eq('status', 'ACTIVE')
             .order('full_name');
         return (data || []).map((g: any) => ({ id: g.id, name: g.full_name }));
@@ -2147,7 +2262,7 @@ export const ProductionService = {
         // Rankings: admin ve top asesores + top supervisores; supervisor ve top asesores
         // (solo de su equipo, porque getCredits ya filtra por assignedSupervisorId).
         const isAdmin = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
-        const isSupervisor = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || user.role === 'SUPERVISOR_ASIGNADO';
+        const isSupervisor = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(user.role);
 
         if (isAdmin || isSupervisor) {
             // Top asesores
@@ -2183,7 +2298,7 @@ export const ProductionService = {
                         const { data: zoneSups } = await supabase
                             .from('profiles')
                             .select('id, zone_id')
-                            .eq('role', 'SUPERVISOR_ASIGNADO')
+                            .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
                             .in('zone_id', zonesNeeded);
                         for (const s of zoneSups || []) {
                             if (s.zone_id) supByZone[s.zone_id] = s.id;
@@ -2504,14 +2619,15 @@ export const ProductionService = {
             const { error: emailErr } = await supabaseAdmin.auth.admin.updateUserById(id, { email: String(d.email).trim(), email_confirm: true });
             if (emailErr) {
                 // Revertir el email del perfil para no dejarlo desincronizado con el login.
-                await supabase.from('profiles').update({ email: currentProfile?.email || null }).eq('id', id).catch(() => {});
+                await supabase.from('profiles').update({ email: currentProfile?.email || null }).eq('id', id).then(undefined, () => {});
                 throw new Error(`No se pudo cambiar el correo: ${/already|registered|exists/i.test(emailErr.message) ? 'ese correo ya está en uso por otra cuenta.' : emailErr.message}`);
             }
         }
 
-        // Si cambió a SUPERVISOR_ASIGNADO, crear zona automáticamente
+        // Si cambió a un rol de supervisor, crear zona automáticamente
         const newRole = d.role || previousRole;
-        if (newRole === 'SUPERVISOR_ASIGNADO' && previousRole !== 'SUPERVISOR_ASIGNADO') {
+        const ROLES_SUPERVISOR = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'];
+        if (ROLES_SUPERVISOR.includes(newRole) && !ROLES_SUPERVISOR.includes(previousRole)) {
             try {
                 const fullName = d.name || currentProfile?.full_name || '';
                 const cedula = d.cedula || currentProfile?.cedula || '';
@@ -2547,7 +2663,7 @@ export const ProductionService = {
                 type: 'info',
                 is_read: false,
                 credit_id: null,
-            }).catch(() => {});
+            }).then(undefined, () => {});
         } else if (d.role && d.role !== previousRole) {
             // Notificar cambio de rol para cualquier otro cambio
             await supabase.from('notifications').insert({
@@ -2557,7 +2673,7 @@ export const ProductionService = {
                 type: 'info',
                 is_read: false,
                 credit_id: null,
-            }).catch(() => {});
+            }).then(undefined, () => {});
         }
 
         // Cambiar contraseña via Admin API si se proporcionó una nueva
@@ -2580,7 +2696,7 @@ export const ProductionService = {
         await supabase.from('profiles').update({ status: 'ACTIVE' }).eq('id', id);
 
         // Si es supervisor, crear zona automáticamente al aprobar
-        if (profile?.role === 'SUPERVISOR_ASIGNADO' && profile?.full_name) {
+        if (['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(profile?.role) && profile?.full_name) {
             try {
                 const nameParts = profile.full_name.trim().split(/\s+/);
                 const initial1 = (nameParts[0] || '').charAt(0).toUpperCase();
@@ -2615,18 +2731,18 @@ export const ProductionService = {
             });
         } catch { /* notificación opcional */ }
 
-        // Si es gestor, notificar al supervisor de su zona que su gestor fue ACEPTADO
-        if (profile?.role === 'GESTOR' || profile?.role === 'ANALISTA') {
+        // Si es asesor, notificar al supervisor de su zona que su asesor fue ACEPTADO
+        if (profile?.role === 'GESTOR' || profile?.role === 'ASESOR_TMK' || profile?.role === 'ANALISTA') {
             try {
                 const db = supabaseAdmin || supabase;
                 const { data: updatedProfile } = await db.from('profiles').select('zone_id').eq('id', id).single();
                 if (updatedProfile?.zone_id) {
-                    const { data: supervisors } = await db.from('profiles').select('id').eq('zone_id', updatedProfile.zone_id).eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                    const { data: supervisors } = await db.from('profiles').select('id').eq('zone_id', updatedProfile.zone_id).in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).eq('status', 'ACTIVE');
                     if (supervisors && supervisors.length > 0) {
                         await db.from('notifications').insert(
                             supervisors.map((s: any) => ({
                                 user_id: s.id,
-                                title: 'Tu gestor fue aprobado',
+                                title: 'Tu asesor fue aprobado',
                                 message: `${profile?.full_name || 'Un usuario'} fue aprobado como ${(profile?.role || '').replace(/_/g, ' ')} en tu zona y ya puede operar.`,
                                 type: 'success',
                                 is_read: false,
@@ -2654,7 +2770,7 @@ export const ProductionService = {
             type: 'warning',
             is_read: false,
             credit_id: null,
-        }).catch(() => {});
+        }).then(undefined, () => {});
 
         ProductionService.triggerWebhooks('user_rejected', {
             usuario: { id, nombre: profile?.full_name || '', email: profile?.email || '', telefono: profile?.phone || '', rol: profile?.role || '' }
@@ -2738,8 +2854,8 @@ export const ProductionService = {
 
             const notifications = admins.map(admin => ({
                 user_id: admin.id,
-                title: 'Nueva Solicitud de Gestor',
-                message: `${gestorName} ha solicitado acceso como Gestor Aliado. Revisa y aprueba su solicitud.`,
+                title: 'Nueva Solicitud de Asesor',
+                message: `${gestorName} ha solicitado acceso como Asesor Aliado. Revisa y aprueba su solicitud.`,
                 type: 'info',
                 is_read: false,
                 credit_id: null
@@ -3105,7 +3221,7 @@ export const ProductionService = {
         // Resolver SUPERVISOR_ASIGNADO
         if (roles.includes('SUPERVISOR_ASIGNADO')) {
             try {
-                const { data: coords } = await supabase.from('profiles').select('full_name, phone, email').eq('role', 'SUPERVISOR_ASIGNADO').eq('status', 'ACTIVE');
+                const { data: coords } = await supabase.from('profiles').select('full_name, phone, email').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).eq('status', 'ACTIVE');
                 (coords || []).forEach((c: any) => {
                     destinatarios.push({ nombre: c.full_name || '', telefono: c.phone || '', email: c.email || '', rol: 'SUPERVISOR_ASIGNADO' });
                 });
@@ -3123,7 +3239,7 @@ export const ProductionService = {
         }
 
         // Para eventos de usuario (user_approved, user_rejected, etc.), el destinatario es el propio usuario
-        if (payload.usuario && (roles.includes('GESTOR') || roles.includes('ANALISTA'))) {
+        if (payload.usuario && (roles.includes('GESTOR') || roles.includes('ASESOR_TMK') || roles.includes('ANALISTA'))) {
             const exists = destinatarios.some(d => d.telefono === (payload.usuario.telefono || ''));
             if (!exists && payload.usuario.telefono) {
                 destinatarios.push({ nombre: payload.usuario.nombre || '', telefono: payload.usuario.telefono || '', email: payload.usuario.email || '', rol: payload.usuario.rol || 'GESTOR' });
@@ -3295,6 +3411,10 @@ export const ProductionService = {
     deleteNews: async (id: string) => { await supabase.from('news').delete().eq('id', id); },
 
     exportCSV: async (currentUser: User, filters: ReportFilters, selectedColumns: string[]) => {
+        // El asesor TMK (interno) no ve comisiones: se le quitan esas columnas aunque vengan seleccionadas.
+        if (!puedeVerComisiones(currentUser)) {
+            selectedColumns = selectedColumns.filter(c => !/^comision_|^fecha_pago_comision$/.test(c));
+        }
         const [credits, states, zones] = await Promise.all([
             ProductionService.getCredits(currentUser, 'full'),
             ProductionService.getStates(),
@@ -3332,7 +3452,7 @@ export const ProductionService = {
                     const zoneIds = [...new Set(gestorProfiles.map((gp: any) => gp.zone_id).filter(Boolean))];
                     let supervisorMap: Record<string, { name: string; phone: string; email: string }> = {};
                     if (zoneIds.length > 0) {
-                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, email, zone_id').eq('role', 'SUPERVISOR_ASIGNADO').in('zone_id', zoneIds);
+                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, email, zone_id').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).in('zone_id', zoneIds);
                         if (supervisors) {
                             for (const s of supervisors) {
                                 if (s.zone_id) supervisorMap[s.zone_id] = { name: s.full_name || '', phone: s.phone || '', email: s.email || '' };
@@ -3440,7 +3560,8 @@ export const ProductionService = {
             'supervisor_email': c => gestorSupervisorEmailMap[c.assignedGestorId] || '',
         };
 
-        const headers = selectedColumns.map(c => c.replace(/_/g, ' ').toUpperCase());
+        // Cara visible: las claves internas gestor_* se muestran como "ASESOR ..." en el CSV.
+        const headers = selectedColumns.map(c => c.replace(/_/g, ' ').toUpperCase().replace(/^GESTOR\b/, 'ASESOR'));
         const rows = filtered.map(credit =>
             selectedColumns.map(col => {
                 const fn = columnMap[col];
@@ -3482,7 +3603,7 @@ export const ProductionService = {
             user_name: user.name,
             action: recommend ? 'CRÉDITO RECOMENDADO' : 'RECOMENDACIÓN REMOVIDA',
             description: recommend ? `${user.name} marcó este crédito como recomendado.` : `${user.name} removió la recomendación de este crédito.`,
-        }).catch(() => {});
+        }).then(undefined, () => {});
     },
 
     getWithdrawalRequests: async (user: User): Promise<WithdrawalRequest[]> => {
@@ -3607,7 +3728,7 @@ export const ProductionService = {
 
     generateWithdrawalCSV: (requests: WithdrawalRequest[]): string => {
         const fmt = (n: number) => `$${n.toLocaleString('es-CO')}`;
-        const headers = ['Fecha', 'Gestor', 'Celular Gestor', 'Monto Total', 'Créditos', 'Estado', 'Procesado', 'Notas'];
+        const headers = ['Fecha', 'Asesor', 'Celular Asesor', 'Monto Total', 'Créditos', 'Estado', 'Procesado', 'Notas'];
         const rows = requests.map(r => [
             `"${new Date(r.createdAt).toLocaleDateString('es-CO')}"`,
             `"${r.gestorName || ''}"`,
@@ -3640,7 +3761,7 @@ export const ProductionService = {
             }
         });
         // También mapear por nombre completo del supervisor
-        const { data: supervisors } = await supabase.from('profiles').select('full_name, zone_id').eq('role', 'SUPERVISOR_ASIGNADO');
+        const { data: supervisors } = await supabase.from('profiles').select('full_name, zone_id').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']);
         const supervisorMap = new Map<string, string>();
         (supervisors || []).forEach((s: any) => {
             if (s.full_name && s.zone_id) supervisorMap.set(s.full_name.trim().toUpperCase(), s.zone_id);
@@ -4126,8 +4247,55 @@ export const ProductionService = {
         if (error) throw error;
     },
 
+    // ─── ADMIN: asignar asesor a un crédito sin gestor (ej. los que llegan por la API) ───
+    assignCreditGestor: async (creditId: string, gestorId: string, currentUser: User) => {
+        if (!ProductionService.hasPermission(currentUser, 'VIEW_ALL_CREDITS')) {
+            throw new Error('No tienes permiso para asignar créditos.');
+        }
+        if (!creditId || !gestorId) throw new Error('Falta el crédito o el asesor.');
+        // Asesor actual (para trazabilidad de la reasignación y evitar no-ops).
+        let anteriorId: string | null = null;
+        let anteriorNombre = 'Sin asignar';
+        try {
+            const { data: cur } = await supabase.from('credits').select('assigned_gestor_id, gestor_profile:assigned_gestor_id(full_name)').eq('id', creditId).single();
+            anteriorId = cur?.assigned_gestor_id || null;
+            anteriorNombre = (cur as any)?.gestor_profile?.full_name || 'Sin asignar';
+        } catch { /* opcional */ }
+        if (anteriorId === gestorId) return { ok: true };
+        // Snapshot del supervisor de la zona del asesor (igual que al radicar) + nombre del nuevo.
+        let supervisorId: string | null = null;
+        let nuevoNombre = '';
+        try {
+            const { data: g } = await supabase.from('profiles').select('zone_id, full_name').eq('id', gestorId).single();
+            nuevoNombre = g?.full_name || '';
+            if (g?.zone_id) {
+                const { data: sup } = await supabase.from('profiles').select('id').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).eq('zone_id', g.zone_id).limit(1).maybeSingle();
+                supervisorId = sup?.id || null;
+            }
+        } catch { /* opcional */ }
+        const patch: any = { assigned_gestor_id: gestorId, updated_at: new Date().toISOString() };
+        if (supervisorId) patch.assigned_supervisor_id = supervisorId;
+        let { error } = await supabase.from('credits').update(patch).eq('id', creditId);
+        if (error && supabaseAdmin) { const r = await supabaseAdmin.from('credits').update(patch).eq('id', creditId); error = r.error; }
+        if (error) throw new Error('No se pudo asignar: ' + error.message);
+        // Trazabilidad permanente de quién movió el crédito y entre quiénes (best-effort).
+        try {
+            await supabase.from('credit_history').insert({
+                credit_id: creditId,
+                user_id: currentUser.id,
+                action: anteriorId ? 'ASESOR REASIGNADO' : 'ASESOR ASIGNADO',
+                description: anteriorId
+                    ? `Crédito reasignado de ${anteriorNombre} a ${nuevoNombre || 'nuevo asesor'} por ${currentUser.name}.`
+                    : `Crédito asignado a ${nuevoNombre || 'asesor'} por ${currentUser.name}.`,
+            }).then(undefined, () => {});
+        } catch { /* opcional */ }
+        return { ok: true };
+    },
+
     // ─── LA HIPOTECARIA (preaprobación externa vía robot backend) ────────────
     // Todo pasa por la Edge Function `lahipotecaria`; el front nunca habla directo con su sitio.
+    // Los formularios de ellos se leen como ESPECIFICACIÓN (LhCampo[]) y Skala los pinta con su propia UI:
+    // si La Hipotecaria agrega/quita campos u opciones, Skala los refleja sin tocar código.
     _lahipotecaria: async (action: string, payload: any) => {
         const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
         const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -4140,6 +4308,24 @@ export const ProductionService = {
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(json?.error || `Error ${resp.status} en La Hipotecaria`);
+        return json;
+    },
+
+    // ─── LEGASOVAPP (validación de identidad vía robot Playwright en EasyPanel) ─
+    // El front NUNCA llama al robot directo: pasa por la Edge Function `legasov-dispatch`,
+    // que lee el crédito, llama al robot con el secreto y guarda el resultado en client_data.legasov.
+    crearCodigoLegasov: async (creditId: string, forzar = false): Promise<{ ok: boolean; mensaje: string; legasov?: any }> => {
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        if (!SUPA_URL) throw new Error('Supabase no configurado');
+        const token = (await supabase.auth.getSession()).data.session?.access_token || SUPA_ANON;
+        const resp = await fetch(`${SUPA_URL}/functions/v1/legasov-dispatch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SUPA_ANON },
+            body: JSON.stringify({ creditId, forzar }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(json?.error || `Error ${resp.status} en LegasovApp`);
         return json;
     },
 
@@ -4186,8 +4372,19 @@ export const ProductionService = {
     },
 
     // Valida el código OTP que llegó al correo del cliente → confirma la preaprobación.
-    lahipotecariaVerifyOtp: async (sessionId: string, codigo: string): Promise<{ ok: boolean; code?: string | null; mensaje: string }> => {
+    // Si tras el OTP su formulario continúa, devuelve `spec` con los campos del siguiente paso.
+    lahipotecariaVerifyOtp: async (sessionId: string, codigo: string): Promise<{ ok: boolean; code?: string | null; mensaje: string; siguienteFormulario?: boolean; spec?: LhCampo[]; titulo?: string }> => {
         return ProductionService._lahipotecaria('verify-otp', { sessionId, codigo });
+    },
+
+    // Campos del formulario que La Hipotecaria pide después del OTP (se pintan con la UI de Skala).
+    lahipotecariaFormulario: async (sessionId: string): Promise<{ spec: LhCampo[]; titulo?: string; pendiente: boolean }> => {
+        return ProductionService._lahipotecaria('formulario', { sessionId });
+    },
+
+    // Envía a La Hipotecaria las respuestas (y los documentos) que el gestor llenó en Skala.
+    lahipotecariaContinuar: async (sessionId: string, valores: Record<string, string>, archivos?: Record<string, LhArchivo>): Promise<{ ok: boolean; mensaje: string; siguienteFormulario?: boolean; spec?: LhCampo[]; titulo?: string }> => {
+        return ProductionService._lahipotecaria('continuar', { sessionId, valores, archivos: archivos || {} });
     },
 
     // ─── ANÁLISIS DE DOCUMENTOS LEGALES CON IA ──────────────────────────────

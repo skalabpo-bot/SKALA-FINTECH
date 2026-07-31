@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, UserDocument, Zone, Permission, ALL_PERMISSIONS } from '../types';
+import { User, UserRole, UserDocument, Zone, Permission, ALL_PERMISSIONS, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { Users, Plus, Pencil, Trash, X, Eye, CreditCard, MapPin, Shield, CheckCircle, XCircle, FileText, Download, Upload, CheckSquare, Square, Paperclip, Loader2, Search, KeyRound } from 'lucide-react';
 
@@ -15,7 +15,11 @@ const InputGroup = ({ label, name, value, onChange, type = "text", options }: an
                 className="w-full p-2 border rounded bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
                 <option value="">Seleccione...</option>
-                {(options || []).map((o: any) => <option key={o} value={o}>{o}</option>)}
+                {(options || []).map((o: any) => {
+                    const val = typeof o === 'object' && o !== null ? o.value : o;
+                    const lab = typeof o === 'object' && o !== null ? o.label : o;
+                    return <option key={val} value={val}>{lab}</option>;
+                })}
             </select>
         ) : (
             <input 
@@ -333,7 +337,7 @@ export const UserManagement = () => {
                                     </td>
                                     <td className="p-4">
                                         <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold uppercase border border-slate-200">
-                                            {u.role.replace('_', ' ')}
+                                            {etiquetaRol(u.role)}
                                         </span>
                                     </td>
                                     <td className="p-4 text-slate-600 font-medium">
@@ -342,7 +346,7 @@ export const UserManagement = () => {
                                                 ? <span className="text-[10px] text-blue-600 font-bold">{u.assignedEntities.join(', ')}</span>
                                                 : <span className="text-[10px] text-slate-400">Todas</span>)
                                             : (() => {
-                                                const supervisor = u.zoneId ? users.find(s => s.role === 'SUPERVISOR_ASIGNADO' && s.zoneId === u.zoneId) : null;
+                                                const supervisor = u.zoneId ? users.find(s => ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(s.role) && s.zoneId === u.zoneId) : null;
                                                 const zoneName = u.zoneId ? zones.find(z => z.id === u.zoneId)?.name : null;
                                                 const label = supervisor?.name || zoneName || null;
                                                 return label
@@ -380,7 +384,7 @@ export const UserManagement = () => {
                                 <div>
                                     <h3 className="font-bold text-lg text-slate-800">{u.name}</h3>
                                     <p className="text-sm text-slate-500">{u.email}</p>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded border font-bold mt-1 inline-block ${u.role === 'SUPERVISOR_ASIGNADO' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>{u.role === 'SUPERVISOR_ASIGNADO' ? 'SOLICITUD SUPERVISOR' : 'SOLICITUD GESTOR'}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded border font-bold mt-1 inline-block ${['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(u.role) ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>{['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(u.role) ? 'SOLICITUD SUPERVISOR' : 'SOLICITUD ASESOR'}</span>
                                 </div>
                             </div>
                             <button onClick={() => setViewDetailUser(u)} className="text-slate-400 hover:text-primary p-2 bg-slate-50 rounded-lg"><Eye size={20}/></button>
@@ -455,7 +459,7 @@ export const UserManagement = () => {
                         <h3 className="font-bold text-slate-800 text-base mb-1 flex items-center gap-2">
                             <Upload size={18} className="text-primary"/> Importar Usuarios desde CSV
                         </h3>
-                        <p className="text-sm text-slate-500">Carga múltiples gestores/usuarios a la vez. En la columna <strong>supervisor</strong> puedes poner el nombre del supervisor o el nombre de la zona. Se omiten automáticamente los que ya existen por cédula.</p>
+                        <p className="text-sm text-slate-500">Carga múltiples asesores/usuarios a la vez. En la columna <strong>supervisor</strong> puedes poner el nombre del supervisor o el nombre de la zona. Se omiten automáticamente los que ya existen por cédula.</p>
                     </div>
 
                     {/* Template */}
@@ -582,7 +586,7 @@ export const UserManagement = () => {
                         <InputGroup label="Celular" name="phone" value={formData.phone} onChange={handleInputChange} />
                         
                         <div className="col-span-1 md:col-span-2">
-                            <InputGroup label="Rol" name="role" value={formData.role} onChange={handleInputChange} options={roleNames} />
+                            <InputGroup label="Rol" name="role" value={formData.role} onChange={handleInputChange} options={roleNames.map(n => ({ value: n, label: etiquetaRol(n) }))} />
                             
                             <div className="mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <div className="flex justify-between items-center mb-3">
@@ -595,7 +599,7 @@ export const UserManagement = () => {
                                 <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
                                     {ALL_PERMISSIONS.map(perm => {
                                         const isChecked = customPermissions.includes(perm);
-                                        const isRestrictedForGestor = formData.role === UserRole.GESTOR && ['MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'MANAGE_AUTOMATIONS'].includes(perm);
+                                        const isRestrictedForGestor = [UserRole.GESTOR, UserRole.ASESOR_TMK].includes(formData.role as UserRole) && ['MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'MANAGE_AUTOMATIONS'].includes(perm);
                                         
                                         return (
                                             <div 
@@ -611,7 +615,7 @@ export const UserManagement = () => {
                                         );
                                     })}
                                 </div>
-                                {formData.role === UserRole.GESTOR && <p className="text-[10px] text-orange-500 mt-2 font-bold flex items-center gap-1"><Shield size={10}/> Restricción: Los Gestores no pueden tener acceso administrativo.</p>}
+                                {[UserRole.GESTOR, UserRole.ASESOR_TMK].includes(formData.role as UserRole) && <p className="text-[10px] text-orange-500 mt-2 font-bold flex items-center gap-1"><Shield size={10}/> Restricción: Los Asesores no pueden tener acceso administrativo.</p>}
                             </div>
                         </div>
 
@@ -686,7 +690,7 @@ export const UserManagement = () => {
                         <div>
                             <h3 className="text-2xl font-display font-bold text-slate-800">{viewDetailUser.name}</h3>
                             <div className="flex gap-2 mt-1">
-                                <span className="text-primary font-bold text-sm bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">{viewDetailUser.role.replace('_', ' ')}</span>
+                                <span className="text-primary font-bold text-sm bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">{etiquetaRol(viewDetailUser.role)}</span>
                                 <span className={`text-sm font-bold px-2 py-0.5 rounded-md border ${viewDetailUser.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-100' : (viewDetailUser.status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100')}`}>
                                     {viewDetailUser.status}
                                 </span>
@@ -707,7 +711,7 @@ export const UserManagement = () => {
                             <p className="text-[10px] font-bold text-slate-400 uppercase">Supervisor Asignado</p>
                             <p className="font-bold text-indigo-600">
                                 {viewDetailUser.zoneId
-                                    ? (users.find(s => s.role === 'SUPERVISOR_ASIGNADO' && s.zoneId === viewDetailUser.zoneId)?.name
+                                    ? (users.find(s => ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(s.role) && s.zoneId === viewDetailUser.zoneId)?.name
                                         || zones.find(z => z.id === viewDetailUser.zoneId)?.name
                                         || 'Sin supervisor')
                                     : 'Sin zona asignada'}

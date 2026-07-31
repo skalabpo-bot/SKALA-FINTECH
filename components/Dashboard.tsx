@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { User, DashboardStats, NewsItem } from '../types';
+import { User, DashboardStats, NewsItem, puedeVerComisiones, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, AreaChart, Area, CartesianGrid } from 'recharts';
 import { Trophy, DollarSign, Clock, AlertCircle, Banknote, CheckCircle, FileText, Users, ArrowUpRight, ArrowDownRight, Activity, ChevronRight, Wallet, Award, Medal, X, ChevronLeft } from 'lucide-react';
@@ -24,7 +24,7 @@ const WelcomeHeader = ({ user }: { user: User }) => {
                     {greeting}, {displayName} <span className="text-4xl">👋</span>
                 </h1>
                 <p className="text-slate-500 font-medium mt-1 flex items-center gap-2">
-                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-slate-200">{user.roleDisplayName || user.role.replace(/_/g, ' ')}</span>
+                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-slate-200">{user.roleDisplayName || etiquetaRol(user.role)}</span>
                     <span>• Panel de Control General</span>
                 </p>
             </div>
@@ -414,8 +414,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
           </div>
           {/* KPIs (2/5) — 2x2 en PC */}
           <div className="lg:col-span-2 flex flex-col gap-4">
-            {/* Billetera — card especial (solo si está habilitada) */}
-            {billeteraEnabled && (
+            {/* Billetera — card especial (solo si está habilitada; el asesor TMK no ve comisiones) */}
+            {billeteraEnabled && puedeVerComisiones(currentUser) && (
             <div
               onClick={() => onNavigate?.('wallet')}
               className="bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl p-5 cursor-pointer hover:shadow-lg transition-all group"
@@ -465,7 +465,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, onNavigate })
           Supervisor: ve Top Asesores SOLO de su equipo (getCredits ya filtra por snapshot). */}
       {(() => {
           const isAdmin = MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS');
-          const isSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO';
+          const isSupervisor = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser.role);
           if (!isAdmin && !isSupervisor) return null;
           if (!stats.topGestores && !stats.topSupervisores) return null;
           return (

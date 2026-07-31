@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { MockService } from '../services/mockService';
-import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission } from '../types';
+import { User, CreditState, UserRole, Zone, ALL_PERMISSIONS, Permission, etiquetaRol } from '../types';
 import { Workflow, Plus, Trash, ArrowUp, ArrowDown, Map, Briefcase, Users, Layers, Globe, X, MapPin, CreditCard, Pencil, Check, Shield, CheckSquare, Square, Zap, FileText, Save, ChevronRight, ChevronDown } from 'lucide-react';
 import { SimuladorMigrationPanel } from './SimuladorMigrationPanel';
 import { AdminDashboard as SimuladorAdminDashboard } from '../simulador/components/AdminDashboard';
@@ -193,7 +193,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                         <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-200 mb-4 flex flex-col sm:flex-row gap-2">
                             <input type="text" placeholder="Nuevo Estado..." value={newStateName} onChange={e => setNewStateName(e.target.value)} className="flex-1 text-xs px-3 py-2 rounded-lg border-none focus:ring-0 bg-transparent text-slate-900 font-bold placeholder:font-normal"/>
                             <select value={newStateRole} onChange={(e) => setNewStateRole(e.target.value)} className="text-xs px-2 py-2 rounded-lg border-none bg-white shadow-sm text-slate-600 focus:ring-0 cursor-pointer w-full sm:w-32">
-                                {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+                                {availableRoleNames.map(r => <option key={r} value={r}>{etiquetaRol(r)}</option>)}
                             </select>
                             <button type="button" onClick={async () => { if(newStateName.trim()) { await MockService.addState(newStateName, newStateRole as UserRole); await refreshData(); setNewStateName(''); } }} className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700 shadow-sm flex items-center justify-center"><Plus size={16}/></button>
                         </div>
@@ -218,7 +218,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                 <div>
                                                     <label className="text-[10px] font-bold text-slate-400 uppercase">Rol Responsable</label>
                                                     <select value={editStateData.role_responsible} onChange={e => setEditStateData({...editStateData, role_responsible: e.target.value})} className="w-full text-xs px-3 py-2 border rounded-lg bg-white text-slate-900">
-                                                        {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+                                                        {availableRoleNames.map(r => <option key={r} value={r}>{etiquetaRol(r)}</option>)}
                                                     </select>
                                                 </div>
                                                 <div>
@@ -231,7 +231,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                         onChange={e => setEditStateData({...editStateData, sla_hours: e.target.value === '' ? null : Number(e.target.value)})}
                                                         className="w-full text-xs px-3 py-2 border rounded-lg bg-white text-slate-900 font-bold"
                                                     />
-                                                    <p className="text-[9px] text-slate-400 mt-0.5">Horas sin moverse antes de alertar al gestor/supervisor. Vacío = sin vigilancia.</p>
+                                                    <p className="text-[9px] text-slate-400 mt-0.5">Horas sin moverse antes de alertar al asesor/supervisor. Vacío = sin vigilancia.</p>
                                                 </div>
                                                 <div className="flex items-end pb-1 gap-4">
                                                     <label className="flex items-center gap-2 cursor-pointer">
@@ -290,7 +290,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                                         />
                                                         <select value={newActionRole} onChange={e => setNewActionRole(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-600 outline-none">
                                                             <option value="">Todos los roles</option>
-                                                            {availableRoleNames.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+                                                            {availableRoleNames.map(r => <option key={r} value={r}>{etiquetaRol(r)}</option>)}
                                                         </select>
                                                     </div>
                                                     <div className="flex gap-2 items-center">
@@ -538,7 +538,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     <div className="flex items-center justify-between py-4">
                         <div>
                             <p className="font-semibold text-slate-800 text-sm">Módulo Billetera</p>
-                            <p className="text-xs text-slate-400 mt-0.5">Muestra "Mi Billetera" y "Retiros" en el menú a los gestores y tesorería.</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Muestra "Mi Billetera" y "Retiros" en el menú a los asesores y tesorería.</p>
                         </div>
                         <button
                             disabled={billeteraLoading}
@@ -565,7 +565,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                                 const next = !radicacionAbierta;
                                 setRadicacionAbiertaState(next);
                                 await updateRadicacionAbierta(next);
-                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: next ? 'Radicacion abierta — los gestores pueden crear creditos.' : 'Radicacion cerrada — los gestores NO pueden crear creditos.', type: next ? 'success' : 'warning' } }));
+                                window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: next ? 'Radicacion abierta — los asesores pueden crear creditos.' : 'Radicacion cerrada — los asesores NO pueden crear creditos.', type: next ? 'success' : 'warning' } }));
                             }}
                             className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-40 ${radicacionAbierta ? 'bg-green-500' : 'bg-red-500'}`}
                         >

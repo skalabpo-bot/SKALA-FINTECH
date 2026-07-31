@@ -36,11 +36,11 @@ export const PoliticaDatos: React.FC = () => {
             <h2 className="text-lg font-black text-slate-800">2. Finalidades del Tratamiento</h2>
             <p>Los datos personales serán tratados para las siguientes finalidades:</p>
             <ul className="list-disc list-inside space-y-2 pl-2">
-              <li>Gestionar el registro y autenticación de usuarios en la plataforma (gestores, supervisores, analistas y administradores).</li>
+              <li>Gestionar el registro y autenticación de usuarios en la plataforma (asesores, supervisores, analistas y administradores).</li>
               <li>Verificar la identidad del titular mediante documentos de identificación (cédula de ciudadanía, RUT, certificación bancaria).</li>
-              <li>Facilitar la intermediación y gestión de créditos de libranza entre gestores comerciales y entidades financieras.</li>
+              <li>Facilitar la intermediación y gestión de créditos de libranza entre asesores comerciales y entidades financieras.</li>
               <li>Realizar el cálculo, simulación y radicación de solicitudes de crédito.</li>
-              <li>Gestionar pagos de comisiones y transferencias bancarias a los gestores.</li>
+              <li>Gestionar pagos de comisiones y transferencias bancarias a los asesores.</li>
               <li>Enviar notificaciones relacionadas con el estado de los créditos, cambios en las solicitudes y comunicaciones operativas.</li>
               <li>Cumplir con obligaciones legales, regulatorias y contractuales aplicables.</li>
               <li>Realizar análisis estadísticos internos para la mejora de la plataforma.</li>

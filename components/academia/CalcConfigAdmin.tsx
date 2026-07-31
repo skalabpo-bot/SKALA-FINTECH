@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { MockService } from '../../services/mockService';
 import { getAllEntities } from '../../simulador/services/entityService';
 import { EntityCalcConfig, EntityCalcProduct } from '../../types';
-import { Save, Loader2, Plus, Trash2, Beaker, Calculator } from 'lucide-react';
+import { Save, Loader2, Plus, Trash2, Beaker, Calculator, AlertTriangle } from 'lucide-react';
 
 /**
  * Admin: configura el MOTOR DE CÁLCULO (Excel real) de cada entidad.
@@ -242,6 +242,19 @@ export const CalcConfigAdmin: React.FC = () => {
               </div>
             </div>
 
+            {/* Celdas de salida propias — hojas con una FILA por tasa (ej. La Hipotecaria) */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={lbl}>Monto de ESTE producto (opcional)</label>
+                <input value={p.outputCells?.monto || ''} onChange={e => patchProduct(i, { outputCells: { ...(p.outputCells || {}), monto: e.target.value.toUpperCase() } })} placeholder="(usa el global)" className={`${inp} font-mono`} />
+              </div>
+              <div>
+                <label className={lbl}>Desembolso de ESTE producto (opcional)</label>
+                <input value={p.outputCells?.desembolso || ''} onChange={e => patchProduct(i, { outputCells: { ...(p.outputCells || {}), desembolso: e.target.value.toUpperCase() } })} placeholder="(usa el global)" className={`${inp} font-mono`} />
+              </div>
+              <p className="col-span-2 text-[11px] text-slate-400 italic">Solo si cada tasa vive en una fila distinta de la hoja. Si se dejan vacías, se usan las celdas de salida globales de arriba.</p>
+            </div>
+
             {/* Celdas que definen el producto */}
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -279,6 +292,22 @@ export const CalcConfigAdmin: React.FC = () => {
           </div>
           <button onClick={() => setCommRows(r => [...r, { tasa: '', comision: '' }])} className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"><Plus size={14} /> Tasa</button>
         </div>
+        {/* Aviso: sin esta tabla (o con la tasa que no empareja) el gestor cobra 0. */}
+        {(() => {
+          const tasasCubiertas = commRows.map(r => Number(r.tasa)).filter(t => t > 0);
+          const sinCubrir = cfg.products.filter(p => Number(p.rate) > 0 && !tasasCubiertas.some(t => Math.abs(t - Number(p.rate)) < 0.005));
+          const sinComision = commRows.filter(r => Number(r.tasa) > 0 && !(Number(r.comision) > 0));
+          if (!sinCubrir.length && !sinComision.length) return null;
+          return (
+            <div className="flex items-start gap-2 bg-amber-100 border border-amber-300 rounded-lg p-2.5">
+              <AlertTriangle size={16} className="text-amber-700 shrink-0 mt-0.5" />
+              <div className="text-[11px] text-amber-800 font-semibold leading-relaxed">
+                {sinCubrir.length > 0 && <p><b>El asesor cobraría $0</b> en {sinCubrir.length === 1 ? 'la tasa' : 'las tasas'} {sinCubrir.map(p => p.nombre || p.rate).join(', ')}: {sinCubrir.length === 1 ? 'no está' : 'no están'} en esta tabla.</p>}
+                {sinComision.length > 0 && <p>Hay {sinComision.length} {sinComision.length === 1 ? 'tasa' : 'tasas'} con comisión en 0%.</p>}
+              </div>
+            </div>
+          );
+        })()}
         <div className="space-y-2">
           {commRows.length === 0 && <p className="text-[11px] text-slate-400 italic">Sin comisiones. Agrega una tasa (ej. 1.5 → 3%).</p>}
           {commRows.map((row, i) => (

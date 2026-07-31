@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Zone } from '../types';
+import { User, Zone, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { Save, User as UserIcon, Phone, Mail, Camera, Loader2, CreditCard, MapPin } from 'lucide-react';
 
@@ -56,7 +56,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
                 <img src={formData.avatar} className="w-24 h-24 rounded-full object-cover border-4 border-slate-100"/>
                 <div>
                     <h3 className="text-xl font-bold text-slate-800">{formData.name}</h3>
-                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs font-bold">{formData.role}</span>
+                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs font-bold">{etiquetaRol(formData.role)}</span>
                 </div>
             </div>
 

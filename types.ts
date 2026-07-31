@@ -1,13 +1,36 @@
 
 export enum UserRole {
   ADMIN = 'ADMIN',
+  // Valor interno histórico: en la UI se muestra "Asesor" (renombrado por contratos jul 2026).
   GESTOR = 'GESTOR',
+  // Asesor interno (telemercadeo): opera igual que GESTOR pero NO ve comisiones.
+  ASESOR_TMK = 'ASESOR_TMK',
   ASISTENTE_OPERATIVO = 'ASISTENTE_OPERATIVO',
   ANALISTA = 'ANALISTA',
   TESORERIA = 'TESORERIA',
   SUPERVISOR_ASIGNADO = 'SUPERVISOR_ASIGNADO',
+  // Supervisor interno (telemercadeo): opera igual que SUPERVISOR_ASIGNADO pero NO ve comisiones.
+  SUPERVISOR_TMK = 'SUPERVISOR_TMK',
   ANALISTA_ENTIDAD = 'ANALISTA_ENTIDAD'
 }
+
+// Roles de asesor comercial (crean créditos a su nombre). GESTOR se muestra como "Asesor".
+export const ASESOR_ROLES: string[] = [UserRole.GESTOR, UserRole.ASESOR_TMK];
+export const esRolAsesor = (role?: string | null): boolean => ASESOR_ROLES.includes(String(role || ''));
+// Roles de supervisor de zona (equipo, radicar a nombre de, créditos de la zona).
+export const SUPERVISOR_ROLES: string[] = [UserRole.SUPERVISOR_ASIGNADO, UserRole.SUPERVISOR_TMK];
+export const esRolSupervisor = (role?: string | null): boolean => SUPERVISOR_ROLES.includes(String(role || ''));
+// Los roles TMK son internos: nunca ven comisiones (ni %, ni montos, ni billetera, ni reportes).
+export const puedeVerComisiones = (user?: { role?: string | null } | null): boolean =>
+  ![UserRole.ASESOR_TMK as string, UserRole.SUPERVISOR_TMK as string].includes(String(user?.role || ''));
+// Etiqueta VISIBLE de un rol (el valor interno no cambia: GESTOR se muestra "Asesor").
+export const etiquetaRol = (role?: string | null): string => {
+  const r = String(role || '');
+  if (r === UserRole.GESTOR) return 'Asesor';
+  if (r === UserRole.ASESOR_TMK) return 'Asesor TMK';
+  if (r === UserRole.SUPERVISOR_TMK) return 'Supervisor TMK';
+  return r.replace(/_/g, ' ');
+};
 
 export type Permission =
   | 'VIEW_DASHBOARD'
@@ -60,6 +83,10 @@ export interface EntityCalcProduct {
   comision: number;                     // % de comisión del asesor para este producto
   discountPct?: number;                 // seguro+aval informativo (no recalcula nada)
   cellValues?: Record<string, any>;     // celdas A1 que definen el producto, ej. { "C12": 1.5 }
+  // Celdas de salida propias. Para hojas donde cada producto es una FILA distinta y su monto
+  // no depende de una celda de entrada (ej. La Hipotecaria: fila 2 = 1,53%, fila 3 = 1,81%…).
+  // Si se omiten, se usan las celdas de salida globales de la entidad.
+  outputCells?: { monto?: string; desembolso?: string; tasa?: string };
 }
 
 // Config de cálculo de UNA entidad. Si existe (y is_active), la radicación usa el
@@ -406,8 +433,8 @@ export type AutomationEvent =
 
 export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; description: string; category: string }[] = [
     // Créditos
-    { value: 'credit_status_change', label: 'Cambio de estado de crédito', description: 'crédito (monto, desembolso, cuota, tasa, plazo, comisión), cliente, gestor, nuevo estado, motivo', category: 'Créditos' },
-    { value: 'credit_created', label: 'Crédito radicado', description: 'crédito (monto, desembolso, cuota, tasa, plazo, entidad, comisión), cliente, gestor', category: 'Créditos' },
+    { value: 'credit_status_change', label: 'Cambio de estado de crédito', description: 'crédito (monto, desembolso, cuota, tasa, plazo, comisión), cliente, asesor, nuevo estado, motivo', category: 'Créditos' },
+    { value: 'credit_created', label: 'Crédito radicado', description: 'crédito (monto, desembolso, cuota, tasa, plazo, entidad, comisión), cliente, asesor', category: 'Créditos' },
     { value: 'credit_edited', label: 'Crédito editado', description: 'Datos actualizados del crédito y cliente', category: 'Créditos' },
     { value: 'credit_deleted', label: 'Crédito eliminado', description: 'ID del crédito eliminado y quién lo eliminó', category: 'Créditos' },
     // Comunicación
@@ -419,9 +446,9 @@ export const AUTOMATION_EVENTS: { value: AutomationEvent; label: string; descrip
     { value: 'user_rejected', label: 'Usuario rechazado', description: 'Datos del usuario rechazado', category: 'Usuarios' },
     { value: 'user_deleted', label: 'Usuario eliminado', description: 'ID y datos del usuario eliminado', category: 'Usuarios' },
     { value: 'user_updated', label: 'Perfil de usuario actualizado', description: 'Datos actualizados del perfil', category: 'Usuarios' },
-    { value: 'withdrawal_requested', label: 'Solicitud de retiro de fondos', description: 'Gestor, monto total, créditos incluidos', category: 'Comisiones' },
+    { value: 'withdrawal_requested', label: 'Solicitud de retiro de fondos', description: 'Asesor, monto total, créditos incluidos', category: 'Comisiones' },
     { value: 'user_batch_imported', label: 'Usuario creado por importación masiva', description: 'Nombre, email, cédula, teléfono, ciudad, rol, contraseña temporal', category: 'Usuarios' },
-    { value: 'state_action_executed', label: 'Acción rápida ejecutada', description: 'Nombre de la acción, gestor, cliente y datos del crédito', category: 'Créditos' },
+    { value: 'state_action_executed', label: 'Acción rápida ejecutada', description: 'Nombre de la acción, asesor, cliente y datos del crédito', category: 'Créditos' },
     // Autorización de consulta y validación de identidad
     { value: 'authorization_request_sent', label: 'Autorización de consulta y validación enviada', description: 'Link de autorización, datos del cliente, crédito asociado', category: 'Legal' },
     { value: 'authorization_otp_requested', label: 'OTP de autorización solicitado', description: 'Código OTP, teléfono del cliente, crédito asociado', category: 'Legal' },
@@ -439,7 +466,7 @@ export const AUTOMATION_TYPES: { value: AutomationType; label: string; icon: str
 ];
 
 export const AUTOMATION_RECIPIENTS: { value: AutomationRecipient; label: string }[] = [
-    { value: 'GESTOR', label: 'Gestor' },
+    { value: 'GESTOR', label: 'Asesor' },
     { value: 'ANALISTA', label: 'Analista' },
     { value: 'CLIENTE', label: 'Cliente' },
     { value: 'ADMIN', label: 'Administrador' },

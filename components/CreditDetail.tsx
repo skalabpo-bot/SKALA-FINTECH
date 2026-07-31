@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Credit, User, CreditState, UserRole, AuthorizationToken, PolicyAnalysis } from '../types';
+import { Credit, User, CreditState, UserRole, AuthorizationToken, PolicyAnalysis, puedeVerComisiones, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { ProductionService } from '../services/productionService';
 import { CreditTypesService } from '../services/creditTypesService';
@@ -24,6 +24,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const [authLoading, setAuthLoading] = useState(false);
   const [manualRules, setManualRules] = useState<{id: string; name: string; description?: string}[]>([]);
   const [executingRuleId, setExecutingRuleId] = useState<string | null>(null);
+  const [legasovLoading, setLegasovLoading] = useState(false);
   const [stateBanners, setStateBanners] = useState<any[]>([]);
   const [showRateModal, setShowRateModal] = useState(false);
   const [rateInput, setRateInput] = useState<string>('');
@@ -274,9 +275,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
           const dataToSave = { ...editFormData };
           // Si el gestor guardó en modo subsanación, quitar el permiso automáticamente
           const currentStateName = states.find(s => s.id === credit?.statusId)?.name?.toUpperCase() ?? '';
-          const isOwnSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && !!currentUser.zoneId
+          const isOwnSupervisor = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser.role) && !!currentUser.zoneId
               && (credit?.gestorZoneId === currentUser.zoneId || credit?.assignedGestorId === currentUser.id);
-          const isGestorSubsanacion = (currentUser.role === 'GESTOR' || isOwnSupervisor) && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
+          const isGestorSubsanacion = (['GESTOR', 'ASESOR_TMK'].includes(currentUser.role) || isOwnSupervisor) && (currentStateName.includes('DEVUELTO') || currentStateName.includes('APLAZADO')) && !!credit?.subsanacionHabilitada;
           if (isGestorSubsanacion) dataToSave.subsanacionHabilitada = false;
           await MockService.updateCreditData(credit!.id, dataToSave, currentUser.id);
           setIsEditing(false);
@@ -293,7 +294,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
       try {
           await MockService.toggleSubsanacion(credit.id, enabling, currentUser);
           await refreshData();
-          const msg = enabling ? 'Edición habilitada para el Gestor (una sola vez)' : 'Edición del gestor revocada';
+          const msg = enabling ? 'Edición habilitada para el Asesor (una sola vez)' : 'Edición del asesor revocada';
           window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: msg, type: 'success' } }));
           if (enabling) setActiveTab('HISTORY'); // Mostrar trazabilidad al habilitar
       } catch (err) {
@@ -454,9 +455,9 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
   const canEdit = MockService.hasPermission(currentUser, 'EDIT_CREDIT_INFO');
   // Supervisor puede gestionar como gestor los créditos de SU zona (gestores que supervisa)
   // o los créditos asignados a él mismo.
-  const isZoneSupervisor = currentUser.role === 'SUPERVISOR_ASIGNADO' && !!currentUser.zoneId
+  const isZoneSupervisor = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser.role) && !!currentUser.zoneId
       && (credit.gestorZoneId === currentUser.zoneId || credit.assignedGestorId === currentUser.id);
-  const isGestorOrOwnSupervisor = currentUser.role === 'GESTOR' || isZoneSupervisor;
+  const isGestorOrOwnSupervisor = ['GESTOR', 'ASESOR_TMK'].includes(currentUser.role) || isZoneSupervisor;
   // Recalcular el estado actual en cada render para que se actualice inmediatamente
   const currentStateObj = states.find(s => s.id === credit.statusId);
   const hasTasksEnabled = currentStateObj?.enableTasks ?? false;
@@ -479,7 +480,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
            <h2 className="text-2xl lg:text-4xl font-display font-black text-slate-800 tracking-tight leading-none break-words">{credit.nombreCompleto}</h2>
            <p className="text-[10px] lg:text-xs text-slate-400 font-bold mt-2 uppercase tracking-widest break-all">SOL. N° {credit.solicitudNumber || 'N/A'} • CC: {credit.numeroDocumento}</p>
            <div className="flex flex-wrap gap-2 mt-2">
-               <span className="text-[9px] font-black text-slate-500 bg-slate-50 px-3 py-1 rounded-lg uppercase tracking-wider">Gestor: {credit.gestorName}</span>
+               <span className="text-[9px] font-black text-slate-500 bg-slate-50 px-3 py-1 rounded-lg uppercase tracking-wider">Asesor: {credit.gestorName}</span>
                <span className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-wider ${credit.analystName ? 'text-blue-600 bg-blue-50' : 'text-slate-400 bg-slate-50'}`}>
                    Analista: {credit.analystName || 'Sin asignar'}
                </span>
@@ -517,7 +518,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                        <Star size={10} fill={credit.recomendado ? 'currentColor' : 'none'} /> {credit.recomendado ? 'Recomendado' : 'Recomendar'}
                    </button>
                )}
-               {credit.recomendado && currentUser.role !== 'ADMIN' && currentUser.role !== 'GESTOR' && (
+               {credit.recomendado && !['ADMIN', 'GESTOR', 'ASESOR_TMK'].includes(currentUser.role) && (
                    <span className="text-[9px] font-black text-yellow-700 bg-yellow-100 px-3 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1">
                        <Star size={10} fill="currentColor" /> Recomendado
                    </span>
@@ -589,7 +590,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                 </select>
              )}
              {/* ANALISTA (o quien tenga permiso de cambiar estado) puede habilitar / deshabilitar edición al gestor cuando está DEVUELTO o APLAZADO */}
-             {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && currentUser.role !== 'GESTOR' && isEditableState && (
+             {MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS') && !['GESTOR', 'ASESOR_TMK'].includes(currentUser.role) && isEditableState && (
                 <button
                     onClick={handleToggleSubsanacion}
                     className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${
@@ -599,7 +600,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                     }`}
                 >
                     {credit.subsanacionHabilitada ? <Lock size={14}/> : <Unlock size={14}/>}
-                    {credit.subsanacionHabilitada ? 'Bloquear Edición' : 'Habilitar Edición al Gestor'}
+                    {credit.subsanacionHabilitada ? 'Bloquear Edición' : 'Habilitar Edición al Asesor'}
                 </button>
              )}
              {/* GESTOR puede cambiar de DEVUELTO/APLAZADO a SUBSANADO únicamente */}
@@ -734,6 +735,49 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                         </div>
                     )}
 
+                    {/* VALIDACIÓN DE IDENTIDAD EN LEGASOVAPP — solo La Hipotecaria */}
+                    {String(credit?.entidadAliada || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim() === 'la hipotecaria' && (() => {
+                        const leg = (credit as any)?.legasov as { estado?: string; codigoId?: string; mensaje?: string; at?: string } | undefined;
+                        const creado = leg?.estado === 'creado';
+                        const conError = leg?.estado === 'error';
+                        return (
+                            <div className={`bg-white border-2 rounded-2xl p-5 -mb-8 ${creado ? 'border-emerald-100' : conError ? 'border-red-100' : 'border-slate-100'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <ShieldCheck size={16} className={creado ? 'text-emerald-500' : conError ? 'text-red-500' : 'text-slate-400'} />
+                                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Validación de identidad · LegasovApp</p>
+                                </div>
+                                {creado && (
+                                    <p className="text-xs text-emerald-700 font-semibold mb-3">✓ Codigo creado{leg?.codigoId ? ` (#${leg.codigoId})` : ''} en LegasovApp{leg?.at ? ` · ${new Date(leg.at).toLocaleString('es-CO')}` : ''}.</p>
+                                )}
+                                {conError && (
+                                    <p className="text-xs text-red-700 font-semibold mb-3">⚠ {leg?.mensaje || 'No se pudo crear el Codigo.'}</p>
+                                )}
+                                {!leg && (
+                                    <p className="text-xs text-slate-500 mb-3">Aún no se ha creado el Codigo del cliente en LegasovApp.</p>
+                                )}
+                                <button
+                                    disabled={legasovLoading}
+                                    onClick={async () => {
+                                        if (creado && !confirm('Ya existe un Codigo. ¿Crear otro de todos modos?')) return;
+                                        setLegasovLoading(true);
+                                        try {
+                                            const r = await ProductionService.crearCodigoLegasov(credit!.id, creado);
+                                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: r.ok ? '✓ Codigo creado en LegasovApp' : (r.mensaje || 'No se pudo crear'), type: r.ok ? 'success' : 'error' } }));
+                                            const updated = await MockService.getCreditById(credit!.id);
+                                            if (updated) setCredit(updated);
+                                        } catch (err: any) {
+                                            window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: err.message || 'Error contactando LegasovApp', type: 'error' } }));
+                                        } finally { setLegasovLoading(false); }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                                >
+                                    {legasovLoading ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                                    {creado ? 'Crear de nuevo' : conError ? 'Reintentar validación' : 'Crear validación en LegasovApp'}
+                                </button>
+                            </div>
+                        );
+                    })()}
+
                     {/* RESUMEN ANÁLISIS IA — visible para todos incluyendo gestores */}
                     {credit?.legalAnalysis && (
                         <div className={`rounded-2xl border-2 p-5 -mb-8 ${
@@ -850,7 +894,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                                 </div>
                                             )}
                                             {/* Badge pendiente para no-gestores */}
-                                            {!task.completed && currentUser.role !== 'GESTOR' && (
+                                            {!task.completed && !['GESTOR', 'ASESOR_TMK'].includes(currentUser.role) && (
                                                 <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wide shrink-0 mt-1">Pendiente</span>
                                             )}
                                         </div>
@@ -920,7 +964,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
 
                     {/* OBSERVACIONES */}
                     <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-6">
-                        <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] mb-4 flex items-center gap-3"><MessageSquare size={16} className="text-amber-500"/> OBSERVACIONES DEL GESTOR</h4>
+                        <h4 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.2em] mb-4 flex items-center gap-3"><MessageSquare size={16} className="text-amber-500"/> OBSERVACIONES DEL ASESOR</h4>
                         {isEditing ? (
                             <textarea
                                 name="observaciones"
@@ -995,7 +1039,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             <EditableItem label="Monto Solicitado" name="monto" value={editFormData.monto} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, monto: e.target.value})} type="number" />
                             <EditableItem label="Plazo (Meses)" name="plazo" value={editFormData.plazo} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, plazo: e.target.value})} type="number" />
                             <EditableItem label="Entidad Aliada" name="entidadAliada" value={editFormData.entidadAliada} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, entidadAliada: e.target.value, tasa: ''})} options={entities.map((e: any) => e.name)} />
-                            <EditableItem label="Tasa (% NMV)" name="tasa" value={editFormData.tasa} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, tasa: e.target.value})} options={entities.find((e: any) => e.name === editFormData.entidadAliada)?.rates?.map((r: any) => ({ value: r.rate, label: `${r.rate}% NMV (Com: ${r.commission}%)` })) || []} />
+                            <EditableItem label="Tasa (% NMV)" name="tasa" value={editFormData.tasa} isEditing={isEditing && !canEditAsGestor} onChange={e=>setEditFormData({...editFormData, tasa: e.target.value})} options={entities.find((e: any) => e.name === editFormData.entidadAliada)?.rates?.map((r: any) => ({ value: r.rate, label: puedeVerComisiones(currentUser) ? `${r.rate}% NMV (Com: ${r.commission}%)` : `${r.rate}% NMV` })) || []} />
                             {/* Campos editables también en subsanación */}
                             <EditableItem label="Gastos Mensuales" name="gastosMensuales" value={editFormData.gastosMensuales} isEditing={isEditing} onChange={e=>setEditFormData({...editFormData, gastosMensuales: e.target.value})} type="number" />
                             <EditableItem label="Activos" name="activos" value={editFormData.activos} isEditing={isEditing} onChange={e=>setEditFormData({...editFormData, activos: e.target.value})} type="number" />
@@ -1381,7 +1425,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                             </div>
                                             <div class="meta">
                                                 <strong>Crédito:</strong> SOL. N° ${credit.solicitudNumber} — ${credit.nombres || ''} ${credit.apellidos || ''}<br/>
-                                                <strong>Cédula:</strong> ${credit.cedula || 'N/A'} &nbsp;|&nbsp; <strong>Entidad:</strong> ${a.entityName || 'N/A'}<br/>
+                                                <strong>Cédula:</strong> ${credit.numeroDocumento || 'N/A'} &nbsp;|&nbsp; <strong>Entidad:</strong> ${a.entityName || 'N/A'}<br/>
                                                 <strong>Fecha de análisis:</strong> ${new Date(a.analyzedAt).toLocaleString('es-CO')}
                                             </div>
                                             <div style="margin-bottom:16px"><span class="badge" style="background:${statusBg};color:${statusColor};border:1px solid ${statusColor}30">Estado: ${statusLabel}</span></div>
@@ -1454,7 +1498,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-0.5">
                                                 <span className="text-xs font-bold text-slate-700">{note.userName}</span>
-                                                <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded font-bold">{note.userRole?.replace(/_/g, ' ')}</span>
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded font-bold">{etiquetaRol(note.userRole)}</span>
                                                 <span className="text-[9px] text-slate-400 ml-auto shrink-0">{new Date(note.createdAt).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                                             </div>
                                             <p className="text-xs text-slate-600 leading-relaxed">{note.text}</p>
@@ -1470,7 +1514,14 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
             {activeTab === 'HISTORY' && (
                 <div className="space-y-3 animate-fade-in pr-2 max-h-[65vh] overflow-y-auto custom-scrollbar">
                     {credit.history.length === 0 && <div className="text-center py-16 text-slate-300 font-bold italic text-sm">Sin registros de trazabilidad histórica.</div>}
-                    {credit.history.map((h, i) => (
+                    {(puedeVerComisiones(currentUser)
+                        ? credit.history
+                        // El asesor TMK no ve comisiones: fuera las entradas de comisión y las líneas
+                        // "Comisión: ..." dentro de los snapshots (el dato completo queda para los demás roles).
+                        : credit.history
+                            .filter(h => !/comisi/i.test(h.action || ''))
+                            .map(h => ({ ...h, description: (h.description || '').split('\n').filter(l => !/comisi/i.test(l)).join('\n') }))
+                    ).map((h, i) => (
                         <div key={h.id} className="flex gap-3 items-start border-l-2 border-slate-100 pl-4 relative pb-3">
                             <div className="absolute left-[-5px] top-1.5 w-2 h-2 rounded-full bg-primary"></div>
                             <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 w-full hover:bg-white hover:shadow-md transition-all duration-300">
@@ -1483,7 +1534,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                                     <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-400 border border-slate-100">{h.userName?.charAt(0)}</div>
                                     <div>
                                         <p className="text-[9px] font-bold text-slate-700">{h.userName}</p>
-                                        <p className="text-[8px] font-medium text-slate-400">{h.userRole?.replace('_', ' ')}</p>
+                                        <p className="text-[8px] font-medium text-slate-400">{etiquetaRol(h.userRole)}</p>
                                     </div>
                                 </div>
                             </div>
@@ -1505,7 +1556,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             return (
                             <div key={c.id} className={`flex flex-col ${c.userId === currentUser.id ? 'items-end' : 'items-start'}`}>
                                 <div className={`max-w-[85%] rounded-xl p-3 text-xs shadow-sm ${c.isSystem ? 'bg-orange-50 border border-orange-100 w-full text-center italic text-orange-700 font-medium' : (c.userId === currentUser.id ? 'bg-primary text-white font-medium' : 'bg-white border border-slate-100 text-slate-700 font-medium')}`}>
-                                    {!c.isSystem && <div className="font-bold mb-1.5 text-[8px] uppercase tracking-wider opacity-80">{c.userName} <span className="opacity-50">({c.userRole})</span></div>}
+                                    {!c.isSystem && <div className="font-bold mb-1.5 text-[8px] uppercase tracking-wider opacity-80">{c.userName} <span className="opacity-50">({etiquetaRol(c.userRole)})</span></div>}
                                     <p className="leading-relaxed whitespace-pre-wrap">{c.text}</p>
                                     {c.attachmentUrl && (
                                         <a href={c.attachmentUrl} target="_blank" className="mt-2 block bg-white/20 p-2 rounded-lg text-[9px] font-bold flex items-center gap-2 hover:bg-white/30 transition-all border border-white/10">
@@ -1585,6 +1636,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </p>
                         )}
                     </div>
+                    {puedeVerComisiones(currentUser) && (
                     <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all">
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Comisión Estimada</p>
                         <p className="text-3xl font-display font-black text-emerald-400 mt-2">${Number(credit.estimatedCommission || 0).toLocaleString()}</p>
@@ -1606,6 +1658,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </span>
                         )}
                     </div>
+                    )}
                     <div className="pt-8 border-t border-white/10 flex justify-between items-center px-2">
                         <div>
                             <p className="text-[9px] font-black text-slate-500 uppercase">Radicación</p>
@@ -1679,6 +1732,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </p>
                         )}
                     </div>
+                    {puedeVerComisiones(currentUser) && (
                     <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all">
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Comisión Estimada</p>
                         <p className="text-3xl font-display font-black text-emerald-400 mt-2">${Number(credit.estimatedCommission || 0).toLocaleString()}</p>
@@ -1700,6 +1754,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </span>
                         )}
                     </div>
+                    )}
                     <div className="pt-8 border-t border-white/10 flex justify-between items-center px-2">
                         <div>
                             <p className="text-[9px] font-black text-slate-500 uppercase">Radicación</p>
@@ -1889,7 +1944,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                           <ClipboardList size={16} className="text-red-400 shrink-0"/>
                           <p className="text-xs font-bold text-red-600">
                               {devolucionTasks.length} tarea{devolucionTasks.length !== 1 ? 's' : ''} asignada{devolucionTasks.length !== 1 ? 's' : ''}.
-                              El gestor no podrá subsanar hasta completarlas todas.
+                              El asesor no podrá subsanar hasta completarlas todas.
                           </p>
                       </div>
                   )}

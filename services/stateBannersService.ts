@@ -40,7 +40,8 @@ export const StateBannersService = {
       // Match audiencia
       if (b.audience === 'todos') return true;
       const roleLower = (role || '').toLowerCase();
-      if (b.audience === 'gestor' && roleLower.includes('gestor')) return true;
+      // La audiencia 'gestor' (valor de BD) cubre a todos los asesores: GESTOR y ASESOR_TMK.
+      if (b.audience === 'gestor' && (roleLower.includes('gestor') || roleLower === 'asesor_tmk')) return true;
       if (b.audience === 'analista' && roleLower.includes('analista')) return true;
       if (b.audience === 'admin' && roleLower === 'admin') return true;
       return false;

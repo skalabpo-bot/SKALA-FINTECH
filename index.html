@@ -9,6 +9,9 @@
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
     <link rel="icon" type="image/png" href="/skala.png" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- Los estilos (Tailwind) se compilan en el build y los inyecta Vite desde index.tsx.
+         Antes venían del CDN cdn.tailwindcss.com: si el DNS del usuario no lo resolvía,
+         la app cargaba SIN CSS y parecía caída. Ver tailwind.config.js. -->
     <meta name="theme-color" content="#EA580C" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -18,53 +21,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@700;800&display=swap" rel="stylesheet"> 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Montserrat', 'sans-serif'],
-              display: ['Barlow', 'sans-serif'],
-            },
-            colors: {
-              primary: {
-                DEFAULT: '#EA580C',
-                50:  '#fff7ed',
-                100: '#ffedd5',
-                200: '#fed7aa',
-                300: '#fdba74',
-                400: '#fb923c',
-                500: '#f97316',
-                600: '#ea580c',
-                700: '#c2410c',
-                800: '#9a3412',
-                900: '#7c2d12',
-                950: '#431407',
-              },
-              primaryLight: '#FFF7ED',
-              secondary: '#1E293B',
-              accent: '#F97316',
-              success: '#10B981',
-              warning: '#F59E0B',
-              danger: '#EF4444',
-            },
-            boxShadow: {
-              '3d': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 4px 4px 0px 0px rgba(234, 88, 12, 0.15)',
-            },
-            animation: {
-              'fade-in': 'fadeIn 0.5s ease-out',
-            },
-            keyframes: {
-              fadeIn: {
-                '0%': { opacity: '0', transform: 'translateY(10px)' },
-                '100%': { opacity: '1', transform: 'translateY(0)' },
-              },
-            }
-          }
-        }
-      }
-    </script>
     <style>
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -271,7 +227,6 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-slate-50 text-slate-800 font-sans antialiased">
     <div id="root"></div>

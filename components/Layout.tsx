@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { User, Notification } from '../types';
+import { User, Notification, puedeVerComisiones, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { subscribeToNotifications } from '../services/realtimeService';
 import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone, GraduationCap } from 'lucide-react';
@@ -189,12 +189,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
           <NavItem view="credits" icon={FileText} label="Bandeja" />
           {/* Academia: abierta a producción — visible para cualquier rol con permiso VIEW_ACADEMIA. */}
           {MockService.hasPermission(currentUser, 'VIEW_ACADEMIA') && <NavItem view="academia" icon={GraduationCap} label="Academia" />}
-          {(currentUser.role === 'SUPERVISOR_ASIGNADO' || currentUser.role === 'ADMIN') && <NavItem view="team" icon={Users} label={currentUser.role === 'ADMIN' ? 'Equipos' : 'Mi Equipo'} />}
+          {(['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser.role) || currentUser.role === 'ADMIN') && <NavItem view="team" icon={Users} label={currentUser.role === 'ADMIN' ? 'Equipos' : 'Mi Equipo'} />}
           
           {MockService.hasPermission(currentUser, 'MANAGE_NEWS') && <NavItem view="news" icon={Megaphone} label="Novedades" />}
           {MockService.hasPermission(currentUser, 'MANAGE_AUTOMATIONS') && <NavItem view="automations" icon={Workflow} label="Automatizaciones" />}
           {MockService.hasPermission(currentUser, 'VIEW_REPORTS') && <NavItem view="reports" icon={Filter} label="Reportes" />}
-          {billeteraEnabled && MockService.hasPermission(currentUser, 'REQUEST_WITHDRAWAL') && <NavItem view="wallet" icon={Wallet} label="Mi Billetera" />}
+          {billeteraEnabled && puedeVerComisiones(currentUser) && MockService.hasPermission(currentUser, 'REQUEST_WITHDRAWAL') && <NavItem view="wallet" icon={Wallet} label="Mi Billetera" />}
           {billeteraEnabled && MockService.hasPermission(currentUser, 'MANAGE_WITHDRAWALS') && <NavItem view="withdrawals" icon={ArrowDownToLine} label="Retiros" />}
 
           {MockService.hasPermission(currentUser, 'MANAGE_USERS') && <NavItem view="users" icon={Users} label="Usuarios" badge={pendingGestorsCount} />}
@@ -207,7 +207,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
             <img src={currentUser.avatar} className="w-8 h-8 rounded-full border object-cover" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-slate-800 truncate">{currentUser.name}</p>
-              <p className="text-[10px] text-slate-500 uppercase">{currentUser.roleDisplayName || currentUser.role.replace(/_/g, ' ')}</p>
+              <p className="text-[10px] text-slate-500 uppercase">{currentUser.roleDisplayName || etiquetaRol(currentUser.role)}</p>
             </div>
           </button>
           <button onClick={onLogout} className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">

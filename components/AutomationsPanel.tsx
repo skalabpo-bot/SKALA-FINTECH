@@ -298,7 +298,7 @@ export const AutomationsPanel = () => {
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre</label>
                                 <input
-                                    placeholder="Ej: WhatsApp al Gestor"
+                                    placeholder="Ej: WhatsApp al Asesor"
                                     value={formData.name || ''}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                                     className={inputClass}

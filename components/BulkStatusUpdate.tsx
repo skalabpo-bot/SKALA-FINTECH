@@ -332,7 +332,7 @@ export const BulkStatusUpdate: React.FC<Props> = ({ credits, states, currentUser
                     <div className="bg-white border border-blue-100 rounded-lg p-2 font-mono text-[11px] text-slate-700 overflow-x-auto whitespace-pre">cedula,estado,motivo,tareas{'\n'}1041254593,DESEMBOLSADO,Confirmado,{'\n'}79820317,DEVUELTO,Faltan docs,Corregir cédula|Adjuntar desprendible*</div>
                     <p><b>2. Súbelo</b> abajo (o usa <b>Descargar plantilla</b> para empezar con el ejemplo).</p>
                     <p><b>3. Revisa la previsualización:</b> cliente, solicitud, estado actual → estado a aplicar (editable), tareas, y si el estado fue exacto o sugerido. Las cédulas que no existen se marcan y se omiten.</p>
-                    <p><b>4. Escribe el motivo, autoriza y aplica.</b> Se actualiza el estado, queda en el historial de cada crédito y (si lo dejas marcado) se notifica al gestor. <b>No</b> dispara webhooks a n8n.</p>
+                    <p><b>4. Escribe el motivo, autoriza y aplica.</b> Se actualiza el estado, queda en el historial de cada crédito y (si lo dejas marcado) se notifica al asesor. <b>No</b> dispara webhooks a n8n.</p>
                     <p className="text-amber-700 font-bold">⚠️ Cambia créditos reales. Prueba primero con pocas cédulas.</p>
                   </div>
                 )}
@@ -433,7 +433,7 @@ export const BulkStatusUpdate: React.FC<Props> = ({ credits, states, currentUser
                 </div>
                 <label className="flex items-center gap-2 text-sm font-bold text-slate-600 pt-6">
                   <input type="checkbox" checked={notifyGestor} onChange={e => setNotifyGestor(e.target.checked)} className="w-4 h-4 accent-primary" />
-                  Notificar a los gestores
+                  Notificar a los asesores
                 </label>
               </div>
 

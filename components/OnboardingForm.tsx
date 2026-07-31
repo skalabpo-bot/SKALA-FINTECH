@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, CreditDocument, AlliedEntity } from '../types';
+import { User, CreditDocument, AlliedEntity, puedeVerComisiones } from '../types';
 import { MockService } from '../services/mockService';
 import { 
   ArrowRight, ArrowLeft, Upload, CheckCircle, UserCheck, 
@@ -349,7 +349,7 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
               <Input label="Plazo (Meses)" name="plazo" type="number" value={formData.plazo} onChange={handleChange} placeholder="Ej: 48" />
               <Select label="Entidad Aliada" name="entidadAliada" value={formData.entidadAliada} onChange={handleChange} options={entities.map(e=>e.name)} />
               {formData.entidadAliada && (
-                <Select label="Tasa Aplicable (% NMV)" name="tasa" value={formData.tasa} onChange={handleChange} options={entities.find(e=>e.name===formData.entidadAliada)?.rates.map(r=>({ value: r.rate, label: `${r.rate}% NMV (Com: ${r.commission}%)` })) || []} />
+                <Select label="Tasa Aplicable (% NMV)" name="tasa" value={formData.tasa} onChange={handleChange} options={entities.find(e=>e.name===formData.entidadAliada)?.rates.map(r=>({ value: r.rate, label: puedeVerComisiones(currentUser) ? `${r.rate}% NMV (Com: ${r.commission}%)` : `${r.rate}% NMV` })) || []} />
               )}
               <Input label="Gastos Mensuales" name="gastosMensuales" type="number" value={formData.gastosMensuales} onChange={handleChange} />
               <Input label="Activos" name="activos" type="number" value={formData.activos} onChange={handleChange} />

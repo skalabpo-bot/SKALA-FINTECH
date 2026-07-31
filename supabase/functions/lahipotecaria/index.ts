@@ -6,7 +6,9 @@
 //   action: 'viabilidad'  body: { nombres, apellidos, tipoDoc, documento, correo, celular, vendedor, ingresos, gastos, pagaduria, plazo }
 //     no viable -> { viable:false, code, mensaje }
 //     viable    -> { viable:true, otpEnviado:true, sessionId, mensaje }  (envía OTP al CORREO del cliente)
-//   action: 'verify-otp'  body: { sessionId, codigo }                          -> { ok, code, mensaje }
+//   action: 'verify-otp'  body: { sessionId, codigo }                          -> { ok, code, mensaje, siguienteFormulario, campos, spec }
+//   action: 'formulario'  body: { sessionId }                                  -> { spec }  (campos del formulario pendiente, para pintarlo en Skala)
+//   action: 'continuar'   body: { sessionId, valores: { q_xxx: valor, ... } }   -> { ok, mensaje, siguienteFormulario, spec }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -57,6 +59,107 @@ const pickInput = (html: string, name: string): string | null => {
   return m ? m[1] : null;
 };
 const parseNum = (s?: string | null) => s ? Number(String(s).replace(/[^\d]/g, '')) || 0 : 0;
+
+/**
+ * Lee el HTML de una sección de su formulario y devuelve la ESPECIFICACIÓN de sus campos
+ * (nombre, etiqueta, tipo, opciones). Se hace dinámico a propósito: si La Hipotecaria
+ * agrega/quita campos u opciones, Skala los pinta igual sin tocar código.
+ */
+type Campo = { name: string; label: string; hint?: string; grupo?: string; type: 'text' | 'select' | 'textarea' | 'file' | 'date'; required: boolean; options?: { value: string; label: string }[] };
+/** Quita etiquetas y decodifica las entidades HTML que usa su formulario. */
+const textoPlano = (s: string) => String(s || '')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&aacute;/gi, 'á').replace(/&eacute;/gi, 'é')
+  .replace(/&iacute;/gi, 'í').replace(/&oacute;/gi, 'ó').replace(/&uacute;/gi, 'ú').replace(/&ntilde;/gi, 'ñ')
+  .replace(/&Aacute;/g, 'Á').replace(/&Eacute;/g, 'É').replace(/&Iacute;/g, 'Í').replace(/&Oacute;/g, 'Ó')
+  .replace(/&Uacute;/g, 'Ú').replace(/&Ntilde;/g, 'Ñ').replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+  .replace(/\s+/g, ' ').trim();
+
+/**
+ * Título de la sección. Su formulario lo subraya (<u>Información de los ingresos</u>), pero no
+ * todas las secciones lo traen y a veces el paréntesis va FUERA del <u>
+ * ("<u>Referencia</u> (Información de un familiar…)"). Por eso se toma la línea completa que
+ * contiene el subrayado y, si no hay, se cae al primer encabezado de la sección.
+ */
+function parseTitulo(html: string): string {
+  const u = html.match(/<u\b[^>]*>[\s\S]*?<\/u>/i);
+  if (u) {
+    // Línea/bloque que contiene el subrayado → arrastra el paréntesis si va aparte.
+    const i = html.indexOf(u[0]);
+    const desde = html.lastIndexOf('>', i - 1) + 1;
+    const corte = html.indexOf('</div', i + u[0].length);
+    const hasta = corte > 0 ? corte : i + u[0].length + 200;
+    const linea = textoPlano(html.slice(desde, hasta));
+    const solo = textoPlano(u[0]);
+    // Se usa la línea completa solo si empieza por el subrayado (evita arrastrar texto ajeno).
+    if (linea.startsWith(solo) && linea.length <= solo.length + 80) return linea;
+    return solo;
+  }
+  const h = html.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i);
+  return h ? textoPlano(h[1]) : '';
+}
+
+function parseSpec(html: string): Campo[] {
+  const limpiar = textoPlano;
+  const out: Campo[] = [];
+  const seen = new Set<string>();
+  const re = /<(input|select|textarea)\b([^>]*)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const tag = m[1].toLowerCase();
+    const attrs = m[2];
+    const name = (attrs.match(/name="([^"]+)"/) || [])[1];
+    if (!name || !name.startsWith('q_') || seen.has(name)) continue;
+    seen.add(name);
+    const antes = html.slice(0, m.index);
+
+    // La etiqueta es el último <b> antes del campo; su form marca lo OBLIGATORIO con un '*' ahí
+    // (no usan el atributo required), y a veces agrega debajo una nota de ayuda.
+    const bs = [...antes.matchAll(/<b\b[^>]*>([\s\S]*?)<\/b>/gi)];
+    const crudo = bs.length ? limpiar(bs[bs.length - 1][1]) : '';
+    let label = crudo.replace(/^\*\s*/, '').trim();
+    const required = /^\*/.test(crudo);
+
+    // Nota de ayuda: lo que quede entre la etiqueta y el campo.
+    let hint: string | undefined;
+    if (bs.length) {
+      const ultimo = bs[bs.length - 1];
+      const finLabel = (ultimo.index || 0) + ultimo[0].length;
+      const entre = limpiar(antes.slice(finLabel));
+      if (entre.length > 3) hint = entre;
+    }
+    if (!label) label = (attrs.match(/placeholder="([^"]*)"/) || [])[1] || name;
+
+    // Subtítulo del bloque al que pertenece (<h3>PLAZO DEL PRÉSTAMO</h3>).
+    const hs = [...antes.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi)];
+    const grupo = hs.length ? limpiar(hs[hs.length - 1][1]) : undefined;
+
+    let options: { value: string; label: string }[] | undefined;
+    let type: Campo['type'] = tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text';
+    if (tag === 'input') {
+      const t = ((attrs.match(/type="([^"]+)"/) || [])[1] || '').toLowerCase();
+      if (t === 'file') type = 'file';
+      else if (t === 'date') type = 'date';
+    }
+    if (tag === 'select') {
+      const bloque = html.slice(m.index).match(/<select\b[^>]*>([\s\S]*?)<\/select>/i);
+      options = [...(bloque?.[1] || '').matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)]
+        .map((o) => ({ value: (o[1].match(/value="([^"]*)"/) || [])[1] || '', label: limpiar(o[2]) }))
+        .filter((o) => o.value !== '');
+    }
+    out.push({ name, label, hint, grupo, type, required, options });
+  }
+  return out;
+}
+
+/** Carga la sesión validando que siga viva. */
+async function loadSession(sessionId: string) {
+  if (!sessionId) return { error: fail(400, 'Falta sessionId.') };
+  const { data: s } = await db().from('lahipotecaria_sessions').select('*').eq('id', sessionId).maybeSingle();
+  if (!s) return { error: fail(404, 'Sesión no encontrada o expirada.') };
+  if (new Date(s.expires_at) < new Date()) return { error: fail(410, 'La sesión expiró; vuelve a iniciar la preaprobación.') };
+  return { s };
+}
 
 /** GET la página del survey → tokens, ids y cookies de sesión. */
 async function fetchPage() {
@@ -237,8 +340,127 @@ async function verifyOtp(body: any) {
   const strip = (str: string) => String(str || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   const fallo = j.error === true;
   const ok = !fallo && r.status >= 200 && r.status < 400;
-  if (ok) await db().from('lahipotecaria_sessions').delete().eq('id', sessionId);
-  return json({ ok, code: j.code ?? null, mensaje: strip(j.message) || (ok ? 'Código verificado correctamente.' : 'Código incorrecto o vencido.') });
+
+  if (ok) {
+    // OTP correcto → La Hipotecaria devuelve la SIGUIENTE sección del formulario en `load[]`.
+    // La capturamos para pintarla dentro de Skala (el cliente nunca ve su sitio).
+    const { spec, titulo } = await capturarSiguiente(s, r, j, token, sessionId);
+    return json({
+      ok: true,
+      mensaje: strip(j.message) || 'Código verificado correctamente.',
+      siguienteFormulario: spec.length > 0,
+      campos: spec.map((c) => c.name),
+      spec, titulo,
+    });
+  }
+
+  return json({ ok, code: j.code ?? null, mensaje: strip(j.message) || 'Código incorrecto o vencido.' });
+}
+
+/**
+ * Tras un POST exitoso, La Hipotecaria devuelve la siguiente sección en `load[]`.
+ * La capturamos (campos + tokens + cookies) y dejamos la sesión lista para el siguiente paso.
+ */
+async function capturarSiguiente(s: any, r: Response, j: any, tokenPrev: string | null, sessionId: string): Promise<{ spec: Campo[]; titulo: string }> {
+  let nextHtml = '';
+  if (Array.isArray(j.load)) {
+    for (const item of j.load) {
+      if (item && typeof item === 'object') for (const k of Object.keys(item)) if (/section_question_body/i.test(k)) nextHtml = String(item[k] || '');
+    }
+  }
+  const nextAction = (nextHtml.match(/action="([^"]*\/surveys\/next\/[^"]+)"/) || [])[1] || '';
+  const nextToken = pickInput(nextHtml, '_token');
+  const nextSection = pickInput(nextHtml, '_section');
+  const nextForm = pickInput(nextHtml, '_form');
+
+  // Mantener viva la sesión con las cookies actualizadas (el flujo continúa).
+  const jar: Jar = {};
+  for (const c of String(s.cookies || '').split('; ')) { const i = c.indexOf('='); if (i > 0) jar[c.slice(0, i).trim()] = c.slice(i + 1); }
+  absorb(jar, r);
+
+  await db().from('lahipotecaria_sessions').update({
+    jwt: nextAction || s.jwt,
+    section: nextSection || s.section,
+    cookies: cookieHeader(jar),
+    state: { ...(s.state || {}), token: nextToken || tokenPrev, form: nextForm || s.state?.form, otpOk: true, nextHtml: nextHtml.slice(0, 60000) },
+    expires_at: new Date(Date.now() + 30 * 60000).toISOString(),
+  }).eq('id', sessionId);
+
+  return { spec: parseSpec(nextHtml), titulo: parseTitulo(nextHtml) };
+}
+
+/** Devuelve los campos del formulario pendiente, para que Skala lo pinte con su propia UI. */
+async function formulario(body: any) {
+  const { s, error } = await loadSession(String(body.sessionId || ''));
+  if (error) return error;
+  const spec = parseSpec(String(s!.state?.nextHtml || ''));
+  return json({ spec, titulo: parseTitulo(String(s!.state?.nextHtml || '')), pendiente: spec.length > 0 });
+}
+
+/** Envía a La Hipotecaria los valores que el gestor llenó en el formulario nativo de Skala. */
+async function continuar(body: any) {
+  const { s, error } = await loadSession(String(body.sessionId || ''));
+  if (error) return error;
+  if (!s!.jwt) return fail(500, 'La sesión no tiene endpoint para continuar.');
+
+  const valores = body.valores || {};
+  // Archivos que Skala envía por el cliente: { q_campo: { nombre, tipo, base64 } }
+  const archivos: Record<string, { nombre?: string; tipo?: string; base64?: string }> = body.archivos || {};
+  const spec = parseSpec(String(s!.state?.nextHtml || ''));
+  const faltan = spec
+    .filter((c) => c.required && !(c.type === 'file' ? archivos[c.name]?.base64 : String(valores[c.name] ?? '').trim()))
+    .map((c) => c.label);
+  if (faltan.length) return fail(400, `Faltan campos obligatorios: ${faltan.join(', ')}.`);
+
+  const token = s!.state?.token;
+  const conArchivos = Object.values(archivos).some((f) => f?.base64);
+
+  // Con archivos hay que ir en multipart (urlencoded no puede llevarlos).
+  let body_: BodyInit;
+  const headers: Record<string, string> = {
+    'User-Agent': UA, 'Cookie': s!.cookies || '', 'X-Requested-With': 'XMLHttpRequest',
+    'X-CSRF-TOKEN': token || '', 'Accept': 'application/json, text/html, */*', 'Referer': `${LH}${SURVEY_PATH}`,
+  };
+  if (conArchivos) {
+    const form = new FormData();
+    if (token) form.set('_token', token);
+    form.set('_method', 'PUT');
+    if (s!.state?.form) form.set('_form', s!.state.form);
+    if (s!.section) form.set('_section', s!.section);
+    for (const [k, v] of Object.entries(valores)) if (k.startsWith('q_')) form.set(k, String(v ?? ''));
+    for (const [k, f] of Object.entries(archivos)) {
+      if (!k.startsWith('q_') || !f?.base64) continue;
+      const bin = Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0));
+      form.set(k, new File([bin], f.nombre || 'documento', { type: f.tipo || 'application/octet-stream' }));
+    }
+    body_ = form; // sin Content-Type: fetch pone el boundary
+  } else {
+    const fd = new URLSearchParams();
+    if (token) fd.set('_token', token);
+    fd.set('_method', 'PUT');
+    if (s!.state?.form) fd.set('_form', s!.state.form);
+    if (s!.section) fd.set('_section', s!.section);
+    for (const [k, v] of Object.entries(valores)) if (k.startsWith('q_')) fd.set(k, String(v ?? ''));
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    body_ = fd.toString();
+  }
+
+  const r = await fetch(s!.jwt, { method: 'POST', headers, body: body_ });
+  const text = await r.text();
+  let j: any = {};
+  try { j = JSON.parse(text); } catch { j = { message: text }; }
+  const strip = (str: string) => String(str || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const ok = j.error !== true && r.status >= 200 && r.status < 400;
+  if (!ok) return json({ ok: false, mensaje: strip(j.message) || 'La Hipotecaria rechazó el formulario.' });
+
+  const next = await capturarSiguiente(s, r, j, token, String(body.sessionId));
+  return json({
+    ok: true,
+    mensaje: strip(j.message) || 'Formulario enviado a La Hipotecaria.',
+    siguienteFormulario: next.spec.length > 0,
+    spec: next.spec,
+    titulo: next.titulo,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -252,6 +474,8 @@ Deno.serve(async (req) => {
       case 'viabilidad':
       case 'registrar': return await viabilidad(body);
       case 'verify-otp': return await verifyOtp(body);
+      case 'formulario': return await formulario(body);
+      case 'continuar': return await continuar(body);
       default: return fail(400, `Acción no reconocida: ${action}`);
     }
   } catch (err) {

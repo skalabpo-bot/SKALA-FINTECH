@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, ReportFilters } from '../types';
+import { User, ReportFilters, puedeVerComisiones } from '../types';
 import { MockService } from '../services/mockService';
 import { Download, Filter, CheckSquare, Square, Loader2, Calendar, FileText, Smartphone, CreditCard } from 'lucide-react';
 
@@ -25,8 +25,12 @@ const DEFAULT_COLUMNS = [
 ];
 
 export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => {
+    // El asesor TMK (interno) no ve comisiones: ni columnas ni filtro de comisión.
+    const verComisiones = puedeVerComisiones(currentUser);
+    const esColComision = (c: string) => /^comision_|^fecha_pago_comision$/.test(c);
+    const availableColumns = verComisiones ? ALL_AVAILABLE_COLUMNS : ALL_AVAILABLE_COLUMNS.filter(c => !esColComision(c));
     const [filters, setFilters] = useState<ReportFilters>({ startDate: '', endDate: '', statusId: '', entity: '', comisionPagada: '' });
-    const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_COLUMNS);
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(verComisiones ? DEFAULT_COLUMNS : DEFAULT_COLUMNS.filter(c => !esColComision(c)));
     const [showColumnSelector, setShowColumnSelector] = useState(false);
     const [states, setStates] = useState<any[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -63,7 +67,7 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                     <h3 className="text-4xl font-extrabold font-display flex items-center gap-3 text-slate-800">
                         <Filter size={40} className="text-primary"/> Inteligencia de Datos
                     </h3>
-                    <p className="text-slate-500 mt-2 font-medium">Exportación detallada con trazabilidad de gestores, clientes y comisiones.</p>
+                    <p className="text-slate-500 mt-2 font-medium">{verComisiones ? 'Exportación detallada con trazabilidad de asesores, clientes y comisiones.' : 'Exportación detallada con trazabilidad de asesores y clientes.'}</p>
                 </div>
             </div>
             
@@ -95,6 +99,7 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                         {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                 </div>
+                {verComisiones && (
                 <div className="space-y-2">
                     <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><CreditCard size={14}/> Comisión</label>
                     <select value={filters.comisionPagada} onChange={e => setFilters({...filters, comisionPagada: e.target.value as any})} className="w-full text-sm bg-white text-slate-900 border border-slate-200 rounded-xl p-3.5 focus:ring-2 focus:ring-primary/20 outline-none shadow-sm cursor-pointer">
@@ -103,6 +108,7 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                         <option value="pendiente">Solo pendientes</option>
                     </select>
                 </div>
+                )}
                 <button onClick={handleDownloadCSV} disabled={isExporting} className="flex justify-center items-center space-x-2 px-10 py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 shadow-2xl transition-all disabled:opacity-50 transform active:scale-95">
                     {isExporting ? <Loader2 size={24} className="animate-spin"/> : <Download size={24}/>}
                     <span>{isExporting ? 'Generando...' : 'Exportar CSV'}</span>
@@ -119,12 +125,12 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
                 
                 {showColumnSelector && (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 bg-slate-50 p-8 rounded-3xl border border-slate-200 animate-fade-in shadow-inner max-h-[400px] overflow-y-auto custom-scrollbar">
-                        {ALL_AVAILABLE_COLUMNS.map(col => (
+                        {availableColumns.map(col => (
                             <div key={col} onClick={() => setSelectedColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])} className="flex items-center gap-3 cursor-pointer p-3 rounded-xl hover:bg-white transition-all select-none border border-transparent hover:border-slate-100">
                                 <div className={selectedColumns.includes(col) ? 'text-primary' : 'text-slate-300'}>
                                     {selectedColumns.includes(col) ? <CheckSquare size={20}/> : <Square size={20}/>}
                                 </div>
-                                <span className="text-[10px] text-slate-700 font-extrabold uppercase truncate tracking-tight">{col.replace(/_/g, ' ')}</span>
+                                <span className="text-[10px] text-slate-700 font-extrabold uppercase truncate tracking-tight">{col.replace(/_/g, ' ').replace(/^gestor\b/, 'asesor')}</span>
                             </div>
                         ))}
                     </div>

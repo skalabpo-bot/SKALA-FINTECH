@@ -19,6 +19,11 @@ interface SimulationResultsProps {
   onClientDataChange: (data: ClientData | null) => void;
   onCedulaFilesChange?: (front: File | null, back: File | null) => void;
   onSimulationSelect?: (idx: number | null) => void;
+  // Preaprobación externa SIN simulador: no hay cards ni forma de pago que mostrar, pero el
+  // lector de cédula sigue siendo necesario (de ahí salen los datos del cliente y los archivos).
+  preaprobacionSinCards?: boolean;
+  // true cuando el usuario logueado no puede ver comisiones (asesor TMK interno).
+  ocultarComisiones?: boolean;
 }
 
 export const SimulationResults: React.FC<SimulationResultsProps> = ({
@@ -33,6 +38,8 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
   onClientDataChange,
   onCedulaFilesChange,
   onSimulationSelect,
+  preaprobacionSinCards = false,
+  ocultarComisiones = false,
 }) => {
   const [isCedulaLoading, setIsCedulaLoading] = useState(false);
   const [cedulaError, setCedulaError] = useState<string | null>(null);
@@ -360,8 +367,9 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
         </div>
       </div>
 
-      {/* Payment Method Selector (no aplica en modo excel: el desembolso lo da el simulador) */}
-      {!isExcelMode && (
+      {/* Payment Method Selector (no aplica en modo excel: el desembolso lo da el simulador,
+          ni en preaprobación externa: el monto lo define la entidad) */}
+      {!isExcelMode && !preaprobacionSinCards && (
       <div className="flex items-center justify-center gap-3">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Forma de Entrega:</p>
         <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
@@ -381,7 +389,8 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
       </div>
       )}
 
-      {/* Cards */}
+      {/* Cards — en preaprobación externa sin simulador no hay nada que mostrar aquí */}
+      {!preaprobacionSinCards && (
       <div>
         {simulations.length > 0 ? (
           <>
@@ -450,7 +459,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                           <p className="font-mono font-bold text-white">{sim.term} meses</p>
                         </div>
                       </div>
-                      {sim.commissionPct != null && sim.commissionPct > 0 && (
+                      {sim.commissionPct != null && sim.commissionPct > 0 && !ocultarComisiones && (
                         <div style={framePanelX ? { background: framePanelX } : undefined} className="relative z-10 mt-2 bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
                           <span className="text-[10px] font-bold uppercase text-white/70">Comisión estimada</span>
                           <span className="font-mono font-bold text-sm text-white">{sim.commissionPct}% = {formatCurrency(Math.floor(sim.maxAmount * sim.commissionPct / 100))}</span>
@@ -558,7 +567,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
                             <p className={`font-mono font-bold ${styles.textColor}`}>{sim.fpmUsed}</p>
                           </div>
                        </div>
-                       {sim.commissionPct != null && sim.commissionPct > 0 && (
+                       {sim.commissionPct != null && sim.commissionPct > 0 && !ocultarComisiones && (
                          <div style={framePanelBg ? { background: framePanelBg } : undefined} className="bg-white/10 rounded-lg px-3 py-2 flex justify-between items-center">
                            <span className={`text-[10px] font-bold uppercase ${styles.accentColor}`}>Comisión estimada</span>
                            <span className={`font-mono font-bold text-sm ${styles.textColor}`}>
@@ -598,7 +607,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
             )}
 
             {/* Total commission row */}
-            {totalCommission > 0 && selectedCount > 1 && (
+            {totalCommission > 0 && selectedCount > 1 && !ocultarComisiones && (
               <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4">
                 <span className="text-sm font-bold text-emerald-800">Comision Total ({selectedCount} productos)</span>
                 <span className="text-xl font-mono font-extrabold text-emerald-700">{formatCurrency(totalCommission)}</span>
@@ -619,6 +628,7 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Sección Cédula */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-5">

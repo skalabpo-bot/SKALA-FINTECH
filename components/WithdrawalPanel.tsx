@@ -154,7 +154,7 @@ export const WithdrawalPanel: React.FC<WithdrawalPanelProps> = ({ currentUser })
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-display font-black text-slate-800">Retiros de Comisiones</h2>
-          <p className="text-sm text-slate-400 mt-1">Gestiona las solicitudes de retiro de los gestores</p>
+          <p className="text-sm text-slate-400 mt-1">Gestiona las solicitudes de retiro de los asesores</p>
         </div>
         <button
           onClick={handleExportCSV}
@@ -291,7 +291,7 @@ export const WithdrawalPanel: React.FC<WithdrawalPanelProps> = ({ currentUser })
                       {estadoChip(req.estado)}
                       <span className="text-[10px] text-slate-400">{new Date(req.createdAt).toLocaleString('es-CO')}</span>
                     </div>
-                    <p className="font-black text-slate-800">{req.gestorName || 'Gestor'}</p>
+                    <p className="font-black text-slate-800">{req.gestorName || 'Asesor'}</p>
                     <p className="text-xs text-slate-400">{req.creditIds.length} crédito{req.creditIds.length !== 1 ? 's' : ''}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -328,7 +328,7 @@ export const WithdrawalPanel: React.FC<WithdrawalPanelProps> = ({ currentUser })
                         {procesando === req.id ? 'Procesando...' : 'Marcar como Procesado'}
                       </button>
                       <button
-                        onClick={() => setRejectModal({ id: req.id, gestorName: req.gestorName || 'Gestor' })}
+                        onClick={() => setRejectModal({ id: req.id, gestorName: req.gestorName || 'Asesor' })}
                         disabled={procesando === req.id}
                         className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-5 py-2.5 rounded-xl font-black text-sm transition-all disabled:opacity-50"
                       >

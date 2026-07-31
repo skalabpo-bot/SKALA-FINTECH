@@ -207,7 +207,7 @@ export const SupervisorRegistration: React.FC = () => {
             <ul className="text-xs text-amber-700 mt-1 space-y-1 list-disc list-inside">
               <li>Revisaremos tus documentos (cedula, RUT, cert. bancario)</li>
               <li>Una vez aprobado, podras iniciar sesion y se creara tu zona</li>
-              <li>Compartiras tu codigo con tus gestores</li>
+              <li>Compartiras tu codigo con tus asesores</li>
             </ul>
           </div>
 

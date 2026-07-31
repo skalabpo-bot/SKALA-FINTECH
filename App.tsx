@@ -20,7 +20,7 @@ import { UserManagement } from './components/UserManagement';
 import { WalletView } from './components/WalletView';
 import { WithdrawalPanel } from './components/WithdrawalPanel';
 import { TeamView } from './components/TeamView';
-import { User, Credit, UserDocument, Zone, UserRole } from './types';
+import { User, Credit, UserDocument, Zone, UserRole, puedeVerComisiones } from './types';
 import { MockService } from './services/mockService';
 import { supabase } from './services/supabaseClient';
 import { subscribeToPush, registerServiceWorker } from './services/pushNotificationService';
@@ -333,8 +333,15 @@ const App = () => {
     const [filterCreditType, setFilterCreditType] = useState('');
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
+    const [filterUnassigned, setFilterUnassigned] = useState(false); // admin: solo créditos sin asesor
     const [showFilters, setShowFilters] = useState(false);
     const [togglingComm, setTogglingComm] = useState<string | null>(null);
+    // Modal de asignación de asesor (admin)
+    const [assignFor, setAssignFor] = useState<Credit | null>(null);
+    const [gestores, setGestores] = useState<{ id: string; name: string }[]>([]);
+    const [assignSearch, setAssignSearch] = useState('');
+    const [assigning, setAssigning] = useState(false);
+    const canAssign = MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS');
     const [creditReadMap, setCreditReadMap] = useState<Record<string, Date>>({});
     const [showBulkModal, setShowBulkModal] = useState(false);
     const canBulkStatus = MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS');
@@ -407,9 +414,10 @@ const App = () => {
             if (filterCreditType && c.creditTypeId !== filterCreditType) return false;
             if (dateFrom !== null && new Date(c.createdAt).getTime() < dateFrom) return false;
             if (dateTo !== null && new Date(c.createdAt).getTime() > dateTo) return false;
+            if (filterUnassigned && (c.assignedGestorId || (c.gestorName && c.gestorName !== 'Sin asignar'))) return false;
             return true;
         });
-    }, [credits, debouncedSearch, filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo]);
+    }, [credits, debouncedSearch, filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo, filterUnassigned]);
 
     const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
 
@@ -432,10 +440,10 @@ const App = () => {
                     <h2 className="text-2xl md:text-3xl font-display font-black text-slate-800 leading-tight">Bandeja Operativa</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{filtered.length} de {credits.length} expedientes</p>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                     <div className="relative flex-1 md:w-72">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Nombre, cédula o gestor..." className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary focus:bg-white rounded-xl text-sm font-semibold outline-none transition-all" />
+                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Nombre, cédula o asesor..." className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary focus:bg-white rounded-xl text-sm font-semibold outline-none transition-all" />
                     </div>
                     <button
                         onClick={() => setShowFilters(!showFilters)}
@@ -444,6 +452,16 @@ const App = () => {
                         <Search size={14} />
                         Filtros {activeFilterCount > 0 && <span className="bg-white text-primary text-[9px] px-1.5 py-0.5 rounded-full font-black">{activeFilterCount}</span>}
                     </button>
+                    {canAssign && (
+                        <button
+                            onClick={() => setFilterUnassigned(v => !v)}
+                            className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 whitespace-nowrap ${filterUnassigned ? 'bg-amber-500 text-white border-amber-500 shadow-lg' : 'bg-amber-50 text-amber-600 border-transparent hover:border-amber-200'}`}
+                            title="Ver solo créditos sin asesor asignado"
+                        >
+                            <UserPlus size={14} />
+                            Sin asignar
+                        </button>
+                    )}
                     {canBulkStatus && (
                         <button
                             onClick={() => setShowBulkModal(true)}
@@ -511,7 +529,7 @@ const App = () => {
               <tr className="bg-slate-50/50 text-slate-400 text-[10px] uppercase font-black tracking-widest border-b border-slate-50">
                 <th className="px-8 py-6">N° Sol</th>
                 <th className="px-8 py-6">Cliente</th>
-                <th className="px-8 py-6">Gestor</th>
+                <th className="px-8 py-6">Asesor</th>
                 <th className="px-8 py-6">Entidad</th>
                 <th className="px-8 py-6">Monto</th>
                 <th className="px-8 py-6">Estado</th>
@@ -537,7 +555,7 @@ const App = () => {
                                     {ctype.name.replace('Crédito ', '').replace('crédito ', '')}
                                 </span>
                             )}
-                            {c.recomendado && currentUser!.role !== 'GESTOR' && (
+                            {c.recomendado && !['GESTOR', 'ASESOR_TMK'].includes(currentUser!.role) && (
                                 <span className="flex items-center gap-0.5 text-[8px] font-black text-yellow-700 bg-yellow-100 border border-yellow-200 px-1.5 py-0.5 rounded-full uppercase" title="Crédito recomendado">
                                     <Star size={9} fill="currentColor" /> Recomendado
                                 </span>
@@ -565,7 +583,7 @@ const App = () => {
                     <td className="px-8 py-6 font-black text-slate-800 text-base">${c.monto?.toLocaleString()}</td>
                     <td className="px-8 py-6">
                         <span className={`px-4 py-1.5 rounded-full text-white text-[9px] font-black uppercase tracking-wider shadow-sm ${states.find(s=>s.id===c.statusId)?.color}`}>{states.find(s=>s.id===c.statusId)?.name}</span>
-                        {states.find(s=>s.id===c.statusId)?.name?.includes('DESEMBOLSADO') && (
+                        {puedeVerComisiones(currentUser) && states.find(s=>s.id===c.statusId)?.name?.includes('DESEMBOLSADO') && (
                           c.comisionPagada
                             // Ya cobrada: badge estático bloqueado (no se puede revertir desde la bandeja)
                             ? <div className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
@@ -590,13 +608,30 @@ const App = () => {
                         <p className="text-[10px] font-bold text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</p>
                     </td>
                     <td className="px-8 py-6 text-right">
-                        <button onClick={() => {
-                            setSelectedCreditId(c.id);
-                            setCurrentView('detail');
-                            // Marcar como leído y actualizar el map local inmediatamente
-                            MockService.markCreditAsRead(c.id, currentUser!.id, currentUser!.name);
-                            setCreditReadMap(prev => ({ ...prev, [c.id]: new Date() }));
-                        }} className="px-6 py-2.5 bg-slate-100 group-hover:bg-primary group-hover:text-white text-slate-600 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest shadow-sm">Gestionar</button>
+                        <div className="flex items-center justify-end gap-2">
+                            {canAssign && (
+                                <button onClick={async () => {
+                                    setAssignFor(c); setAssignSearch('');
+                                    if (gestores.length === 0) {
+                                        try {
+                                            const us = await MockService.getUsers();
+                                            setGestores((us || []).filter((u: any) => ['GESTOR', 'ASESOR_TMK'].includes(u.role) && u.status === 'ACTIVE').map((u: any) => ({ id: u.id, name: u.name })));
+                                        } catch { dispatchAlert('No se pudo cargar la lista de asesores. Intenta de nuevo.', 'error'); }
+                                    }
+                                }} className={c.assignedGestorId
+                                    ? "px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest"
+                                    : "px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest"
+                                } title={c.assignedGestorId ? `Reasignar este crédito a otro asesor (actual: ${c.gestorName || ''})` : 'Asignar un asesor a este crédito'}>
+                                    {c.assignedGestorId ? 'Reasignar' : 'Asignar'}
+                                </button>
+                            )}
+                            <button onClick={() => {
+                                setSelectedCreditId(c.id);
+                                setCurrentView('detail');
+                                MockService.markCreditAsRead(c.id, currentUser!.id, currentUser!.name);
+                                setCreditReadMap(prev => ({ ...prev, [c.id]: new Date() }));
+                            }} className="px-6 py-2.5 bg-slate-100 group-hover:bg-primary group-hover:text-white text-slate-600 text-[10px] font-black uppercase rounded-xl transition-all tracking-widest shadow-sm">Gestionar</button>
+                        </div>
                     </td>
                   </tr>
                 );
@@ -629,6 +664,46 @@ const App = () => {
             onClose={() => setShowBulkModal(false)}
             onApplied={fetchData}
           />
+        )}
+
+        {/* Modal: asignar asesor a un crédito sin gestor (admin) */}
+        {assignFor && (
+          <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => !assigning && setAssignFor(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">{assignFor.assignedGestorId ? 'Reasignar asesor' : 'Asignar asesor'}</h3>
+                  <p className="text-xs text-slate-400">{assignFor.nombreCompleto || assignFor.numeroDocumento} · {assignFor.entidadAliada || ''}</p>
+                  {assignFor.assignedGestorId && <p className="text-[11px] font-bold text-amber-600 mt-1">Actual: {assignFor.gestorName || '—'} → elige el nuevo asesor</p>}
+                </div>
+                <button onClick={() => !assigning && setAssignFor(null)} className="text-slate-300 hover:text-slate-600"><X size={20} /></button>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input autoFocus value={assignSearch} onChange={e => setAssignSearch(e.target.value)} placeholder="Buscar asesor por nombre..." className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-semibold outline-none focus:border-primary" />
+              </div>
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {gestores.filter(g => g.name.toLowerCase().includes(assignSearch.trim().toLowerCase())).map(g => (
+                  <button key={g.id} disabled={assigning} onClick={async () => {
+                    setAssigning(true);
+                    try {
+                      await MockService.assignCreditGestor(assignFor.id, g.id, currentUser!);
+                      dispatchAlert(`✓ ${assignFor.assignedGestorId ? 'Reasignado' : 'Asignado'} a ${g.name}`, 'success');
+                      setCredits(prev => prev.map(c => c.id === assignFor.id ? { ...c, assignedGestorId: g.id, gestorName: g.name } : c));
+                      setAssignFor(null);
+                    } catch (err: any) { dispatchAlert(err.message || 'Error al asignar', 'error'); }
+                    finally { setAssigning(false); }
+                  }} className="w-full text-left px-4 py-3 rounded-xl hover:bg-primary/5 border border-transparent hover:border-primary/20 text-sm font-bold text-slate-700 flex items-center gap-2 disabled:opacity-50 transition-all">
+                    <UserPlus size={14} className="text-primary" /> {g.name}
+                  </button>
+                ))}
+                {gestores.length === 0 && <p className="text-xs text-slate-400 italic text-center py-6">Cargando asesores…</p>}
+                {gestores.length > 0 && gestores.filter(g => g.name.toLowerCase().includes(assignSearch.trim().toLowerCase())).length === 0 && (
+                  <p className="text-xs text-slate-400 italic text-center py-6">Ningún asesor coincide.</p>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -721,7 +796,7 @@ const App = () => {
                   <button type="submit" disabled={isBusy} className="w-full bg-primary text-white font-black py-5 rounded-[1.5rem] shadow-2xl shadow-primary/30 hover:bg-orange-600 transition-all uppercase tracking-widest text-xs">
                     {isBusy ? <Loader2 className="animate-spin mx-auto"/> : 'Entrar a Plataforma'}
                   </button>
-                  <button type="button" onClick={()=>setAuthView('REGISTER')} className="w-full text-sm font-black text-primary/80 mt-6 hover:text-primary transition-all flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-primary/20 hover:border-primary/50 hover:bg-primary/5">🤝 Quiero ser Gestor</button>
+                  <button type="button" onClick={()=>setAuthView('REGISTER')} className="w-full text-sm font-black text-primary/80 mt-6 hover:text-primary transition-all flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-primary/20 hover:border-primary/50 hover:bg-primary/5">🤝 Quiero ser Asesor</button>
                </form>
            ) : authView === 'FORGOT_PASSWORD' ? (
                <form onSubmit={handlePasswordRecovery} className="space-y-6">
@@ -738,7 +813,7 @@ const App = () => {
                </form>
            ) : (
                <form onSubmit={handleRegister} className="space-y-6 max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
-                  <h3 className="text-2xl font-display font-black text-slate-800 mb-6 border-b border-slate-50 pb-4">Onboarding Gestor</h3>
+                  <h3 className="text-2xl font-display font-black text-slate-800 mb-6 border-b border-slate-50 pb-4">Onboarding Asesor</h3>
                   <div className="space-y-4">
                       <input placeholder="Nombre y Apellido" value={regData.name} onChange={e=>setRegData({...regData, name: e.target.value})} className="w-full px-6 py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-primary" required/>
                       <input type="email" placeholder="Correo Personal/Corp" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full px-6 py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-primary" required/>
@@ -831,16 +906,16 @@ const App = () => {
   }
 
   // Solo admin y supervisor pueden radicar a nombre de otro asesor.
-  const canRadicarOnBehalf = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERVISOR_ASIGNADO';
+  const canRadicarOnBehalf = currentUser?.role === 'ADMIN' || ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser?.role || '');
 
   return (
     <Layout currentUser={currentUser} onLogout={() => { cleanupAllSubscriptions(); setRadicarGestorId(''); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
       {currentView === 'dashboard' && <Dashboard currentUser={currentUser} onNavigate={setCurrentView} />}
-      {currentView === 'wallet' && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
+      {currentView === 'wallet' && puedeVerComisiones(currentUser) && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
       {currentView === 'simulator' && (
         <>
-          {(currentUser?.role === 'SUPERVISOR_ASIGNADO' || currentUser?.role === 'ADMIN') && (
+          {(['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser?.role || '') || currentUser?.role === 'ADMIN') && (
             <SupervisorGestorPicker
               currentUser={currentUser}
               value={radicarGestorId}
@@ -848,7 +923,7 @@ const App = () => {
             />
           )}
           <CreditTypeSelector onSelect={(type) => {
-            if ((currentUser?.role === 'SUPERVISOR_ASIGNADO' || currentUser?.role === 'ADMIN') && !radicarGestorId) {
+            if ((['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser?.role || '') || currentUser?.role === 'ADMIN') && !radicarGestorId) {
               dispatchAlert('Selecciona primero el asesor para el que vas a radicar.', 'error');
               return;
             }

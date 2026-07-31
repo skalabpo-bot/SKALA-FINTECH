@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { User } from '../types';
+import { User, etiquetaRol } from '../types';
 import { supabase } from '../services/supabaseClient';
 import { Users, Phone, Mail, CreditCard, Loader2, UserCheck, TrendingUp, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 
@@ -108,9 +108,9 @@ export const TeamView: React.FC<TeamViewProps> = ({ currentUser }) => {
 
         const zoneTeams: ZoneTeam[] = allZones.map((z: any) => {
             const zoneProfiles = profilesByZone[z.id] || [];
-            const supervisor = zoneProfiles.find((p: any) => p.role === 'SUPERVISOR_ASIGNADO') || null;
+            const supervisor = zoneProfiles.find((p: any) => ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(p.role)) || null;
             const members = zoneProfiles
-                .filter((p: any) => p.role !== 'SUPERVISOR_ASIGNADO')
+                .filter((p: any) => !['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(p.role))
                 .map((p: any) => ({
                     ...p,
                     creditCount: creditCounts[p.id]?.total || 0,
@@ -185,7 +185,7 @@ export const TeamView: React.FC<TeamViewProps> = ({ currentUser }) => {
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 text-center">
                     <Users size={24} className="mx-auto text-blue-500 mb-2" />
                     <p className="text-2xl font-black text-slate-800">{totalMembers}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Gestores Activos</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Asesores Activos</p>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 text-center">
                     <CreditCard size={24} className="mx-auto text-green-500 mb-2" />
@@ -231,7 +231,7 @@ export const TeamView: React.FC<TeamViewProps> = ({ currentUser }) => {
                                             <span>Supervisor: <span className="font-bold text-indigo-600">{zone.supervisor.full_name}</span></span>
                                         )}
                                         {!zone.supervisor && <span className="text-orange-500 font-bold">Sin supervisor</span>}
-                                        <span>{activeMembers.length} gestores</span>
+                                        <span>{activeMembers.length} asesores</span>
                                         <span>{zoneCredits} creditos ({zoneActive} activos)</span>
                                     </div>
                                 </div>
@@ -290,7 +290,7 @@ export const TeamView: React.FC<TeamViewProps> = ({ currentUser }) => {
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <h4 className="font-bold text-sm text-slate-800">{m.full_name}</h4>
                                                     <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-bold">
-                                                        {m.role.replace(/_/g, ' ')}
+                                                        {etiquetaRol(m.role)}
                                                     </span>
                                                 </div>
                                                 <div className="flex gap-3 text-xs text-slate-500 mt-0.5">

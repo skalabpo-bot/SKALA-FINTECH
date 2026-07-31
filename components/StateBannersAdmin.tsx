@@ -83,7 +83,7 @@ export const StateBannersAdmin: React.FC = () => {
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-200 text-slate-700 rounded">{stateName(it.state_id)}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${TYPE_COLORS[it.banner_type]}`}>{it.banner_type.toUpperCase()}</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-100 text-purple-700 rounded">{it.audience.toUpperCase()}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-100 text-purple-700 rounded">{(it.audience === 'gestor' ? 'asesor' : it.audience).toUpperCase()}</span>
                   {it.entity_name && <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded">{it.entity_name}</span>}
                   {!it.is_active && <span className="text-[10px] font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded">INACTIVO</span>}
                 </div>
@@ -135,7 +135,7 @@ export const StateBannersAdmin: React.FC = () => {
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Audiencia</label>
                   <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" value={editing.audience || 'gestor'} onChange={e => setEditing({ ...editing, audience: e.target.value as BannerAudience })}>
-                    <option value="gestor">Gestor</option>
+                    <option value="gestor">Asesor</option>
                     <option value="analista">Analista</option>
                     <option value="admin">Admin</option>
                     <option value="todos">Todos</option>

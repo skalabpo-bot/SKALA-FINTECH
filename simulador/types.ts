@@ -124,7 +124,8 @@ export interface LoanConfiguration {
   birthDate?: string;            // fecha de nacimiento (la edad afecta el cálculo, ej. COLTE)
   creditTipo?: string;           // tipo de crédito (ej. "Compra Cartera" / "Libre Inversión") → celda tipo
   // ── Modo PREAPROBACIÓN EXTERNA (La Hipotecaria) ────────────────────────────
-  preaprobacion?: boolean;       // Si true, RESULTS usa el panel de preaprobación externa (sin motor)
+  preaprobacion?: boolean;       // Si true, RESULTS muestra el panel de preaprobación externa
+  preaprobacionSinMotor?: boolean; // La entidad aún no tiene simulador → se salta el cálculo
   preaprobacionUrl?: string;     // Referencia del portal externo
 }
 
