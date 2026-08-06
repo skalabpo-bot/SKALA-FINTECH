@@ -11,7 +11,7 @@ export interface LhCampo {
     label: string;
     hint?: string;
     grupo?: string; // subtítulo del bloque en su formulario (ej. "PLAZO DEL PRÉSTAMO")
-    type: 'text' | 'select' | 'textarea' | 'file' | 'date';
+    type: 'text' | 'select' | 'textarea' | 'file' | 'date' | 'checkbox' | 'radio';
     required: boolean;
     options?: { value: string; label: string }[];
 }
@@ -4387,7 +4387,8 @@ export const ProductionService = {
     },
 
     // Envía a La Hipotecaria las respuestas (y los documentos) que el gestor llenó en Skala.
-    lahipotecariaContinuar: async (sessionId: string, valores: Record<string, string>, archivos?: Record<string, LhArchivo>): Promise<{ ok: boolean; mensaje: string; siguienteFormulario?: boolean; spec?: LhCampo[]; titulo?: string }> => {
+    // `valores` admite string[] para los grupos de checkbox (varias opciones con el mismo name).
+    lahipotecariaContinuar: async (sessionId: string, valores: Record<string, string | string[]>, archivos?: Record<string, LhArchivo>): Promise<{ ok: boolean; mensaje: string; siguienteFormulario?: boolean; spec?: LhCampo[]; titulo?: string }> => {
         return ProductionService._lahipotecaria('continuar', { sessionId, valores, archivos: archivos || {} });
     },
 

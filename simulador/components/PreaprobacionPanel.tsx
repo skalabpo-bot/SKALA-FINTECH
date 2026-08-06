@@ -165,7 +165,10 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       label: c.label,
       valor: c.type === 'file'
         ? (archivos[c.name]?.nombre || '')
-        : (c.options?.find(o => o.value === valores[c.name])?.label ?? valores[c.name] ?? ''),
+        // Multi-selección: se guarda legible ("WhatsApp, SMS"), no con el separador interno.
+        : c.type === 'checkbox'
+          ? (valores[c.name] || '').split('|').filter(Boolean).join(', ')
+          : (c.options?.find(o => o.value === valores[c.name])?.label ?? valores[c.name] ?? ''),
     })).filter(e => e.valor);
 
   /**
@@ -245,7 +248,14 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
     if (faltan.length) { setFormMsg(`Completa: ${faltan.map(c => c.label).join(', ')}.`); return; }
     setEnviandoForm(true);
     try {
-      const r = await MockService.lahipotecariaContinuar(sessionId, valores, archivos);
+      // Los checkbox viajan internamente como "a|b"; a La Hipotecaria se le mandan como lista
+      // (la Edge Function repite la clave, igual que haría el navegador con varias casillas).
+      const valoresEnvio: Record<string, any> = { ...valores };
+      for (const c of spec) {
+        if (c.type !== 'checkbox') continue;
+        valoresEnvio[c.name] = (valores[c.name] || '').split('|').filter(Boolean);
+      }
+      const r = await MockService.lahipotecariaContinuar(sessionId, valoresEnvio, archivos);
       if (!r.ok) { setFormMsg(r.mensaje || 'La Hipotecaria rechazó el formulario.'); return; }
       // El monto solicitado del formulario manda para la radicación.
       const solicitado = Object.entries(valores).find(([k]) => /valor_solicitud|monto/i.test(k))?.[1];
@@ -472,6 +482,34 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
                   </div>
                 ) : c.type === 'date' ? (
                   <input type="date" value={valores[c.name] || ''} onChange={e => setValores(v => ({ ...v, [c.name]: e.target.value }))} className={inputCls} />
+                ) : c.type === 'checkbox' || c.type === 'radio' ? (
+                  // Su formulario los manda como varios <input> con el mismo name (ej. los canales
+                  // de contacto de la Ley 2300). Hay que enviar el VALOR de la opción: pintarlo como
+                  // texto libre hacía que La Hipotecaria lo rechazara por inválido.
+                  <div className="space-y-1.5 bg-white border-2 border-slate-100 rounded-xl p-3">
+                    {(c.options || []).map(o => {
+                      const sel = (valores[c.name] || '').split('|').filter(Boolean);
+                      const marcado = sel.includes(o.value);
+                      return (
+                        <label key={o.value} className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold text-slate-700 hover:text-teal-700">
+                          <input
+                            type={c.type === 'radio' ? 'radio' : 'checkbox'}
+                            name={c.name}
+                            checked={marcado}
+                            onChange={() => setValores(v => {
+                              if (c.type === 'radio') return { ...v, [c.name]: o.value };
+                              const act = (v[c.name] || '').split('|').filter(Boolean);
+                              const next = marcado ? act.filter(x => x !== o.value) : [...act, o.value];
+                              return { ...v, [c.name]: next.join('|') };
+                            })}
+                            className="w-4 h-4 accent-teal-600 shrink-0"
+                          />
+                          <span>{o.label}</span>
+                        </label>
+                      );
+                    })}
+                    {(c.options || []).length === 0 && <p className="text-[11px] text-slate-400 italic">Sin opciones disponibles.</p>}
+                  </div>
                 ) : (
                   <input value={valores[c.name] || ''} onChange={e => setValores(v => ({ ...v, [c.name]: e.target.value }))} className={inputCls} />
                 )}

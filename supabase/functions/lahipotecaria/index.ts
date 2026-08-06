@@ -65,7 +65,7 @@ const parseNum = (s?: string | null) => s ? Number(String(s).replace(/[^\d]/g, '
  * (nombre, etiqueta, tipo, opciones). Se hace dinámico a propósito: si La Hipotecaria
  * agrega/quita campos u opciones, Skala los pinta igual sin tocar código.
  */
-type Campo = { name: string; label: string; hint?: string; grupo?: string; type: 'text' | 'select' | 'textarea' | 'file' | 'date'; required: boolean; options?: { value: string; label: string }[] };
+type Campo = { name: string; label: string; hint?: string; grupo?: string; type: 'text' | 'select' | 'textarea' | 'file' | 'date' | 'checkbox' | 'radio'; required: boolean; options?: { value: string; label: string }[] };
 /** Quita etiquetas y decodifica las entidades HTML que usa su formulario. */
 const textoPlano = (s: string) => String(s || '')
   .replace(/<[^>]*>/g, ' ')
@@ -109,7 +109,21 @@ function parseSpec(html: string): Campo[] {
     const tag = m[1].toLowerCase();
     const attrs = m[2];
     const name = (attrs.match(/name="([^"]+)"/) || [])[1];
-    if (!name || !name.startsWith('q_') || seen.has(name)) continue;
+    if (!name || !name.startsWith('q_')) continue;
+    // Los checkbox/radio son VARIOS <input> con el MISMO name: cada uno es una opción
+    // (ej. la autorización Ley 2300 trae 5 canales). Si se descartaran por repetidos,
+    // el campo quedaría como texto libre y La Hipotecaria lo rechaza por inválido.
+    const tipoInput = tag === 'input' ? ((attrs.match(/type="([^"]+)"/) || [])[1] || '').toLowerCase() : '';
+    if (seen.has(name)) {
+      if (tipoInput === 'checkbox' || tipoInput === 'radio') {
+        const prev = out.find((c) => c.name === name);
+        const val = (attrs.match(/value="([^"]*)"/) || [])[1] ?? '';
+        if (prev && val !== '' && !prev.options?.some((o) => o.value === val)) {
+          (prev.options ||= []).push({ value: val, label: val });
+        }
+      }
+      continue;
+    }
     seen.add(name);
     const antes = html.slice(0, m.index);
 
@@ -137,15 +151,27 @@ function parseSpec(html: string): Campo[] {
     let options: { value: string; label: string }[] | undefined;
     let type: Campo['type'] = tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text';
     if (tag === 'input') {
-      const t = ((attrs.match(/type="([^"]+)"/) || [])[1] || '').toLowerCase();
-      if (t === 'file') type = 'file';
-      else if (t === 'date') type = 'date';
+      if (tipoInput === 'file') type = 'file';
+      else if (tipoInput === 'date') type = 'date';
+      else if (tipoInput === 'checkbox') type = 'checkbox';
+      else if (tipoInput === 'radio') type = 'radio';
+      // Primera opción del grupo (las demás se agregan arriba, al repetirse el name).
+      if (type === 'checkbox' || type === 'radio') {
+        const val = (attrs.match(/value="([^"]*)"/) || [])[1] ?? '';
+        options = val !== '' ? [{ value: val, label: val }] : [];
+      }
     }
     if (tag === 'select') {
       const bloque = html.slice(m.index).match(/<select\b[^>]*>([\s\S]*?)<\/select>/i);
       options = [...(bloque?.[1] || '').matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)]
-        .map((o) => ({ value: (o[1].match(/value="([^"]*)"/) || [])[1] || '', label: limpiar(o[2]) }))
-        .filter((o) => o.value !== '');
+        // Un <option> sin atributo value envía su propio texto (así lo hace el navegador).
+        // Descartarlos dejaba listas incompletas (ej. departamentos con una sola opción).
+        .map((o) => {
+          const attr = o[1].match(/value="([^"]*)"/);
+          const label = limpiar(o[2]);
+          return { value: attr ? attr[1] : label, label };
+        })
+        .filter((o) => o.value !== '' && o.label !== '');
     }
     out.push({ name, label, hint, grupo, type, required, options });
   }
@@ -427,7 +453,12 @@ async function continuar(body: any) {
     form.set('_method', 'PUT');
     if (s!.state?.form) form.set('_form', s!.state.form);
     if (s!.section) form.set('_section', s!.section);
-    for (const [k, v] of Object.entries(valores)) if (k.startsWith('q_')) form.set(k, String(v ?? ''));
+    // Un grupo de checkbox puede traer varias opciones: se repite la clave, igual que el navegador.
+    for (const [k, v] of Object.entries(valores)) {
+      if (!k.startsWith('q_')) continue;
+      if (Array.isArray(v)) v.forEach((x) => form.append(k, String(x ?? '')));
+      else form.set(k, String(v ?? ''));
+    }
     for (const [k, f] of Object.entries(archivos)) {
       if (!k.startsWith('q_') || !f?.base64) continue;
       const bin = Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0));
@@ -440,7 +471,11 @@ async function continuar(body: any) {
     fd.set('_method', 'PUT');
     if (s!.state?.form) fd.set('_form', s!.state.form);
     if (s!.section) fd.set('_section', s!.section);
-    for (const [k, v] of Object.entries(valores)) if (k.startsWith('q_')) fd.set(k, String(v ?? ''));
+    for (const [k, v] of Object.entries(valores)) {
+      if (!k.startsWith('q_')) continue;
+      if (Array.isArray(v)) v.forEach((x) => fd.append(k, String(x ?? '')));
+      else fd.set(k, String(v ?? ''));
+    }
     headers['Content-Type'] = 'application/x-www-form-urlencoded';
     body_ = fd.toString();
   }
