@@ -317,7 +317,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         // La comisión de La Hipotecaria es FIJA (3%): la aplica createCredit. No viene del corretaje.
         ...(documents.length > 0 ? { documents } : {}),
         ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
-        ...(assignedGestorId ? { assignedGestorId } : {}),
+        assignedGestorId: currentUser?.id, // El asesor que radica se asigna a sí mismo
       };
     }
 
