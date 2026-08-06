@@ -1,0 +1,20 @@
+93:        documents: [],
+127:        documents: [],
+147:    documents: p.registration_docs || [],
+313:        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, comisionPct, ...rest } = formData;
+603:        if (documents?.length > 0) {
+604:            const docsToInsert = documents.map((d: any) => ({
+610:            const { error: docsError } = await supabase.from('documents').insert(docsToInsert);
+614:                const { error: docsError2 } = await supabaseAdmin.from('documents').insert(docsToInsert);
+702:            estimatedCommission, commissionPercentage, comments, documents, history,
+934:                await supabase.from('documents').insert({
+1102:      const { data: docs } = await supabase.from('documents').select('*').eq('credit_id', id).order('uploaded_at', { ascending: false });
+1103:      credit.documents = (docs || []).map(d => ({ id: d.id, type: d.type as any, name: d.name, url: d.url, uploadedAt: new Date(d.uploaded_at) }));
+1624:            await supabase.from('documents').insert({
+3779:            .from('documents')
+3795:        const { data, error } = await supabase.from('documents').insert({
+3806:        const { error } = await supabase.from('documents').delete().eq('id', docId);
+4074:        // Registrar en documents del crédito
+4075:        await supabase.from('documents').insert({
+4141:                const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+4143:                const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);

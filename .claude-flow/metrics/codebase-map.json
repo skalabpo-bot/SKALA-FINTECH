@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-08-06T17:19:01.330Z",
+  "projectRoot": "d:\\skala-fintech (2)",
+  "structure": {
+    "hasPackageJson": true,
+    "hasTsConfig": true,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1786036741332
+}

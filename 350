@@ -1,0 +1,21 @@
+46:  const urlParams = new URLSearchParams(window.location.search);
+323:    const [credits, setCredits] = useState<Credit[]>([]);
+327:    const [searchTerm, setSearchTerm] = useState('');
+380:        () => Array.from(new Set(credits.map(c => (c as any).pagaduria).filter(Boolean))).sort() as string[],
+381:        [credits]
+386:        const t = setTimeout(() => setDebouncedSearch(searchTerm.trim().toLowerCase()), 250);
+388:    }, [searchTerm]);
+393:    const filtered = useMemo(() => {
+397:        return credits.filter(c => {
+412:    }, [credits, debouncedSearch, filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo]);
+414:    const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+433:                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{filtered.length} de {credits.length} expedientes</p>
+438:                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Nombre, cédula o gestor..." className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary focus:bg-white rounded-xl text-sm font-semibold outline-none transition-all" />
+604:              {filtered.length === 0 && (
+609:              {filtered.length > visible.length && (
+616:                              Ver más ({filtered.length - visible.length} restantes)
+626:            credits={credits}
+886:          onSuccess={() => { setSelectedCreditType(null); setRadicarGestorId(''); setCurrentView('credits'); }}
+894:          onSuccess={() => { setPrefilledCreditData(null); setRadicarGestorId(''); setCurrentView('credits'); }}
+897:      {currentView === 'credits' && <CreditList />}
+907:      {currentView === 'detail' && selectedCreditId && <CreditDetail creditId={selectedCreditId} currentUser={currentUser} onBack={() => { setSelectedCreditId(null); setCurrentView('credits'); }} />}

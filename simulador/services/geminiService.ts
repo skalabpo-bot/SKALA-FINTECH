@@ -38,13 +38,11 @@ async function callEdgeFunction(type: 'cedula' | 'paystub' | 'legal', images: Ar
 }
 
 // ---------------------------------------------------------------------------
-// 🔑 API KEYS — leídas desde variables de entorno (nunca hardcodeadas)
+// 🔑 API KEYS — NO se cargan aquí. Todo va por Edge Function (servidor).
+// Las llamadas directas a Gemini están DESHABILITADAS para seguridad.
+// Razón: una API key en el bundle es accesible públicamente.
 // ---------------------------------------------------------------------------
-const API_KEYS: string[] = [
-  import.meta.env.VITE_GEMINI_API_KEY,
-  import.meta.env.VITE_GEMINI_API_KEY_2,
-  import.meta.env.VITE_GEMINI_API_KEY_3,
-].filter(Boolean);
+const API_KEYS: string[] = [];
 
 // Cache de modelos disponibles (se refresca cada hora)
 const MODEL_CACHE_KEY = 'gemini_available_models';

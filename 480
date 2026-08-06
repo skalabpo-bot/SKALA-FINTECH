@@ -1,0 +1,83 @@
+93:        documents: [],
+127:        documents: [],
+147:    documents: p.registration_docs || [],
+241:               const { error: profileError } = await supabase.from('profiles').insert({
+278:                       await db.from('notifications').insert(
+313:        const { monto, montoDesembolso, plazo, entidadAliada, tasa, documents, lineaCredito, creditTypeId, assignedGestorId, comisionPct, ...rest } = formData;
+523:        let { data, error } = await supabase.from('credits').insert(insertPayload).select().single();
+530:            const retry = await supabase.from('credits').insert(insertPayload).select().single();
+539:            const retry = await supabase.from('credits').insert(insertPayload).select().single();
+547:            const retry = await supabaseAdmin.from('credits').insert(insertPayload).select().single();
+597:        const { error: histErr } = await supabase.from('credit_history').insert(historyPayload);
+600:            if (supabaseAdmin) await supabaseAdmin.from('credit_history').insert(historyPayload);
+603:        if (documents?.length > 0) {
+604:            const docsToInsert = documents.map((d: any) => ({
+610:            const { error: docsError } = await supabase.from('documents').insert(docsToInsert);
+614:                const { error: docsError2 } = await supabaseAdmin.from('documents').insert(docsToInsert);
+620:        await supabase.from('notifications').insert({
+639:                    await supabase.from('notifications').insert(
+702:            estimatedCommission, commissionPercentage, comments, documents, history,
+837:        await supabase.from('credit_history').insert({
+895:        await supabase.from('credit_history').insert({
+934:                await supabase.from('documents').insert({
+950:            await supabase.from('credit_history').insert({
+979:            await supabase.from('credit_history').insert({
+1019:                    await supabase.from('credit_history').insert({
+1102:      const { data: docs } = await supabase.from('documents').select('*').eq('credit_id', id).order('uploaded_at', { ascending: false });
+1103:      credit.documents = (docs || []).map(d => ({ id: d.id, type: d.type as any, name: d.name, url: d.url, uploadedAt: new Date(d.uploaded_at) }));
+1217:            if (okRows.length) await db.from('credit_history').insert(okRows.map(r => {
+1232:            if (okRows.length) await db.from('comments').insert(okRows.map(r => ({
+1256:                if (notifs.length) await db.from('notifications').insert(notifs);
+1319:        await supabase.from('credit_history').insert({
+1326:        await supabase.from('comments').insert({
+1350:            await supabase.from('notifications').insert({
+1363:                await supabase.from('notifications').insert({
+1399:                            await supabase.from('notifications').insert(supervisorNotifs);
+1495:        await supabase.from('credit_history').insert({
+1505:        await supabase.from('notifications').insert({
+1545:        await supabase.from('credit_history').insert({
+1555:        await supabase.from('notifications').insert({
+1578:        let { error: insertErr } = await supabase.from('comments').insert(payload);
+1584:            const retry1 = await supabase.from('comments').insert(payload);
+1593:                        const retry2 = await supabaseAdmin.from('comments').insert(payload);
+1624:            await supabase.from('documents').insert({
+1679:            try { await supabase.from('notifications').insert(notifications); } catch { /* notificaciones opcionales */ }
+1800:            const { error } = await supabase.from('entity_simulators').insert(payload);
+2371:        const { error } = await supabase.from('pagadurias').insert({ name: name.toUpperCase().trim(), tipo: tipo.trim() });
+2406:                const { error } = await supabase.from('state_actions').insert(payload);
+2424:        await supabase.from('credit_history').insert({
+2559:                    .insert({ name: zoneName, cities: [] })
+2574:            await supabase.from('notifications').insert({
+2584:            await supabase.from('notifications').insert({
+2625:                    .insert({ name: zoneName, cities: [] })
+2639:            await supabase.from('notifications').insert({
+2657:                        await db.from('notifications').insert(
+2681:        await supabase.from('notifications').insert({
+2779:            await supabase.from('notifications').insert(notifications);
+2845:        const { error } = await supabase.from('banks').insert({ name: name.toUpperCase().trim() });
+2853:        const { error } = await supabase.from('pagadurias').insert({ name: name.toUpperCase().trim() });
+2946:            let { error: insertErr } = await supabase.from('automation_rules').insert(rows);
+2957:                const { error: retryErr } = await supabase.from('automation_rules').insert(rowsBasic);
+3060:            await supabase.from('credit_history').insert({
+3252:        await supabase.from('credit_states_config').insert({ name, role_responsible: role, color: 'bg-gray-500', order_index: nextOrder, is_final: false });
+3268:    addEntity: async (e: any) => { await supabase.from('allied_entities').insert({ name: e.name, rates: e.rates }); },
+3270:    addZone: async (n: string) => { await supabase.from('zones').insert({ name: n, cities: [] }); },
+3304:        const { error } = await supabase.from('roles').insert({
+3325:    addNews: async (n: any) => { await supabase.from('news').insert({ title: n.title, description: n.description, image_url: n.imageUrl }); },
+3495:        await supabase.from('credit_history').insert({
+3510:        await supabase.from('credit_history').insert({
+3559:        const { data, error } = await supabase.from('withdrawal_requests').insert({
+3575:            await supabase.from('notifications').insert(
+3627:        await supabase.from('notifications').insert({
+3760:                await supabase.from('notifications').insert({
+3779:            .from('documents')
+3795:        const { data, error } = await supabase.from('documents').insert({
+3806:        const { error } = await supabase.from('documents').delete().eq('id', docId);
+3876:        const { data, error } = await supabase.from('legal_notes').insert({
+3932:        const { data: authToken, error } = await supabase.from('authorization_tokens').insert({
+4034:                await supabase.from('notifications').insert({
+4074:        // Registrar en documents del crédito
+4075:        await supabase.from('documents').insert({
+4141:                const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+4143:                const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);
+4468:                await supabase.from('credit_history').insert({

@@ -1,0 +1,13 @@
+213:        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+266:            ...prev.registration_docs.filter(d => d.type !== type),
+305:          const missingDocs = requiredDocs.filter(doc => !uploadedTypes.includes(doc));
+322:  const CreditList = () => {
+376:    const activeFilterCount = [filterStatus, filterEntity, filterPagaduria, filterCreditType, filterDateFrom, filterDateTo].filter(Boolean).length;
+380:        () => Array.from(new Set(credits.map(c => (c as any).pagaduria).filter(Boolean))).sort() as string[],
+397:        return credits.filter(c => {
+401:                const gestor = (c.gestorName || '').toLowerCase();
+552:                        <p className="text-xs font-bold text-slate-600">{c.gestorName || 'N/A'}</p>
+698:              <button onClick={() => setToasts(prev => prev.filter(toast => toast.id !== t.id))} className="ml-auto text-slate-400 hover:text-slate-600">
+868:          assignedGestorId={canRadicarOnBehalf ? (radicarGestorId || undefined) : undefined}
+875:            setPrefilledCreditData(canRadicarOnBehalf && radicarGestorId ? { ...prefilled, assignedGestorId: radicarGestorId } : prefilled);
+885:          assignedGestorId={canRadicarOnBehalf ? (radicarGestorId || undefined) : undefined}

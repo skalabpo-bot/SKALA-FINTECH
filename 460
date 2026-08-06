@@ -1,0 +1,3 @@
+526:        <div className="overflow-x-auto custom-scrollbar">
+527:          <table className="w-full text-left">
+760:            <div key={t.id} className={`pointer-events-auto flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border animate-fade-in min-w-[300px] ${
