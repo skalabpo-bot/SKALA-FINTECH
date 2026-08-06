@@ -161,7 +161,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     setError('Por favor ingrese los datos del desprendible O una cuota directa.');
   };
 
-  const processFile = useCallback(async (file: File) => {
+  // Guardar archivo SIN intentar OCR automático
+  const processFile = useCallback((file: File) => {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
     if (!validTypes.includes(file.type)) {
       setError('Formato no soportado. Use JPG, PNG o PDF.');
@@ -169,6 +170,16 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     }
 
     setLastFile(file);
+    setError(null);
+    setOcrWarning(null);
+    setHasUploadedPaystub(true);
+    // NO ejecutar OCR automático — dejar que el usuario haga clic en "Leer con IA"
+  }, []);
+
+  // Leer documento CON IA (botón optativo)
+  const analyzeFile = useCallback(async () => {
+    if (!lastFile) return;
+
     setIsAnalyzing(true);
     setError(null);
     setOcrWarning(null);
@@ -176,15 +187,11 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     try {
       let images: { base64: string; mimeType: string }[];
 
-      if (file.type === 'application/pdf') {
-        // Convertir PDF a imágenes JPEG (una por página) — OpenAI/Groq no aceptan PDFs
-        // y Gemini inline_data con PDFs falla en algunos casos.
-        // Scale 3 = ~216 dpi, mejor OCR para cifras de carteras.
-        images = await pdfToImages(file, 3, 3);
+      if (lastFile.type === 'application/pdf') {
+        images = await pdfToImages(lastFile, 3, 3);
         console.log(`📄 PDF convertido a ${images.length} imagen(es) JPEG`);
       } else {
-        // Imágenes: comprimir y enviar como JPEG
-        const base64String = await compressImage(file);
+        const base64String = await compressImage(lastFile);
         images = [{ base64: base64String, mimeType: 'image/jpeg' }];
       }
 
@@ -196,27 +203,22 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
       setData(prev => ({
         ...extractedData,
-        // Si Gemini detectó cupo disponible (CREMIL), usarlo; sino, conservar el que el usuario ingresó
         manualQuota: extractedData.manualQuota || prev.manualQuota,
       }));
 
-      // Aviso si la reconciliación contra las cifras de control del desprendible ajustó algo.
       setOcrWarning(extractedData.ocrWarning || null);
-      setHasUploadedPaystub(true);
       handleCalculate(extractedData);
 
-    } catch (err) {
-      setError('No pudimos leer el documento automaticamente. Por favor ingrese los datos manualmente o reintente.');
+    } catch (err: any) {
       console.error(err);
+      setError(`⚠️ Documento cargado ✓ pero no se pudo leer con IA: ${err.message || 'error desconocido'}\n\nIngresa los datos manualmente abajo.`);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [smmlv]);
+  }, [lastFile]);
 
   const handleRetry = () => {
-    if (lastFile) {
-      processFile(lastFile);
-    }
+    analyzeFile();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -366,7 +368,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
               </svg>
-              Reintentar cálculo (vuelve a leer el desprendible)
+              🤖 Leer con IA (optativo)
             </button>
           </div>
         )}
