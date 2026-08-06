@@ -43,6 +43,8 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
 }) => {
   const [isCedulaLoading, setIsCedulaLoading] = useState(false);
   const [cedulaError, setCedulaError] = useState<string | null>(null);
+  const [manualCedulaMode, setManualCedulaMode] = useState(false);
+  const [manualCedulaData, setManualCedulaData] = useState<Partial<ClientData>>({});
   const [selectedSimulations, setSelectedSimulations] = useState<Set<number>>(new Set());
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
@@ -750,26 +752,91 @@ export const SimulationResults: React.FC<SimulationResultsProps> = ({
           </button>
         )}
 
-        {/* Error — ilegible o genérico */}
-        {cedulaError && (
+        {/* Error + Opción de ingreso manual */}
+        {cedulaError && !manualCedulaMode && (
           cedulaError === 'ILEGIBLE' ? (
-            <div className="bg-orange-50 border border-orange-300 rounded-xl p-4 space-y-2">
-              <p className="text-sm font-black text-orange-800">📷 La cédula es ilegible — vuelve a tomar la foto</p>
+            <div className="bg-orange-50 border border-orange-300 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-black text-orange-800">📷 La cédula es ilegible</p>
               <ul className="text-xs text-orange-700 space-y-1">
-                <li>• La imagen está borrosa, muy oscura o con reflejos</li>
-                <li>• Intenta en un lugar bien iluminado sin luz directa sobre el documento</li>
-                <li>• Asegúrate de que todos los textos sean legibles antes de analizar</li>
-                <li>• Puedes ampliar la foto arriba para verificar la calidad antes de continuar</li>
+                <li>• Intenta de nuevo en un lugar bien iluminado</li>
+                <li>• O ingresa los datos manualmente abajo</li>
               </ul>
-              <button onClick={() => setCedulaError(null)} className="mt-1 text-[10px] text-orange-600 font-bold underline underline-offset-2">
-                Entendido — volver a intentar
-              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => setCedulaError(null)} className="text-[10px] text-orange-600 font-bold underline underline-offset-2">
+                  Volver a intentar
+                </button>
+                <button onClick={() => setManualCedulaMode(true)} className="text-[10px] bg-orange-200 text-orange-800 font-bold px-2 py-1 rounded">
+                  Ingresar manualmente →
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium">
-              {cedulaError}
+            <div className="bg-red-50 border border-red-300 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-black text-red-800">{cedulaError}</p>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => setCedulaError(null)} className="text-[10px] text-red-600 font-bold underline underline-offset-2">
+                  Volver a intentar
+                </button>
+                <button onClick={() => setManualCedulaMode(true)} className="text-[10px] bg-red-200 text-red-800 font-bold px-2 py-1 rounded">
+                  Ingresar manualmente →
+                </button>
+              </div>
             </div>
           )
+        )}
+
+        {/* Formulario manual de cédula */}
+        {manualCedulaMode && !clientData && (
+          <div className="bg-blue-50 border border-blue-300 rounded-xl p-6 space-y-4">
+            <h3 className="font-bold text-sm text-blue-900 flex items-center gap-2">
+              ✏️ Ingresa los datos de la cédula manualmente
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {([
+                { label: 'Número de Cédula', key: 'idNumber', type: 'text' },
+                { label: 'Nombre(s)', key: 'firstName', type: 'text' },
+                { label: 'Apellido(s)', key: 'lastName', type: 'text' },
+                { label: 'Nombre Completo', key: 'fullName', type: 'text' },
+                { label: 'Sexo (M/F)', key: 'sex', type: 'text' },
+                { label: 'Fecha de Nacimiento (DD/MM/AAAA)', key: 'birthDate', type: 'text' },
+                { label: 'Ciudad de Nacimiento', key: 'birthCity', type: 'text' },
+                { label: 'Fecha de Expedición (DD/MM/AAAA)', key: 'expeditionDate', type: 'text' },
+                { label: 'Ciudad de Expedición', key: 'expeditionCity', type: 'text' },
+              ] as { label: string; key: keyof ClientData; type: string }[]).map(({ label, key, type }) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <label className="text-xs font-bold text-blue-900">{label}</label>
+                  <input
+                    type={type}
+                    value={(manualCedulaData[key] as string) || ''}
+                    onChange={(e) => setManualCedulaData({ ...manualCedulaData, [key]: e.target.value })}
+                    placeholder={label}
+                    className="px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (manualCedulaData.idNumber && manualCedulaData.firstName) {
+                    onClientDataChange(manualCedulaData as ClientData);
+                    setManualCedulaMode(false);
+                  } else {
+                    alert('Por favor ingresa al menos Cédula y Nombre(s)');
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white font-bold text-sm rounded-lg hover:bg-blue-700"
+              >
+                ✓ Confirmar datos
+              </button>
+              <button
+                onClick={() => setManualCedulaMode(false)}
+                className="px-4 py-2 bg-slate-300 text-slate-700 font-bold text-sm rounded-lg hover:bg-slate-400"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Datos extraídos — editables */}
