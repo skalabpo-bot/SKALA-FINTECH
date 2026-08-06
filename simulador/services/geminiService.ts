@@ -38,9 +38,11 @@ async function callEdgeFunction(type: 'cedula' | 'paystub' | 'legal', images: Ar
 }
 
 // ---------------------------------------------------------------------------
-// 🔑 API KEYS — NO se cargan aquí. Todo va por Edge Function (servidor).
-// Las llamadas directas a Gemini están DESHABILITADAS para seguridad.
-// Razón: una API key en el bundle es accesible públicamente.
+// 🔑 API KEYS — REMOVIDAS DEL BUNDLE
+// Razón: Las variables VITE_* se hornean en el bundle de Vite, incluso si no se usan.
+// Cualquiera puede leerlas del JavaScript minificado del navegador.
+// TODAS las ops de IA ahora van OBLIGATORIAMENTE por Edge Function (servidor).
+// Si Edge Function falla, OCR falla pero NO BLOQUEA (fallback manual).
 // ---------------------------------------------------------------------------
 const API_KEYS: string[] = [];
 
