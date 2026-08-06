@@ -401,7 +401,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
 
         <form onSubmit={handleManualSubmit} className="space-y-8">
 
-          <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 transition-all duration-300 ${isManualMode ? 'opacity-40 blur-[1px] pointer-events-none' : 'opacity-100'}`}>
+          <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 transition-all duration-300`}>
 
             {/* Input Card 1: Ingreso */}
             <div className={inputContainerClass}>
@@ -526,9 +526,7 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
                         value={data.manualQuota || ''}
                         onChange={handleInputChange}
                         className={`block w-full pl-10 pr-4 py-4 rounded-xl border focus:outline-none focus:ring-4 transition-all font-mono font-bold text-2xl shadow-sm
-                            ${isManualMode
-                                ? 'border-primary-300 bg-white text-primary-900 focus:border-primary-500 focus:ring-primary-500/20'
-                                : 'border-slate-300 bg-white text-slate-400 focus:text-slate-900 focus:border-primary-500 focus:ring-primary-500/10'}`}
+                            border-slate-300 bg-white text-slate-800 focus:border-primary-500 focus:ring-primary-500/10`}
                         placeholder="0"
                       />
                   </div>
