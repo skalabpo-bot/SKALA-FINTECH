@@ -4626,30 +4626,93 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
 
     // ─── ADMIN: Asignar créditos huérfanos (sin assigned_gestor_id) al usuario que los radicó ───
     migrateOrphanCredits: async (): Promise<{ ok: boolean; asignados: number; aun_sin_asignar: number; preview: any[] }> => {
-        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
-        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-        if (!SUPA_URL) throw new Error('Supabase no configurado');
+        // Obtener créditos sin asignar
+        const { data: allHuerfanos, error: eHuerfanos } = await supabase
+            .from('credits')
+            .select('id, solicitud_number, amount')
+            .is('assigned_gestor_id', null)
+            .order('created_at', { ascending: false })
+            .limit(500);
 
-        let session = (await supabase.auth.getSession()).data.session;
-        if (!session?.access_token) {
-            session = (await supabase.auth.refreshSession()).data.session;
+        if (eHuerfanos) throw new Error(`Error al obtener huérfanos: ${eHuerfanos.message}`);
+
+        const count = allHuerfanos?.length || 0;
+        if (count === 0) {
+            return { ok: true, asignados: 0, aun_sin_asignar: 0, preview: [] };
         }
-        if (!session?.access_token) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
 
-        const resp = await fetch(`${SUPA_URL}/functions/v1/migrate-orphans-credits`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-                'apikey': SUPA_ANON,
-            },
-            body: JSON.stringify({}),
-        });
+        // Generar preview y asignar
+        const preview = [];
+        let asignados = 0;
 
-        const json = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-            throw new Error(json?.error || `Error ${resp.status} en migración`);
+        for (const credit of allHuerfanos || []) {
+            // Obtener primer evento en credit_history (quien lo radicó)
+            const { data: firstEvent } = await supabase
+                .from('credit_history')
+                .select('user_id, action, created_at')
+                .eq('credit_id', credit.id)
+                .order('created_at', { ascending: true })
+                .limit(1)
+                .single();
+
+            if (!firstEvent?.user_id) continue;
+
+            // Obtener datos del usuario
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('full_name, email, role')
+                .eq('id', firstEvent.user_id)
+                .single();
+
+            if (!profile) continue;
+
+            preview.push({
+                credit_id: credit.id,
+                solicitud_number: credit.solicitud_number,
+                amount: credit.amount,
+                se_asignara_a: profile.full_name,
+                email: profile.email,
+                role: profile.role,
+            });
+
+            // Asignar el crédito
+            const { error: eUpdate } = await supabase
+                .from('credits')
+                .update({
+                    assigned_gestor_id: firstEvent.user_id,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', credit.id)
+                .is('assigned_gestor_id', null);
+
+            if (!eUpdate) {
+                asignados++;
+
+                // Registrar en credit_history
+                await supabase.from('credit_history').insert({
+                    credit_id: credit.id,
+                    action: 'ASIGNACION_AUTOMATICA',
+                    details: 'Crédito huérfano asignado al usuario que lo radicó',
+                    user_id: firstEvent.user_id,
+                    created_at: new Date().toISOString(),
+                }).catch(() => {}); // Ignorar errores de historial
+            }
         }
-        return json;
+
+        // Verificar cuántos quedan sin asignar
+        const { data: remaining } = await supabase
+            .from('credits')
+            .select('id')
+            .is('assigned_gestor_id', null)
+            .limit(1);
+
+        const stillOrphan = remaining?.length || 0;
+
+        return {
+            ok: true,
+            asignados,
+            aun_sin_asignar: stillOrphan,
+            preview: preview.slice(0, 5),
+        };
     },
 };
