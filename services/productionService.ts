@@ -4625,93 +4625,93 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
     },
 
     // ─── ADMIN: Asignar créditos huérfanos (sin assigned_gestor_id) al usuario que los radicó ───
-    migrateOrphanCredits: async (): Promise<{ ok: boolean; asignados: number; aun_sin_asignar: number; preview: any[] }> => {
-        // Obtener créditos sin asignar
-        const { data: allHuerfanos, error: eHuerfanos } = await supabase
+    // El "dueño" de un crédito es quien aparece en el PRIMER evento de su historial (la RADICACIÓN).
+    // Los que no tienen historial (ej. creados por la API de un aliado) no se pueden inferir: se
+    // reportan aparte para decidir a mano, en vez de asignarlos a alguien al azar.
+    migrateOrphanCredits: async (): Promise<{ ok: boolean; asignados: number; sin_historial: number; aun_sin_asignar: number; errores: string[]; preview: any[] }> => {
+        const { data: huerfanos, error: eHuerfanos } = await supabase
             .from('credits')
             .select('id, solicitud_number, amount')
             .is('assigned_gestor_id', null)
             .order('created_at', { ascending: false })
             .limit(500);
 
-        if (eHuerfanos) throw new Error(`Error al obtener huérfanos: ${eHuerfanos.message}`);
-
-        const count = allHuerfanos?.length || 0;
-        if (count === 0) {
-            return { ok: true, asignados: 0, aun_sin_asignar: 0, preview: [] };
+        if (eHuerfanos) throw new Error(`Error al obtener créditos sin asignar: ${eHuerfanos.message}`);
+        if (!huerfanos?.length) {
+            return { ok: true, asignados: 0, sin_historial: 0, aun_sin_asignar: 0, errores: [], preview: [] };
         }
 
-        // Generar preview y asignar
-        const preview = [];
+        const preview: any[] = [];
+        const errores: string[] = [];
         let asignados = 0;
+        let sinHistorial = 0;
 
-        for (const credit of allHuerfanos || []) {
-            // Obtener primer evento en credit_history (quien lo radicó)
-            const { data: firstEvent } = await supabase
+        for (const credit of huerfanos) {
+            // Primer evento del historial = quien radicó el crédito.
+            const { data: primerEvento } = await supabase
                 .from('credit_history')
-                .select('user_id, action, created_at')
+                .select('user_id')
                 .eq('credit_id', credit.id)
                 .order('created_at', { ascending: true })
                 .limit(1)
-                .single();
+                .maybeSingle();
 
-            if (!firstEvent?.user_id) continue;
+            if (!primerEvento?.user_id) { sinHistorial++; continue; }
 
-            // Obtener datos del usuario
+            // Guard: el usuario del historial debe seguir existiendo (si lo borraron, no asignar).
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('full_name, email, role')
-                .eq('id', firstEvent.user_id)
-                .single();
+                .select('full_name, role')
+                .eq('id', primerEvento.user_id)
+                .maybeSingle();
 
-            if (!profile) continue;
+            if (!profile) { sinHistorial++; continue; }
 
+            // El guard `is('assigned_gestor_id', null)` hace el update idempotente: si otro proceso
+            // ya lo asignó mientras corríamos, esta actualización no toca nada.
+            const { data: actualizados, error: eUpdate } = await supabase
+                .from('credits')
+                .update({ assigned_gestor_id: primerEvento.user_id, updated_at: new Date().toISOString() })
+                .eq('id', credit.id)
+                .is('assigned_gestor_id', null)
+                .select('id');
+
+            if (eUpdate) {
+                errores.push(`${credit.solicitud_number || credit.id}: ${eUpdate.message}`);
+                continue;
+            }
+            if (!actualizados?.length) continue; // ya lo había tomado otro
+
+            asignados++;
             preview.push({
-                credit_id: credit.id,
                 solicitud_number: credit.solicitud_number,
                 amount: credit.amount,
-                se_asignara_a: profile.full_name,
-                email: profile.email,
+                asignado_a: profile.full_name,
                 role: profile.role,
             });
 
-            // Asignar el crédito
-            const { error: eUpdate } = await supabase
-                .from('credits')
-                .update({
-                    assigned_gestor_id: firstEvent.user_id,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', credit.id)
-                .is('assigned_gestor_id', null);
-
-            if (!eUpdate) {
-                asignados++;
-
-                // Registrar en credit_history
-                await supabase.from('credit_history').insert({
-                    credit_id: credit.id,
-                    action: 'ASIGNACION_AUTOMATICA',
-                    details: 'Crédito huérfano asignado al usuario que lo radicó',
-                    user_id: firstEvent.user_id,
-                    created_at: new Date().toISOString(),
-                }).catch(() => {}); // Ignorar errores de historial
-            }
+            // Trazabilidad. Es best-effort: si el historial falla, la asignación ya quedó hecha.
+            const { error: eHist } = await supabase.from('credit_history').insert({
+                credit_id: credit.id,
+                user_id: primerEvento.user_id,
+                action: 'ASIGNACIÓN AUTOMÁTICA',
+                description: 'Crédito que había quedado sin asesor: se asignó automáticamente al usuario que lo radicó.',
+            });
+            if (eHist) console.warn('migrateOrphanCredits: historial no registrado', credit.id, eHist.message);
         }
 
-        // Verificar cuántos quedan sin asignar
-        const { data: remaining } = await supabase
+        // Conteo real de los que siguen sin asignar (no un `limit(1)`).
+        const { count: aunSinAsignar } = await supabase
             .from('credits')
-            .select('id')
-            .is('assigned_gestor_id', null)
-            .limit(1);
-
-        const stillOrphan = remaining?.length || 0;
+            .select('id', { count: 'exact', head: true })
+            .is('assigned_gestor_id', null);
 
         return {
             ok: true,
             asignados,
-            aun_sin_asignar: stillOrphan,
+            sin_historial: sinHistorial,
+            aun_sin_asignar: aunSinAsignar ?? 0,
+            errores: errores.slice(0, 5),
             preview: preview.slice(0, 5),
         };
     },

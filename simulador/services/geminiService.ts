@@ -288,10 +288,14 @@ export const analyzePaystubDocument = async (
 
   if (images.length === 0) throw new Error('Se requiere al menos una imagen del desprendible.');
 
+  // La IA vive en el SERVIDOR (Edge Function `analyze-document`). `API_KEYS` está vacío a
+  // propósito: las llaves nunca viajan al navegador. Por eso la condición para poder leer es
+  // tener la Edge Function, NO tener llaves locales — si aquí se exigieran llaves, el OCR
+  // moriría antes de intentar siquiera la llamada al servidor.
   const availableKeys = getAvailableKeysArray();
 
-  if (availableKeys.length === 0) {
-    throw new Error("⚠️ Error Crítico: API Key faltante.\n\nPara arreglar esto:\n1. Abre el archivo 'services/geminiService.ts'\n2. Agrega tu API Key de Google AI Studio en el array API_KEYS.");
+  if (!EDGE_FN_URL && availableKeys.length === 0) {
+    throw new Error('No pudimos leer el documento automáticamente.\nPor favor ingrese los datos manualmente.');
   }
 
   // Registrar intento de uso
@@ -536,10 +540,11 @@ export interface CedulaImage {
  * en una sola llamada para extraer todos los datos disponibles.
  */
 export const analyzeCedulaDocument = async (images: CedulaImage[]): Promise<ClientData> => {
+  // Igual que el desprendible: la IA corre en el servidor, no con llaves locales.
   const availableKeys = getAvailableKeysArray();
 
-  if (availableKeys.length === 0) {
-    throw new Error("API Key faltante.");
+  if (!EDGE_FN_URL && availableKeys.length === 0) {
+    throw new Error('No pudimos leer la cédula automáticamente.\nPor favor ingrese los datos manualmente.');
   }
 
   if (!images || images.length === 0) {

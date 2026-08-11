@@ -156,17 +156,21 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
     const toggleSection = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
-    // Migración de créditos huérfanos
+    // Asignación de créditos que quedaron sin asesor (se le dan a quien los radicó).
     const [migratingOrphans, setMigratingOrphans] = useState(false);
     const handleMigrateOrphans = async () => {
         setMigratingOrphans(true);
         try {
-            const result = await MockService.migrateOrphanCredits?.();
-            if (result?.ok) {
-                alert(`✅ Migración completada!\n\nAsignados: ${result.asignados}\nAún sin asignar: ${result.aun_sin_asignar}`);
-            } else {
-                alert(`❌ Error: ${result?.error || 'Error desconocido'}`);
-            }
+            const r = await MockService.migrateOrphanCredits();
+            const lineas = [
+                `✅ Asignados: ${r.asignados}`,
+                r.sin_historial > 0 ? `⚠️ ${r.sin_historial} sin historial (no se puede saber de quién son)` : '',
+                `Quedan sin asignar: ${r.aun_sin_asignar}`,
+                r.errores?.length ? `\nErrores:\n${r.errores.join('\n')}` : '',
+                r.preview?.length ? `\nEjemplos:\n${r.preview.map((p: any) => `· ${p.solicitud_number} → ${p.asignado_a}`).join('\n')}` : '',
+            ].filter(Boolean);
+            alert(lineas.join('\n'));
+            await refreshData();
         } catch (err: any) {
             alert(`❌ Error: ${err?.message || String(err)}`);
         } finally {

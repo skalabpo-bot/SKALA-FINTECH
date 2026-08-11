@@ -172,10 +172,12 @@ serve(async (req) => {
 
     const errors: string[] = [];
 
-    // Orden fijo: Gemini (más preciso) → OpenAI → Groq (último recurso)
+    // Orden fijo: OpenAI (proveedor principal) → Gemini → Groq (último recurso).
+    // OpenAI va primero a propósito: la cuenta de Gemini quedó suspendida y dejarla de
+    // primera hacía que CADA lectura gastara un viaje fallido antes de leer de verdad.
     const providers = [
-      { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
       { name: 'OpenAI', key: OPENAI_API_KEY, fn: () => callOpenAI(images, prompt, model) },
+      { name: 'Gemini', key: GEMINI_API_KEY, fn: () => callGemini(images, prompt) },
       { name: 'Groq', key: GROQ_API_KEY, fn: () => callGroq(images, prompt) },
     ];
 

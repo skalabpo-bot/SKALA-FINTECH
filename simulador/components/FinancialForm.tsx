@@ -98,6 +98,9 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
   });
   const [isAnalizing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Que la IA no lograra leer NO es un error del asesor ni bloquea nada: el documento ya
+  // quedó guardado y puede escribir las cifras. Por eso va como aviso, no como alarma roja.
+  const [ocrFallo, setOcrFallo] = useState(false);
   const [ocrWarning, setOcrWarning] = useState<string | null>(null);
   const [hasUploadedPaystub, setHasUploadedPaystub] = useState(false);
   const [lastFile, setLastFile] = useState<File | null>(null);
@@ -161,37 +164,25 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
     setError('Por favor ingrese los datos del desprendible O una cuota directa.');
   };
 
-  // Guardar archivo SIN intentar OCR automático
-  const processFile = useCallback((file: File) => {
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
-      setError('Formato no soportado. Use JPG, PNG o PDF.');
-      return;
-    }
-
-    setLastFile(file);
-    setError(null);
-    setOcrWarning(null);
-    setHasUploadedPaystub(true);
-    // NO ejecutar OCR automático — dejar que el usuario haga clic en "Leer con IA"
-  }, []);
-
-  // Leer documento CON IA (botón optativo)
-  const analyzeFile = useCallback(async () => {
-    if (!lastFile) return;
+  // Lee el desprendible con IA. Recibe el archivo por parámetro porque se llama justo
+  // después de `setLastFile` (el estado todavía no se actualizó en ese render).
+  const analyzeFile = useCallback(async (file?: File) => {
+    const target = file || lastFile;
+    if (!target) return;
 
     setIsAnalyzing(true);
     setError(null);
+    setOcrFallo(false);
     setOcrWarning(null);
 
     try {
       let images: { base64: string; mimeType: string }[];
 
-      if (lastFile.type === 'application/pdf') {
-        images = await pdfToImages(lastFile, 3, 3);
+      if (target.type === 'application/pdf') {
+        images = await pdfToImages(target, 3, 3);
         console.log(`📄 PDF convertido a ${images.length} imagen(es) JPEG`);
       } else {
-        const base64String = await compressImage(lastFile);
+        const base64String = await compressImage(target);
         images = [{ base64: base64String, mimeType: 'image/jpeg' }];
       }
 
@@ -210,12 +201,31 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
       handleCalculate(extractedData);
 
     } catch (err: any) {
-      console.error(err);
-      setError(`⚠️ Documento cargado ✓ pero no se pudo leer con IA: ${err.message || 'error desconocido'}\n\nIngresa los datos manualmente abajo.`);
+      // El detalle técnico va SOLO a consola. Al asesor se le dice qué hacer, no qué falló:
+      // el documento ya quedó guardado y puede seguir escribiendo las cifras a mano.
+      console.error('OCR del desprendible falló:', err);
+      setOcrFallo(true);
     } finally {
       setIsAnalyzing(false);
     }
   }, [lastFile]);
+
+  // Guardar el archivo y leerlo con IA de una vez. El OCR NO es opcional: siempre corre.
+  // Si falla, el documento igual quedó cargado y los campos siguen editables a mano.
+  const processFile = useCallback((file: File) => {
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!validTypes.includes(file.type)) {
+      setError('Formato no soportado. Use JPG, PNG o PDF.');
+      return;
+    }
+
+    setLastFile(file);
+    setError(null);
+    setOcrFallo(false);
+    setOcrWarning(null);
+    setHasUploadedPaystub(true);
+    analyzeFile(file);
+  }, [analyzeFile]);
 
   const handleRetry = () => {
     analyzeFile();
@@ -357,8 +367,8 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
           </div>
         </div>
 
-        {/* Reintentar cálculo — disponible tras leer un desprendible (por si el cálculo salió mal) */}
-        {hasUploadedPaystub && lastFile && !isAnalizing && (
+        {/* Volver a leer — la lectura con IA ya corrió sola al subir; esto es por si salió mal */}
+        {hasUploadedPaystub && lastFile && !isAnalizing && !ocrFallo && (
           <div className="flex justify-center -mt-2">
             <button
               type="button"
@@ -368,8 +378,31 @@ export const FinancialForm: React.FC<FinancialFormProps> = ({ initialData, onAna
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
               </svg>
-              🤖 Leer con IA (optativo)
+              Volver a leer con IA
             </button>
+          </div>
+        )}
+
+        {/* La IA no pudo leer el documento. No es un error del asesor: el desprendible ya quedó
+            guardado y los campos de abajo están habilitados. Se informa qué hacer, no qué falló. */}
+        {ocrFallo && !isAnalizing && (
+          <div className="p-4 bg-amber-50 border-l-4 border-amber-500 text-amber-900 rounded-r-lg text-sm flex items-center gap-3 animate-fade-in shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <span className="flex-1">
+              <b>Documento cargado ✓</b> — no pudimos leerlo automáticamente esta vez.
+              Escribe los datos abajo y continúa normalmente.
+            </span>
+            {lastFile && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="ml-2 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold rounded-lg transition-colors flex-shrink-0"
+              >
+                Volver a intentar
+              </button>
+            )}
           </div>
         )}
 
