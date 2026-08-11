@@ -2781,9 +2781,55 @@ export const ProductionService = {
         });
     },
     deleteUser: async (id: string) => {
-        const { data: profile } = await supabase.from('profiles').select('full_name, email, phone, role').eq('id', id).single();
-        // Desvincular créditos del usuario (no se borran, quedan sin gestor/analista)
-        await supabase.from('credits').update({ assigned_gestor_id: null }).eq('assigned_gestor_id', id);
+        const { data: profile } = await supabase.from('profiles').select('full_name, email, phone, role, zone_id').eq('id', id).single();
+
+        // Los créditos del usuario eliminado NO pueden quedar sin dueño: un crédito huérfano
+        // desaparece de las bandejas y nadie lo trabaja. Pasan a su supervisor de zona y, si no
+        // hay, al administrador. (Antes esto hacía `assigned_gestor_id: null` y cada eliminación
+        // de asesor generaba huérfanos en masa.)
+        let herederoId: string | null = null;
+        if (profile?.zone_id) {
+            const { data: sup } = await supabase
+                .from('profiles')
+                .select('id')
+                .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
+                .eq('zone_id', profile.zone_id)
+                .neq('id', id)
+                .limit(1)
+                .maybeSingle();
+            herederoId = sup?.id || null;
+        }
+        if (!herederoId) {
+            const { data: admin } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('role', 'ADMIN')
+                .neq('id', id)
+                .limit(1)
+                .maybeSingle();
+            herederoId = admin?.id || null;
+        }
+        if (!herederoId) {
+            throw new Error('No se puede eliminar el usuario: no hay supervisor de zona ni administrador a quien pasarle sus créditos.');
+        }
+
+        const { data: heredados } = await supabase
+            .from('credits')
+            .update({ assigned_gestor_id: herederoId, updated_at: new Date().toISOString() })
+            .eq('assigned_gestor_id', id)
+            .select('id');
+
+        if (heredados?.length) {
+            const { error: eHist } = await supabase.from('credit_history').insert(
+                heredados.map(c => ({
+                    credit_id: c.id,
+                    user_id: herederoId,
+                    action: 'REASIGNACIÓN POR ELIMINACIÓN',
+                    description: `El asesor ${profile?.full_name || ''} fue eliminado del sistema; su expediente se reasignó automáticamente.`.trim(),
+                }))
+            );
+            if (eHist) console.warn('deleteUser: historial de reasignación no registrado', eHist.message);
+        }
         try { await supabase.from('credits').update({ assigned_analyst_id: null }).eq('assigned_analyst_id', id); } catch (e) { /* columna puede no existir */ }
         // Eliminar notificaciones del usuario
         await supabase.from('notifications').delete().eq('user_id', id);
