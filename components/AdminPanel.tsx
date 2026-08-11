@@ -156,6 +156,24 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
     const toggleSection = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
+    // Migración de créditos huérfanos
+    const [migratingOrphans, setMigratingOrphans] = useState(false);
+    const handleMigrateOrphans = async () => {
+        setMigratingOrphans(true);
+        try {
+            const result = await MockService.migrateOrphanCredits?.();
+            if (result?.ok) {
+                alert(`✅ Migración completada!\n\nAsignados: ${result.asignados}\nAún sin asignar: ${result.aun_sin_asignar}`);
+            } else {
+                alert(`❌ Error: ${result?.error || 'Error desconocido'}`);
+            }
+        } catch (err: any) {
+            alert(`❌ Error: ${err?.message || String(err)}`);
+        } finally {
+            setMigratingOrphans(false);
+        }
+    };
+
     return (
         <div className="space-y-6 animate-fade-in pb-20 max-w-full overflow-x-hidden">
             <div className="flex flex-col md:flex-row justify-between items-end mb-2">
@@ -163,6 +181,14 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                     <h2 className="text-3xl font-display font-bold text-slate-800">Configuración del Sistema</h2>
                     <p className="text-slate-500 text-sm mt-1">Administra flujos, supervisores, roles y parámetros globales.</p>
                 </div>
+                <button
+                    onClick={handleMigrateOrphans}
+                    disabled={migratingOrphans}
+                    className="px-4 py-2 text-sm font-bold bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 disabled:opacity-50 transition-all flex items-center gap-2 mt-4 md:mt-0"
+                >
+                    <Zap size={16} />
+                    {migratingOrphans ? 'Asignando...' : 'Asignar Créditos Huérfanos'}
+                </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

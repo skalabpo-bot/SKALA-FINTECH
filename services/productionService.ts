@@ -4623,4 +4623,33 @@ RESPONDE EXCLUSIVAMENTE en este formato JSON (sin markdown, sin backticks):
 
         throw new Error('No se pudo completar el análisis con la IA. Intenta de nuevo en un momento.' + (lastErr ? ` (${lastErr})` : ''));
     },
+
+    // ─── ADMIN: Asignar créditos huérfanos (sin assigned_gestor_id) al usuario que los radicó ───
+    migrateOrphanCredits: async (): Promise<{ ok: boolean; asignados: number; aun_sin_asignar: number; preview: any[] }> => {
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        if (!SUPA_URL) throw new Error('Supabase no configurado');
+
+        let session = (await supabase.auth.getSession()).data.session;
+        if (!session?.access_token) {
+            session = (await supabase.auth.refreshSession()).data.session;
+        }
+        if (!session?.access_token) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
+
+        const resp = await fetch(`${SUPA_URL}/functions/v1/migrate-orphans-credits`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': SUPA_ANON,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(json?.error || `Error ${resp.status} en migración`);
+        }
+        return json;
+    },
 };
