@@ -498,6 +498,35 @@ async function continuar(body: any) {
   });
 }
 
+/**
+ * Id del asesor que está llamando. La función corre con verify_jwt=true, así que Supabase ya
+ * validó el token: aquí solo se lee el `sub` del payload. Si la llamada vino con la anon key
+ * (sin sesión) no hay `sub` y devuelve null.
+ */
+const callerId = (req: Request): string | null => {
+  try {
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload?.sub === 'string' ? payload.sub : null;
+  } catch { return null; }
+};
+
+/**
+ * Deja constancia de qué asesor está trabajando esta cédula. La Hipotecaria crea el crédito
+ * por su API en paralelo y NO conoce a nuestros asesores: sin esta reserva el crédito nace
+ * huérfano y, si el asesor no alcanza a terminar (OTP sin confirmar), queda huérfano para
+ * siempre. La API la consulta para asignarle dueño desde el insert.
+ */
+const guardarReserva = async (cedula: string, gestorId: string | null) => {
+  const ced = String(cedula || '').trim();
+  if (!ced || !gestorId) return;
+  try {
+    await db().from('lh_reservas').insert({ cedula: ced, gestor_id: gestorId });
+  } catch (e) {
+    console.warn('lh_reservas: no se pudo guardar la reserva', e); // nunca frena la preaprobación
+  }
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return fail(405, 'Método no permitido.');
@@ -507,7 +536,11 @@ Deno.serve(async (req) => {
     switch (action) {
       case 'calcular': return await calcular(body);
       case 'viabilidad':
-      case 'registrar': return await viabilidad(body);
+      case 'registrar':
+        // Se registra ANTES de llamar a La Hipotecaria: ellos crean el crédito por API en
+        // cuanto reciben los datos, así que la reserva tiene que existir para ese momento.
+        await guardarReserva(body.documento, callerId(req));
+        return await viabilidad(body);
       case 'verify-otp': return await verifyOtp(body);
       case 'formulario': return await formulario(body);
       case 'continuar': return await continuar(body);

@@ -189,11 +189,28 @@ Deno.serve(async (req) => {
       if (cliente.correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(cliente.correo))) return fail(400, 'correo inválido.');
 
       // Validar gestorId si viene (UUID + existe).
-      const gestorId = body.gestorId || body.assigned_gestor_id || null;
+      let gestorId = body.gestorId || body.assigned_gestor_id || null;
       if (gestorId) {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(gestorId))) return fail(400, 'gestorId inválido.');
         const { data: g } = await db().from('profiles').select('id').eq('id', gestorId).maybeSingle();
         if (!g) return fail(400, 'gestorId no existe.');
+      }
+
+      // ── EL CRÉDITO NO PUEDE NACER HUÉRFANO ────────────────────────────────────
+      // El aliado crea el crédito por API en paralelo a que el asesor lo radica en Skala, y no
+      // conoce a nuestros asesores: nunca manda gestorId. Antes eso insertaba dueño NULL, y si
+      // el asesor no alcanzaba a terminar (OTP sin confirmar) el crédito quedaba huérfano para
+      // siempre — invisible en las bandejas. Skala sí sabe quién es: al iniciar la preaprobación
+      // guarda una reserva (cédula → asesor) que aquí se cobra.
+      if (!gestorId && cliente.numeroDocumento) {
+        const { data: reserva } = await db()
+          .from('lh_reservas')
+          .select('gestor_id')
+          .eq('cedula', String(cliente.numeroDocumento).trim())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (reserva?.gestor_id) gestorId = reserva.gestor_id;
       }
 
       // external_ref: ID del aliado para enlazar el MISMO crédito en las dos apps (y deduplicar).
@@ -291,8 +308,14 @@ Deno.serve(async (req) => {
 
       bg(db().from('credit_history').insert({
         credit_id: data.id,
+        user_id: gestorId, // queda a nombre del asesor dueño, no como acción anónima
         action: 'CREADO VIA API',
-        description: `Crédito creado vía API externa para ${nombreCompleto || cliente.numeroDocumento || ''}.`,
+        description: `Crédito creado vía API externa para ${nombreCompleto || cliente.numeroDocumento || ''}.`
+          + (gestorId
+              ? (body.gestorId || body.assigned_gestor_id
+                  ? ' Asesor indicado por el aliado.'
+                  : ' Asignado al asesor que inició la preaprobación en Skala.')
+              : ' SIN ASESOR: el aliado no lo indicó y no había preaprobación abierta en Skala para esta cédula.'),
       }));
 
       return json({ id: data.id, solicitud_number: data.solicitud_number, external_ref: data.external_ref || null, estado: initial.name }, 201);

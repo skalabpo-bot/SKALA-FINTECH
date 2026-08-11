@@ -409,8 +409,13 @@ export const ProductionService = {
                     .eq('entity_name', entidadAliada)
                     .filter('client_data->>numeroDocumento', 'eq', cedulaAd);
                 const finalIdsAd = states.filter(s => s.isFinal).map(s => s.id);
+                // Adoptable = el que no tiene dueño O el que YA ES DE ESTE ASESOR. Lo segundo es
+                // indispensable desde que la API le pone dueño al crédito en el insert (mirando la
+                // reserva de la preaprobación): si solo se aceptara `null`, el asesor chocaría con
+                // "ya existe un crédito para esta cédula" contra su propio expediente. Sigue sin
+                // poder tocar el de otro asesor.
                 const adoptable = (existentes || [])
-                    .filter((c: any) => !finalIdsAd.includes(c.status_id) && !c.assigned_gestor_id)
+                    .filter((c: any) => !finalIdsAd.includes(c.status_id) && (!c.assigned_gestor_id || c.assigned_gestor_id === gestorId))
                     .find((c: any) => {
                         const p = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
                         return !p || !nuevaPag || p === nuevaPag;
@@ -444,12 +449,13 @@ export const ProductionService = {
                     };
                     if (Number(plazo) > 0) adoptUpd.term = Number(plazo);
                     if (Number(tasa) > 0) adoptUpd.interest_rate = Number(tasa);
-                    // Update ATÓMICO: el guard `assigned_gestor_id IS NULL` hace que de dos asesores
-                    // concurrentes solo uno gane; el otro actualiza 0 filas y se entera (evita doble-adopción).
+                    // Update ATÓMICO: el guard deja pasar solo si el crédito sigue sin dueño o si ya
+                    // es de este asesor. De dos asesores concurrentes solo uno gana; el otro actualiza
+                    // 0 filas y se entera (evita doble-adopción y que uno le quite el crédito a otro).
                     const { data: adoptadas, error: adoptErr } = await supabase.from('credits')
                         .update(adoptUpd)
                         .eq('id', adoptable.id)
-                        .is('assigned_gestor_id', null)
+                        .or(`assigned_gestor_id.is.null,assigned_gestor_id.eq.${gestorId}`)
                         .select('id');
                     if (adoptErr) throw new Error('No se pudo adoptar el crédito: ' + adoptErr.message);
                     if (!adoptadas || adoptadas.length === 0) {
