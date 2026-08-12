@@ -15,6 +15,11 @@ export interface PreData {
   monto: number; montoDesembolso: number; tasa: number; plazo: number; cuota: number;
   preaprobado: boolean; preaprobacionNumero: string;
   otpConfirmado: boolean; // el OTP del correo fue validado contra La Hipotecaria
+  // Modo RECUPERACIÓN: el cliente ya está registrado allá, la sesión del OTP venció (no lo
+  // reenvían) y el crédito YA EXISTE en Skala (lo creó su API). Se permite COMPLETAR la
+  // radicación sin OTP — queda trazado como NO confirmado — para que el expediente no
+  // quede a medias para siempre (sin correo/teléfono/cuota/documentos).
+  yaRegistrado?: boolean;
   // Todo lo que se llenó del formulario de la entidad, con su sección y etiqueta legible,
   // para que quede guardado en el crédito de Skala (no solo allá).
   respuestasLH?: { seccion: string; campo: string; label: string; valor: string }[];
@@ -93,6 +98,9 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   const [codigo, setCodigo] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpMsg, setOtpMsg] = useState('');
+  // Modo recuperación: cliente ya registrado allá + crédito ya creado en Skala por su API →
+  // se completa la radicación sin OTP (ver PreData.yaRegistrado).
+  const [sinOtp, setSinOtp] = useState(false);
 
   // Monto/tasa/plazo EDITABLES para radicar (prellenados con la oferta; el gestor puede ajustar
   // al valor que La Hipotecaria aprobó). Si la oferta no calcula (ej. sin ingresos), se ingresan a mano.
@@ -126,15 +134,16 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   // Prellenar la cuota: la de la oferta manda; si no hay, se sugiere la amortización.
   // Se detiene apenas el asesor escribe la suya (cuotaTocada).
   useEffect(() => {
-    if (!otpOk || cuotaTocada) return;
+    if ((!otpOk && !sinOtp) || cuotaTocada) return;
     if (oferta?.cuota && oferta.cuota > 0) { setCuotaStr(String(Math.round(oferta.cuota))); return; }
     const sugerida = cuotaAmortizacion(Number(onlyDigits(montoStr)), Number(tasaStr) || 0, Number(plazoStr) || plazo);
     setCuotaStr(sugerida > 0 ? String(sugerida) : '');
-  }, [otpOk, oferta, montoStr, tasaStr, plazoStr, cuotaTocada]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [otpOk, sinOtp, oferta, montoStr, tasaStr, plazoStr, cuotaTocada]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Con el OTP confirmado Y el formulario de ellos enviado, emite el preData listo para radicar.
+  // Con el OTP confirmado (o en modo recuperación de un crédito ya creado) Y el formulario
+  // de ellos enviado, emite el preData listo para radicar.
   useEffect(() => {
-    if (!otpOk) return;
+    if (!otpOk && !sinOtp) return;
     const m = Number(onlyDigits(montoStr));
     const faltaForm = spec.length > 0 && !formEnviado; // su formulario es obligatorio si lo pidió
     onChange({
@@ -142,14 +151,18 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       correo: correo.trim(), telefonoCelular: onlyDigits(celular), pagaduria,
       monto: m, montoDesembolso: m, tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo,
       cuota: Number(onlyDigits(cuotaStr)) || oferta?.cuota || 0,
-      preaprobado: true, preaprobacionNumero: '', otpConfirmado: true,
+      preaprobado: true, preaprobacionNumero: '', otpConfirmado: otpOk,
+      ...(sinOtp ? { yaRegistrado: true } : {}),
       respuestasLH: formEnviado ? [...(respuestasPrevias || []), ...entradasSeccion()] : undefined,
       // La comisión NO sale del corretaje (son cosas distintas): La Hipotecaria paga 3% fijo,
       // que aplica createCredit. El corretaje (8.5%) es un dato de la entidad, oculto al asesor.
       documentosLH: formEnviado ? Object.entries(filesLH).map(([campo, f]) => ({ tipo: tipoDoc(f.label, campo), label: f.label, file: f.file })) : undefined,
       listo: m > 0 && !faltaForm,
     });
-  }, [otpOk, montoStr, tasaStr, plazoStr, cuotaStr, oferta, pagaduria, spec, formEnviado, valores, respuestasPrevias, filesLH]); // eslint-disable-line react-hooks/exhaustive-deps
+    // nombres/apellidos/documento/correo/celular DEBEN estar en las dependencias: los inputs
+    // siguen editables tras el OTP, y sin ellos una corrección del correo o el celular no
+    // re-emitía el preData → el crédito se radicaba con el contacto viejo, en silencio.
+  }, [otpOk, sinOtp, montoStr, tasaStr, plazoStr, cuotaStr, oferta, pagaduria, spec, formEnviado, valores, respuestasPrevias, filesLH, nombres, apellidos, documento, correo, celular]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Nombre de tipo para guardar el documento en Skala (ej. "Certificación bancaria" → LH_CERTIFICACION_BANCARIA). */
   const tipoDoc = (label: string, campo: string) =>
@@ -312,12 +325,15 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   };
 
   const verificar = async () => {
-    setError(''); setViab(null); setOferta(null); setOtpMode(false); setOtpOk(false);
+    setError(''); setViab(null); setOferta(null); setOtpMode(false); setOtpOk(false); setSinOtp(false);
     setSessionId(''); setCodigo(''); setOtpMsg(''); onChange(null);
     setSpec([]); setValores({}); setArchivos({}); setFilesLH({}); setRespuestasPrevias([]); setTitulo(''); setSeccion(1); setFormEnviado(false); setFormMsg('');
     // La viabilidad solo necesita datos personales (la decide la cédula). Pagaduría/ingresos no se exigen aquí.
     if (!nombres.trim() || !apellidos.trim() || onlyDigits(documento).length < 5) { setError('Completa nombres, apellidos y documento.'); return; }
     if (!correo.trim()) { setError('El correo es obligatorio (allí llega el código OTP).'); return; }
+    // El celular también es obligatorio: sin él la validación de identidad (LegasovApp) rechaza
+    // el registro y el robot quema un intento para nada.
+    if (onlyDigits(celular).length < 7) { setError('El celular del cliente es obligatorio (allí llega la validación de identidad).'); return; }
     setVerificando(true);
     try {
       const p = buildParams();
@@ -326,10 +342,24 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       if (r.viable) {
         if (r.otpEnviado && r.sessionId) {
           setSessionId(r.sessionId); setOtpMode(true); setOtpMsg(r.mensaje || ''); // hay que validar el OTP antes de radicar
+        } else {
+          // Cliente ya registrado allá y SIN sesión de OTP vigente (no lo reenvían). Si el crédito
+          // YA EXISTE en Skala — su API lo crea apenas reciben el registro — no hay nada que
+          // confirmar con La Hipotecaria: se habilita COMPLETAR la radicación sin OTP (quedará
+          // trazado como NO confirmado) para que el expediente no quede a medias para siempre.
+          // Si NO hay crédito en Skala, se mantiene el bloqueo: sin OTP no se crea uno nuevo.
+          try {
+            const cred = await MockService.buscarCreditoLHPropio(onlyDigits(documento));
+            if (cred) {
+              setSinOtp(true);
+              if (Number(cred.amount) > 0) setMontoStr(String(Math.round(Number(cred.amount))));
+              if (Number(cred.interest_rate) > 0) setTasaStr(String(cred.interest_rate));
+              if (Number(cred.term) > 0) setPlazoStr(String(cred.term));
+              const cuotaPrev = Number(cred.client_data?.cuotaUtilizar || cred.client_data?.cuota || 0);
+              if (cuotaPrev > 0) { setCuotaStr(String(Math.round(cuotaPrev))); setCuotaTocada(true); }
+            }
+          } catch { /* si la búsqueda falla, queda el bloqueo normal */ }
         }
-        // Si viable pero SIN sesión de OTP (ya registrado, sesión vencida): NO se habilita radicar.
-        // La Hipotecaria no reenvía el código, así que sin OTP confirmado no se puede continuar.
-        // (onChange(null) ya se ejecutó al inicio → preData sigue null → botón radicar deshabilitado.)
       }
     } catch (e: any) {
       setError(e?.message || 'No se pudo verificar la viabilidad con La Hipotecaria.');
@@ -415,12 +445,22 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
         </div>
       )}
 
-      {/* Bloqueado: viable pero sin sesión de OTP (ya registrado, sesión vencida) → NO se puede radicar */}
-      {viab?.viable && !otpMode && !otpOk && (
+      {/* Bloqueado: ya registrado, sin OTP y SIN crédito en Skala → no se crea uno nuevo sin OTP */}
+      {viab?.viable && !otpMode && !otpOk && !sinOtp && (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 space-y-2">
           <p className="text-base font-black text-amber-800 flex items-center gap-2"><AlertTriangle size={20} /> Cliente ya registrado — OTP no disponible</p>
           <p className="text-sm text-amber-700">{viab.mensaje}</p>
           <p className="text-xs text-amber-700">La Hipotecaria <b>no reenvía</b> el código para un registro existente, así que no se puede confirmar el OTP desde aquí. <b>No es posible radicar sin confirmar el OTP.</b> Para continuar, el registro debe completarse con La Hipotecaria (o iniciar el proceso con un cliente nuevo).</p>
+        </div>
+      )}
+
+      {/* RECUPERACIÓN: ya registrado, sin OTP, pero el crédito YA EXISTE en Skala (su API lo creó).
+          Se completa el expediente — correo, teléfono, cuota, documentos — sin OTP, con traza. */}
+      {viab?.viable && !otpOk && sinOtp && (
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-5 space-y-2">
+          <p className="text-base font-black text-blue-800 flex items-center gap-2"><AlertTriangle size={20} /> Crédito ya creado — completa el expediente</p>
+          <p className="text-sm text-blue-700">Este cliente ya está registrado en La Hipotecaria y <b>su crédito ya existe en Skala</b> (lo creó su sistema). El código OTP de ese registro ya venció y no se reenvía.</p>
+          <p className="text-xs text-blue-700">Confirma abajo el monto/cuota, adjunta los documentos y <b>finaliza la radicación</b>: los datos se guardan en el crédito existente. Quedará registrado que el OTP <b>no fue confirmado</b> en Skala.</p>
         </div>
       )}
 
@@ -531,9 +571,9 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       )}
 
       {/* Confirmado: OTP validado y su formulario enviado → monto/tasa/plazo + listo para radicar */}
-      {viab?.viable && otpOk && (spec.length === 0 || formEnviado) && (
+      {viab?.viable && (otpOk || sinOtp) && (spec.length === 0 || formEnviado) && (
         <div className="bg-teal-50 border-2 border-teal-200 rounded-2xl p-5 space-y-3">
-          <p className="text-lg font-black text-teal-800 flex items-center gap-2"><CheckCircle2 size={22} /> {formEnviado ? 'Solicitud enviada a La Hipotecaria' : 'OTP confirmado — preaprobación lista'}</p>
+          <p className="text-lg font-black text-teal-800 flex items-center gap-2"><CheckCircle2 size={22} /> {formEnviado ? 'Solicitud enviada a La Hipotecaria' : (sinOtp && !otpOk ? 'Completar radicación — crédito ya creado' : 'OTP confirmado — preaprobación lista')}</p>
           {formEnviado && <p className="text-xs text-teal-700 font-semibold">{formMsg}</p>}
           <p className="text-xs text-teal-700">{oferta ? 'Estos son los valores de la oferta; ajústalos si La Hipotecaria aprobó otro monto.' : 'Confirma la pagaduría e ingresa el monto aprobado por La Hipotecaria para radicar.'}</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

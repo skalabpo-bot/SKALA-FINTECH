@@ -401,12 +401,19 @@ export const ProductionService = {
         const esLaHipotecaria = String(entidadAliada || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim() === 'la hipotecaria';
         if (esLaHipotecaria && requiresEntity) {
             const cedulaAd = (rest.numeroDocumento || '').toString().trim();
-            const nuevaPag = (rest.pagaduria || '').toString().trim().toUpperCase();
+            // Normalización para comparar pagadurías: la API guarda el texto CRUDO que mande el
+            // aliado ("Fiduprevisora") y Skala usa su lista propia — sin quitar tildes y espacios
+            // el match fallaba y el asesor terminaba bloqueado por su propio crédito.
+            const normPag = (s: any) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+            const nuevaPag = normPag(rest.pagaduria);
             if (cedulaAd) {
+                // ilike = igualdad insensible a mayúsculas: la API valida el scope de la entidad de
+                // forma insensible pero guarda entity_name crudo; con .eq un "LA HIPOTECARIA" del
+                // aliado haría invisible el crédito y se crearía un duplicado.
                 const { data: existentes } = await supabase
                     .from('credits')
-                    .select('id, status_id, assigned_gestor_id, amount, client_data')
-                    .eq('entity_name', entidadAliada)
+                    .select('id, status_id, assigned_gestor_id, amount, client_data, created_at')
+                    .ilike('entity_name', entidadAliada)
                     .filter('client_data->>numeroDocumento', 'eq', cedulaAd);
                 const finalIdsAd = states.filter(s => s.isFinal).map(s => s.id);
                 // Adoptable = el que no tiene dueño O el que YA ES DE ESTE ASESOR. Lo segundo es
@@ -414,12 +421,16 @@ export const ProductionService = {
                 // reserva de la preaprobación): si solo se aceptara `null`, el asesor chocaría con
                 // "ya existe un crédito para esta cédula" contra su propio expediente. Sigue sin
                 // poder tocar el de otro asesor.
-                const adoptable = (existentes || [])
+                const candidatos = (existentes || [])
                     .filter((c: any) => !finalIdsAd.includes(c.status_id) && (!c.assigned_gestor_id || c.assigned_gestor_id === gestorId))
-                    .find((c: any) => {
-                        const p = (c.client_data?.pagaduria || '').toString().trim().toUpperCase();
-                        return !p || !nuevaPag || p === nuevaPag;
-                    });
+                    .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+                // Preferir el de la misma pagaduría; si ninguno coincide pero HAY candidatos, adoptar
+                // el más reciente igual: La Hipotecaria solo permite UN registro activo por cliente,
+                // así que ese crédito ES el de este trámite (la pagaduría cruda del aliado no manda).
+                const adoptable = candidatos.find((c: any) => {
+                    const p = normPag(c.client_data?.pagaduria);
+                    return !p || !nuevaPag || p === nuevaPag;
+                }) || candidatos[0];
                 if (adoptable) {
                     const nombresAd = rest.nombres || '';
                     const apellidosAd = rest.apellidos || '';
@@ -466,12 +477,41 @@ export const ProductionService = {
                         throw new Error('Este crédito ya fue tomado por otro asesor. Refresca la página e intenta de nuevo.');
                     }
 
-                    // Documentos que adjuntó el asesor → tabla documents
+                    // Documentos que adjuntó el asesor → tabla documents. Dedupe por URL: una
+                    // re-radicación del mismo asesor (ruta soportada por el guard "ya era mío")
+                    // no debe duplicar los adjuntos previos.
                     if (documents?.length > 0) {
-                        const docs = documents.map((d: any) => ({ credit_id: adoptable.id, name: d.name, url: d.url, type: d.type }));
-                        const { error: dErr } = await supabase.from('documents').insert(docs);
-                        if (dErr && supabaseAdmin) await supabaseAdmin.from('documents').insert(docs).then(() => {}, () => {});
+                        const { data: docsPrevios } = await supabase.from('documents').select('url').eq('credit_id', adoptable.id);
+                        const urlsPrevias = new Set((docsPrevios || []).map((d: any) => d.url));
+                        const docs = documents
+                            .filter((d: any) => d.url && !urlsPrevias.has(d.url))
+                            .map((d: any) => ({ credit_id: adoptable.id, name: d.name, url: d.url, type: d.type }));
+                        if (docs.length > 0) {
+                            const { error: dErr } = await supabase.from('documents').insert(docs);
+                            // No frena la adopción, pero tampoco se pierde en silencio: el asesor
+                            // debe saber que los adjuntos no quedaron para volver a subirlos.
+                            if (dErr) {
+                                console.warn('Adopción: documentos no insertados:', dErr.message);
+                                if (typeof window !== 'undefined') window.alert('El crédito quedó radicado, pero los documentos no se pudieron guardar. Súbelos de nuevo desde el detalle del crédito.');
+                            }
+                        }
                     }
+
+                    // Trazabilidad: la adopción también es una RADICACIÓN — sin esto el expediente
+                    // quedaba sin el snapshot de condiciones y el admin no veía quién lo completó.
+                    try {
+                        await supabase.from('credit_history').insert({
+                            credit_id: adoptable.id,
+                            user_id: currentUser.id,
+                            action: 'RADICACIÓN (ADOPCIÓN)',
+                            description: `${currentUser.name} completó el expediente sobre el crédito creado por la API de La Hipotecaria.` +
+                                `\nOTP: ${rest.otpVerified === true ? 'CONFIRMADO' : (rest.preaprobacionYaRegistrado === 'SI' ? 'NO CONFIRMADO (registro previo, código vencido — modo recuperación)' : 'NO CONFIRMADO')}` +
+                                `\nMonto: $${montoAd.toLocaleString()} · Plazo: ${plazo || adoptable.term || ''} meses · Tasa: ${tasa || ''}%` +
+                                `\nCuota: $${Number(mergedCd.cuotaUtilizar || 0).toLocaleString()}` +
+                                `\nCorreo: ${rest.correo || ''} · Celular: ${rest.telefonoCelular || ''}` +
+                                `\nPagaduría: ${rest.pagaduria || cdPrevia.pagaduria || ''}`,
+                        });
+                    } catch (eH) { console.warn('Adopción: historial no registrado', eH); }
 
                     // Validación de identidad en LegasovApp (idempotente por client_data.legasov)
                     ProductionService.crearCodigoLegasov(adoptable.id).catch(e =>
@@ -4419,6 +4459,25 @@ export const ProductionService = {
     enableApiKey: (id: string) => ProductionService._adminApiKeys({ action: 'enable', id }),
     setApiKeyWebhook: (id: string, webhookUrl: string) => ProductionService._adminApiKeys({ action: 'set_webhook', id, webhookUrl }),
     revealWebhookSecret: (id: string): Promise<{ webhook_secret: string | null }> => ProductionService._adminApiKeys({ action: 'reveal_webhook_secret', id }),
+
+    // Crédito de La Hipotecaria YA EXISTENTE para esta cédula, visible para el usuario actual
+    // (RLS filtra: el asesor solo ve los suyos). Lo usa el panel de preaprobación para el modo
+    // RECUPERACIÓN: si su API ya creó el crédito y el OTP venció, el asesor completa el
+    // expediente sobre ese crédito en vez de quedar bloqueado para siempre.
+    buscarCreditoLHPropio: async (cedula: string): Promise<{ id: string; amount: number; term: number; interest_rate: number; client_data: any } | null> => {
+        const ced = (cedula || '').trim();
+        if (!ced) return null;
+        const { data } = await supabase
+            .from('credits')
+            .select('id, status_id, amount, term, interest_rate, client_data')
+            .eq('entity_name', 'La Hipotecaria')
+            .filter('client_data->>numeroDocumento', 'eq', ced)
+            .order('created_at', { ascending: false });
+        if (!data?.length) return null;
+        const states = await ProductionService.getStates();
+        const finales = states.filter(s => s.isFinal).map(s => s.id);
+        return data.find((c: any) => !finales.includes(c.status_id)) || null;
+    },
 
     // Consulta la preaprobación (monto/cuota/tasa/plazo). Sin datos personales ni OTP.
     lahipotecariaCalcular: async (params: { ingresos: number; gastos: number; pagaduria: string; plazo: number }): Promise<{ aprobado: boolean; monto: number; cuota: number; salud: number; tasa: number; plazo: number; mensaje: string }> => {

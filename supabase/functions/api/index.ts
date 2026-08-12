@@ -33,7 +33,18 @@ const fail = (status: number, publicMsg: string, internal?: unknown) => {
 };
 
 // Escrituras no críticas para la respuesta (historial, last_used) — que no se pierdan al terminar la instancia.
-const bg = (p: Promise<any>) => { try { (globalThis as any).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ } };
+// ⚠️ Los builders de supabase-js son thenables PEREZOSOS: el request HTTP solo se dispara al
+// invocar .then(). Pasarlos directo a waitUntil sin suscribirse hacía que, si waitUntil no
+// existía, la consulta JAMÁS se ejecutara (créditos vía API quedaban con 0 eventos de historial).
+// Promise.resolve(p) fuerza la suscripción (la consulta corre sí o sí); waitUntil solo mantiene
+// viva la instancia hasta que termine.
+const bg = (p: PromiseLike<any>) => {
+  const real = Promise.resolve(p).then(
+    (r: any) => { if (r?.error) console.error('[api] bg query error:', r.error.message || r.error); },
+    (e: any) => console.error('[api] bg falló:', e?.message || e),
+  );
+  try { (globalThis as any).EdgeRuntime?.waitUntil?.(real); } catch { /* ignore */ }
+};
 
 const db = () => createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
@@ -172,6 +183,25 @@ Deno.serve(async (req) => {
       if (!has('credits:create')) return fail(403, 'Falta el scope credits:create.');
       const body = await req.json().catch(() => ({}));
       const cliente = (body.cliente && typeof body.cliente === 'object') ? body.cliente : {};
+
+      // Alias de campos PRIMERO: el aliado puede mandar la cédula/contacto con otro nombre
+      // (cedula/documento/celular/email...). Normalizar aquí — antes de validar, de cobrar la
+      // reserva y del anti-duplicado — es obligatorio: cuando este bloque corría al final, un
+      // POST con `cedula` en vez de `numeroDocumento` se saltaba el lookup de lh_reservas (el
+      // crédito nacía huérfano AUNQUE hubiera reserva) y esquivaba el anti-duplicado por cédula.
+      const ALIAS: Record<string, string> = {
+        celular: 'telefonoCelular', telefono: 'telefonoCelular', telefonoMovil: 'telefonoCelular',
+        telefono_celular: 'telefonoCelular', movil: 'telefonoCelular', phone: 'telefonoCelular', celphone: 'telefonoCelular',
+        email: 'correo', correoElectronico: 'correo', correo_electronico: 'correo', mail: 'correo',
+        cedula: 'numeroDocumento', documento: 'numeroDocumento', numero_documento: 'numeroDocumento',
+      };
+      for (const [alias, canon] of Object.entries(ALIAS)) {
+        if (cliente[alias] != null && (cliente[canon] == null || cliente[canon] === '')) cliente[canon] = cliente[alias];
+      }
+      // La cédula se compara en 3 sitios (reserva, anti-duplicado, adopción en Skala): un espacio
+      // de borde no debe tumbar el POST ni partir el match.
+      if (cliente.numeroDocumento != null) cliente.numeroDocumento = String(cliente.numeroDocumento).trim();
+
       const entidad = body.entidad || body.entity_name;
       const monto = Number(body.monto ?? body.amount);
       const plazo = Number(body.plazo ?? body.term);
@@ -210,7 +240,12 @@ Deno.serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (reserva?.gestor_id) gestorId = reserva.gestor_id;
+        if (reserva?.gestor_id) {
+          // Mismo guard que el gestorId explícito: si el perfil de la reserva ya no existe
+          // (asesor eliminado), NO usarlo — mejor huérfano visible que un dueño fantasma.
+          const { data: gr } = await db().from('profiles').select('id').eq('id', reserva.gestor_id).maybeSingle();
+          if (gr) gestorId = reserva.gestor_id;
+        }
       }
 
       // external_ref: ID del aliado para enlazar el MISMO crédito en las dos apps (y deduplicar).
@@ -260,14 +295,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Alias de campos: el aliado puede mandar el contacto con otro nombre (celular/telefono/email).
-      // Los normalizamos a los nombres canónicos ANTES del saneo para no perder el celular/correo.
-      const ALIAS: Record<string, string> = {
-        celular: 'telefonoCelular', telefono: 'telefonoCelular', telefonoMovil: 'telefonoCelular',
-        telefono_celular: 'telefonoCelular', movil: 'telefonoCelular', phone: 'telefonoCelular', celphone: 'telefonoCelular',
-        email: 'correo', correoElectronico: 'correo', correo_electronico: 'correo', mail: 'correo',
-        cedula: 'numeroDocumento', documento: 'numeroDocumento', numero_documento: 'numeroDocumento',
-      };
+      // (Los alias de campos ya se normalizaron arriba, antes de validar/reserva/anti-duplicado.)
       for (const [alias, canon] of Object.entries(ALIAS)) {
         if (cliente[alias] != null && (cliente[canon] == null || cliente[canon] === '')) cliente[canon] = cliente[alias];
       }

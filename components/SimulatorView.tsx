@@ -311,6 +311,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         preaprobacionPlazoAprobado: preData.plazo,
         otpVerified: preData.otpConfirmado === true, // OTP del correo validado antes de radicar
         preaprobacionOtpConfirmado: preData.otpConfirmado ? 'SI' : 'NO',
+        // Traza del modo recuperación: expediente completado sobre un crédito que la API del
+        // aliado ya había creado, con el OTP vencido (no reenviable).
+        ...(preData.yaRegistrado ? { preaprobacionYaRegistrado: 'SI' } : {}),
         // Respuestas del formulario de la entidad (referencias, dirección, ingresos…): quedan en
         // Skala con su sección y etiqueta legible, igual que se llenaron allá.
         ...(preData.respuestasLH?.length ? { preaprobacionFormulario: preData.respuestasLH } : {}),
@@ -433,7 +436,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       return;
     }
     // Regla La Hipotecaria: el OTP del correo debe estar confirmado antes de radicar.
-    if (!preData.otpConfirmado) {
+    // EXCEPCIÓN (modo recuperación): si el cliente ya está registrado allá y su crédito YA
+    // EXISTE en Skala (yaRegistrado), se permite COMPLETAR ese expediente sin OTP — el OTP de
+    // ese registro venció y La Hipotecaria no lo reenvía. Queda trazado como NO confirmado.
+    if (!preData.otpConfirmado && !preData.yaRegistrado) {
       alert('Debes confirmar el código OTP que llegó al correo del cliente antes de radicar.');
       return;
     }

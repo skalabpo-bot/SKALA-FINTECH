@@ -84,6 +84,13 @@ Deno.serve(async (req) => {
     if (!payload.documento || !payload.nombresCompletos) {
       return fail(400, 'El crédito no tiene documento o nombres del cliente para crear el Codigo.');
     }
+    // LegasovApp exige celular (allí llega la validación) y el correo también viaja: sin ellos
+    // el robot quema una corrida completa de Playwright para un rechazo garantizado. Mejor un
+    // mensaje accionable de inmediato: completar el expediente y reintentar.
+    if (!payload.celular || !payload.correo) {
+      const falta = [!payload.celular ? 'celular' : '', !payload.correo ? 'correo' : ''].filter(Boolean).join(' y ');
+      return fail(400, `El crédito no tiene ${falta} del cliente. Completa el expediente (finaliza la radicación en el panel de La Hipotecaria o edítalo) y reintenta la validación.`);
+    }
 
     // Llamada al robot (server-to-server). Timeout defensivo: Playwright puede tardar.
     let robot: any = {};
@@ -114,10 +121,14 @@ Deno.serve(async (req) => {
       at: new Date().toISOString(),
     };
 
-    // Guardar el resultado en el crédito (merge sobre client_data).
+    // Guardar el resultado en el crédito. RELEER client_data justo antes de escribir: entre la
+    // lectura inicial y aquí pasaron hasta 90s de robot — escribir el snapshot viejo pisaba
+    // cualquier cambio concurrente (p. ej. la adopción del asesor enriqueciendo el crédito).
+    const { data: fresco } = await supa.from('credits').select('client_data').eq('id', creditId).maybeSingle();
+    const cdFinal = fresco?.client_data || cd;
     const { error: upErr } = await supa
       .from('credits')
-      .update({ client_data: { ...cd, legasov } })
+      .update({ client_data: { ...cdFinal, legasov } })
       .eq('id', creditId);
     if (upErr) console.error('[legasov-dispatch] no se pudo guardar client_data.legasov:', upErr);
 
