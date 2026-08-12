@@ -452,11 +452,15 @@ export const ProductionService = {
                     // Update ATÓMICO: el guard deja pasar solo si el crédito sigue sin dueño o si ya
                     // es de este asesor. De dos asesores concurrentes solo uno gana; el otro actualiza
                     // 0 filas y se entera (evita doble-adopción y que uno le quite el crédito a otro).
-                    const { data: adoptadas, error: adoptErr } = await supabase.from('credits')
-                        .update(adoptUpd)
-                        .eq('id', adoptable.id)
-                        .or(`assigned_gestor_id.is.null,assigned_gestor_id.eq.${gestorId}`)
-                        .select('id');
+                    // NO usar `.or()` aquí: PostgREST lo rechaza en un UPDATE con
+                    // "column credits.assigned_gestor_id does not exist". Se elige el guard según
+                    // cómo estaba el crédito; cada rama sigue siendo una sola sentencia atómica.
+                    const adoptQuery = supabase.from('credits').update(adoptUpd).eq('id', adoptable.id);
+                    const { data: adoptadas, error: adoptErr } = await (
+                        adoptable.assigned_gestor_id
+                            ? adoptQuery.eq('assigned_gestor_id', gestorId) // ya era mío
+                            : adoptQuery.is('assigned_gestor_id', null)     // sin dueño: gana el primero
+                    ).select('id');
                     if (adoptErr) throw new Error('No se pudo adoptar el crédito: ' + adoptErr.message);
                     if (!adoptadas || adoptadas.length === 0) {
                         throw new Error('Este crédito ya fue tomado por otro asesor. Refresca la página e intenta de nuevo.');
