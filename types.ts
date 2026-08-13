@@ -331,6 +331,9 @@ export interface Credit {
 
   creditTypeId?: string;
   formData?: Record<string, any>;
+  /** Datos que le faltan a un expediente nacido por la API del aliado (correo/celular/cuota).
+   *  Vacío = completo. Se calcula al leer, no se guarda en la BD. */
+  camposFaltantes?: string[];
 
   comments: Comment[];
   documents: CreditDocument[];

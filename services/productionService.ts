@@ -59,6 +59,21 @@ let _entitiesCache: { data: any[]; ts: number } | null = null;
 let _creditTypesCache: { data: any[]; ts: number } | null = null;
 let _lastAutoArchiveTs = 0;
 
+// Un crédito que nace por la API del aliado es solo un ESQUELETO: La Hipotecaria únicamente
+// manda cédula, nombres, apellidos y pagaduría — no manda correo, celular ni cuota, y no trae
+// documentos. Esos datos solo aparecen cuando el asesor completa la radicación en Skala.
+// El problema real: nada distinguía ese esqueleto de un crédito completo, así que avanzaba por
+// todo el flujo (hasta EN ESTUDIO - ANALISTA) sin contacto ni soportes y nadie lo notaba.
+// Esto NO bloquea la operación: solo la marca para que se vea en la bandeja y en el detalle.
+const faltantesDelExpediente = (cd: any): string[] => {
+    if (!cd || cd.origen_api !== true) return [];
+    const faltan: string[] = [];
+    if (!String(cd.correo || '').trim()) faltan.push('correo');
+    if (!String(cd.telefonoCelular || '').trim()) faltan.push('celular');
+    if (!Number(cd.cuotaUtilizar || 0)) faltan.push('cuota');
+    return faltan;
+};
+
 // Mapper liviano para la bandeja: estripa client_data pesado (carteraItems,
 // detailedDeductions, legalAnalysis, snapshots, contactos, banco, etc.) y solo
 // conserva los 3 campos que la lista/búsqueda realmente usan.
@@ -93,6 +108,7 @@ const mapCreditForList = (c: any): Credit => {
         comisionPagada: c.comision_pagada || false,
         fechaPagoComision: c.fecha_pago_comision || undefined,
         creditTypeId: c.credit_type_id || undefined,
+        camposFaltantes: faltantesDelExpediente(cd),
         comments: [],
         documents: [],
         history: []
@@ -126,6 +142,7 @@ const mapCreditFromDB = (c: any): Credit => {
         comisionPagada: c.comision_pagada || false,
         fechaPagoComision: c.fecha_pago_comision || undefined,
         creditTypeId: c.credit_type_id || undefined,
+        camposFaltantes: faltantesDelExpediente(clientData),
         formData: clientData,
         comments: [],
         documents: [],
@@ -152,6 +169,29 @@ const mapUserFromDB = (p: any): User => ({
     assignedEntities: Array.isArray(p.assigned_entities) ? p.assigned_entities : [],
     createdAt: p.created_at ? new Date(p.created_at) : undefined,
 });
+
+// Supervisor de la zona de un asesor. La bandeja del supervisor filtra por
+// assigned_supervisor_id, así que TODO camino que defina o cambie el asesor de un
+// crédito debe recalcularlo: si queda NULL el crédito es invisible para el supervisor
+// (le pasó a La Hipotecaria, que nace por la API y se adopta después).
+const resolveSupervisorId = async (gestorId: string | null | undefined): Promise<string | null> => {
+    if (!gestorId) return null;
+    try {
+        const { data: g } = await supabase.from('profiles').select('zone_id').eq('id', gestorId).single();
+        if (!g?.zone_id) return null;
+        const { data: sup } = await supabase
+            .from('profiles')
+            .select('id')
+            .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
+            .eq('zone_id', g.zone_id)
+            .limit(1)
+            .maybeSingle();
+        return sup?.id || null;
+    } catch (e) {
+        console.warn('No se pudo resolver supervisor snapshot:', e);
+        return null;
+    }
+};
 
 export const ProductionService = {
     hasPermission: (user: User | null, permission: string): boolean => {
@@ -460,6 +500,11 @@ export const ProductionService = {
                     };
                     if (Number(plazo) > 0) adoptUpd.term = Number(plazo);
                     if (Number(tasa) > 0) adoptUpd.interest_rate = Number(tasa);
+                    // La adopción define el dueño real → recalcular el supervisor aquí también.
+                    // Sin esto el crédito quedaba con assigned_supervisor_id NULL y NINGÚN
+                    // supervisor lo veía en su bandeja (solo el admin, que ve todo).
+                    const supAdopt = await resolveSupervisorId(gestorId);
+                    if (supAdopt) adoptUpd.assigned_supervisor_id = supAdopt;
                     // Update ATÓMICO: el guard deja pasar solo si el crédito sigue sin dueño o si ya
                     // es de este asesor. De dos asesores concurrentes solo uno gana; el otro actualiza
                     // 0 filas y se entera (evita doble-adopción y que uno le quite el crédito a otro).
@@ -617,32 +662,22 @@ export const ProductionService = {
         // Snapshot del supervisor al momento de radicar — si después cambia el
         // supervisor de la zona, las operaciones en curso siguen reportando a
         // quien las recibió. Solo los créditos nuevos van al nuevo supervisor.
-        let supervisorIdSnapshot: string | null = null;
-        try {
-            const { data: gestorProfile } = await supabase
-                .from('profiles')
-                .select('zone_id')
-                .eq('id', gestorId)
-                .single();
-            if (gestorProfile?.zone_id) {
-                const { data: sup } = await supabase
-                    .from('profiles')
-                    .select('id')
-                    .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'])
-                    .eq('zone_id', gestorProfile.zone_id)
-                    .limit(1)
-                    .maybeSingle();
-                supervisorIdSnapshot = sup?.id || null;
-            }
-        } catch (e) {
-            console.warn('No se pudo resolver supervisor snapshot:', e);
-        }
+        const supervisorIdSnapshot: string | null = await resolveSupervisorId(gestorId);
+
+        // El desembolso NUNCA puede superar el monto del crédito: es lo que recibe el cliente
+        // después de descuentos. En modo Excel el valor viene de la hoja de la entidad sin
+        // validar, y una celda mal leída metía cifras imposibles (517M de desembolso en un
+        // crédito de 23M). Se topa al monto y se deja la anomalía en el historial para revisar.
+        const montoNum = Number(monto || 0);
+        const desembolsoPedido = Number(montoDesembolso || monto || 0);
+        const desembolsoAnomalo = montoNum > 0 && desembolsoPedido > montoNum;
+        const desembolsoFinal = desembolsoAnomalo ? montoNum : desembolsoPedido;
 
         const insertPayload: any = {
             assigned_gestor_id: gestorId,
             status_id: initialState.id,
-            amount: Number(monto || 0),
-            disbursement_amount: Number(montoDesembolso || monto || 0),
+            amount: montoNum,
+            disbursement_amount: desembolsoFinal,
             term: Number(plazo || 0),
             entity_name: entidadAliada,
             interest_rate: Number(tasa || 0),
@@ -694,7 +729,10 @@ export const ProductionService = {
         const cuotaDisponible = Number(rest.cuotaDisponible || 0);
         const snapshotRadicacion = [
             `Monto: $${Number(monto).toLocaleString()}`,
-            `Monto Desembolso: $${Number(montoDesembolso || monto || 0).toLocaleString()}`,
+            `Monto Desembolso: $${desembolsoFinal.toLocaleString()}`,
+            ...(desembolsoAnomalo
+                ? [`⚠ REVISAR: el simulador entregó un desembolso de $${desembolsoPedido.toLocaleString()}, mayor que el monto del crédito. Se topó al monto. Verificar la hoja de cálculo de ${entidadAliada}.`]
+                : []),
             `Plazo: ${plazo} meses`,
             `Cuota Utilizada: $${cuotaUtilizar.toLocaleString()}${cuotaDisponible > 0 ? ` (de $${cuotaDisponible.toLocaleString()} disponible)` : ''}`,
             `Entidad: ${entidadAliada}`,
@@ -1176,6 +1214,21 @@ export const ProductionService = {
         const canViewAll = ProductionService.hasPermission(user, 'VIEW_ALL_CREDITS');
         const canViewZone = ProductionService.hasPermission(user, 'VIEW_ZONE_CREDITS') || ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(user.role);
 
+        // Red de seguridad para créditos SIN snapshot de supervisor: los que nacen por la API
+        // (La Hipotecaria) quedaban con assigned_supervisor_id NULL y eran invisibles para el
+        // supervisor — el crédito existía, pero nadie de la zona lo veía en su bandeja. El
+        // dashboard ya resolvía esos casos por la zona del asesor; la bandeja no. Solo aplica
+        // cuando el snapshot está vacío, así una operación en curso NO se traslada de supervisor.
+        let zoneGestorIds: string[] = [];
+        if (!canViewAll && canViewZone && user.zoneId) {
+            try {
+                const { data: zg } = await supabase.from('profiles').select('id').eq('zone_id', user.zoneId);
+                zoneGestorIds = (zg || []).map((p: any) => p.id).filter(Boolean);
+            } catch (e) {
+                console.warn('No se pudieron resolver los asesores de la zona:', e);
+            }
+        }
+
         // Construye la query con joins de analista (preferida) o sin ella (fallback)
         const buildQuery = (withAnalyst: boolean) => {
             const selectStr = withAnalyst
@@ -1185,7 +1238,12 @@ export const ProductionService = {
             if (canViewAll) return q;
             if (canViewZone && user.zoneId) {
                 // SUPERVISOR_ASIGNADO: snapshot del supervisor (no traslada operaciones en curso)
-                q = q.or(`assigned_supervisor_id.eq.${user.id},assigned_gestor_id.eq.${user.id}`);
+                // + los de su zona que nunca recibieron snapshot (ver comentario arriba).
+                let filtro = `assigned_supervisor_id.eq.${user.id},assigned_gestor_id.eq.${user.id}`;
+                if (zoneGestorIds.length > 0) {
+                    filtro += `,and(assigned_supervisor_id.is.null,assigned_gestor_id.in.(${zoneGestorIds.join(',')}))`;
+                }
+                q = q.or(filtro);
             } else if (user.role === 'ANALISTA') {
                 q = q.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
             } else if (user.role === 'ANALISTA_ENTIDAD') {

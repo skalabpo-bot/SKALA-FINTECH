@@ -565,6 +565,16 @@ const App = () => {
                     <td className="px-8 py-6">
                         <p className="font-black text-slate-800 text-base">{c.nombreCompleto}</p>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">CC: {c.numeroDocumento}</p>
+                        {/* Expediente que nació por la API del aliado y el asesor nunca terminó de
+                            radicar: avanzaba por el flujo sin contacto ni cuota y nadie lo veía. */}
+                        {((c as any).camposFaltantes?.length > 0) && (
+                            <span
+                                className="mt-1 inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-300"
+                                title={`Radicación incompleta — falta: ${(c as any).camposFaltantes.join(', ')}. El asesor debe completarla en Skala.`}
+                            >
+                                Falta {(c as any).camposFaltantes.join(', ')}
+                            </span>
+                        )}
                     </td>
                     <td className="px-8 py-6">
                         <p className="text-xs font-bold text-slate-600">{c.gestorName || 'N/A'}</p>

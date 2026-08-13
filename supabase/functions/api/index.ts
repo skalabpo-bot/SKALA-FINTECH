@@ -206,12 +206,22 @@ Deno.serve(async (req) => {
       const monto = Number(body.monto ?? body.amount);
       const plazo = Number(body.plazo ?? body.term);
       const tasa = Number(body.tasa ?? body.interest_rate);
-      const commPct = Number(body.comisionPct ?? body.commission_percent ?? 0);
+      // La Hipotecaria no manda comisión por la API (no conoce nuestro corretaje), así que el
+      // crédito nacía con 0% y el asesor no cobraba salvo que lo adoptara después en Skala.
+      // Misma regla FIJA del 3% que aplica createCredit; si el aliado sí manda un valor, manda el suyo.
+      const esLH = norm(String(entidad ?? '')) === norm('La Hipotecaria');
+      const commPctRaw = body.comisionPct ?? body.commission_percent;
+      const commPct = Number(commPctRaw ?? (esLH ? 3 : 0));
 
       // Validación de presencia, tipo y rango.
       if (!entidad || isNaN(monto) || isNaN(plazo) || isNaN(tasa)) return fail(400, 'Faltan campos: entidad, monto, plazo, tasa.');
       if (monto <= 0 || monto > 2_000_000_000 || plazo <= 0 || plazo > 240 || tasa < 0 || tasa > 100) return fail(400, 'Valores fuera de rango (monto 0–2.000.000.000, plazo 1–240, tasa 0–100).');
       if (isNaN(commPct) || commPct < 0 || commPct > 100) return fail(400, 'comisionPct fuera de rango (0–100).');
+      // El desembolso es lo que recibe el cliente tras descuentos: no puede superar el monto.
+      // Sin esta validación el aliado podía crear créditos con cifras imposibles.
+      const montoDesemb = Number(body.montoDesembolso ?? body.disbursement_amount ?? monto);
+      if (isNaN(montoDesemb) || montoDesemb < 0) return fail(400, 'montoDesembolso inválido.');
+      if (montoDesemb > monto) return fail(400, 'montoDesembolso no puede ser mayor que el monto del crédito.');
       // Alcance por entidad: una llave scopeada solo puede crear créditos de su(s) entidad(es).
       if (identity.entity_scope && !identity.entity_scope.some((e) => norm(e) === norm(String(entidad)))) return fail(403, `Tu llave solo puede operar la entidad: ${identity.entity_scope.join(', ')}.`);
       if (!cliente.numeroDocumento && !cliente.nombres && !cliente.nombreCompleto) return fail(400, 'Falta cliente (numeroDocumento o nombres).');
@@ -245,6 +255,20 @@ Deno.serve(async (req) => {
           // (asesor eliminado), NO usarlo — mejor huérfano visible que un dueño fantasma.
           const { data: gr } = await db().from('profiles').select('id').eq('id', reserva.gestor_id).maybeSingle();
           if (gr) gestorId = reserva.gestor_id;
+        }
+      }
+
+      // Snapshot del supervisor de la zona del gestor — igual que la radicación en la UI.
+      // Sin esto los créditos creados por la API eran INVISIBLES para los supervisores:
+      // su bandeja filtra por assigned_supervisor_id (o gestor propio), y aquí quedaba NULL.
+      let supervisorId: string | null = null;
+      if (gestorId) {
+        const { data: gp } = await db().from('profiles').select('zone_id').eq('id', gestorId).maybeSingle();
+        if (gp?.zone_id) {
+          const { data: sup } = await db().from('profiles').select('id')
+            .in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).eq('zone_id', gp.zone_id)
+            .limit(1).maybeSingle();
+          supervisorId = sup?.id || null;
         }
       }
 
@@ -310,7 +334,7 @@ Deno.serve(async (req) => {
       const insertPayload: any = {
         status_id: initial.id,
         amount: monto,
-        disbursement_amount: Number(body.montoDesembolso ?? body.disbursement_amount ?? monto),
+        disbursement_amount: montoDesemb,
         term: plazo,
         entity_name: String(entidad).trim(),
         interest_rate: tasa,
@@ -376,7 +400,7 @@ Deno.serve(async (req) => {
           if (st) q = q.eq('status_id', st.id);
         }
         const { data } = await q.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
-        return json({ items: (data || []).map((c) => creditPublicView(c, states)), limit, offset, count: (data || []).length });
+        return json({ items: (data || []).map((c: any) => creditPublicView(c, states)), limit, offset, count: (data || []).length });
       }
 
       const credit = await findCredit(sol, cedula, identity);
