@@ -1620,9 +1620,12 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </p>
                         )}
                     </div>
-                    <div className={`bg-white/5 p-6 rounded-3xl border group transition-all ${isEditing && effectiveCanEdit ? 'border-primary/40 bg-white/10' : 'border-white/5 hover:bg-white/10'}`}>
+                    {/* El desembolso es una CONDICIÓN del crédito, como el monto: en subsanación va
+                        bloqueado. Estaba con effectiveCanEdit (que incluye al asesor en subsanación)
+                        y por ahí se subió por encima del monto, que sí estaba bloqueado. */}
+                    <div className={`bg-white/5 p-6 rounded-3xl border group transition-all ${isEditing && canEdit ? 'border-primary/40 bg-white/10' : 'border-white/5 hover:bg-white/10'}`}>
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Monto a Desembolsar</p>
-                        {isEditing && effectiveCanEdit ? (
+                        {isEditing && canEdit ? (
                             <input
                                 type="number"
                                 value={editFormData.montoDesembolso || ''}
@@ -1716,9 +1719,12 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
                             </p>
                         )}
                     </div>
-                    <div className={`bg-white/5 p-6 rounded-3xl border group transition-all ${isEditing && effectiveCanEdit ? 'border-primary/40 bg-white/10' : 'border-white/5 hover:bg-white/10'}`}>
+                    {/* El desembolso es una CONDICIÓN del crédito, como el monto: en subsanación va
+                        bloqueado. Estaba con effectiveCanEdit (que incluye al asesor en subsanación)
+                        y por ahí se subió por encima del monto, que sí estaba bloqueado. */}
+                    <div className={`bg-white/5 p-6 rounded-3xl border group transition-all ${isEditing && canEdit ? 'border-primary/40 bg-white/10' : 'border-white/5 hover:bg-white/10'}`}>
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Monto a Desembolsar</p>
-                        {isEditing && effectiveCanEdit ? (
+                        {isEditing && canEdit ? (
                             <input
                                 type="number"
                                 value={editFormData.montoDesembolso || ''}
