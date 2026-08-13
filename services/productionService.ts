@@ -891,7 +891,13 @@ export const ProductionService = {
         const finalMonto = monto != null && String(monto).trim() !== '' ? Number(monto) : (previousData.amount ?? 0);
         const finalPlazo = plazo != null && String(plazo).trim() !== '' ? Number(plazo) : (previousData.term ?? 0);
         const finalTasa = tasa != null && String(tasa).trim() !== '' ? Number(tasa) : (previousData.interest_rate ?? 0);
-        const finalDesembolso = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
+        const desembolsoPedidoUpd = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
+        // El desembolso no puede superar el monto. Al editar solo el monto (la entidad aprueba
+        // menos, p.ej.), el desembolso anterior se conservaba tal cual y quedaba por encima:
+        // así nacieron créditos con $517M de desembolso sobre $23M de crédito. La comisión ya
+        // seguía al monto; el desembolso no. Se topa y se deja constancia en el historial.
+        const desembolsoAnomaloUpd = finalMonto > 0 && desembolsoPedidoUpd > finalMonto;
+        const finalDesembolso = desembolsoAnomaloUpd ? finalMonto : desembolsoPedidoUpd;
 
         // Recalcular comisión. Prioridad: (1) config excel por tasa, (2) factores (legacy),
         // (3) preservar la comisión guardada (NUNCA pisarla con 0). commEst sigue al monto.
@@ -960,6 +966,7 @@ export const ProductionService = {
         if ((previousData.entity_name || '') !== (entidadAliada || previousData.entity_name || '')) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entidadAliada}`);
         if (String(previousData.interest_rate) !== String(finalTasa)) changes.push(`Tasa: ${previousData.interest_rate || 0}% → ${finalTasa}%`);
         if (String(previousData.disbursement_amount) !== String(finalDesembolso)) changes.push(`Monto Desembolso: $${previousData.disbursement_amount?.toLocaleString() || 0} → $${finalDesembolso.toLocaleString()}`);
+        if (desembolsoAnomaloUpd) changes.push(`⚠ El desembolso quedaba en $${desembolsoPedidoUpd.toLocaleString()}, por encima del monto del crédito ($${finalMonto.toLocaleString()}). Se topó al monto — verificar cuánto recibe realmente el cliente.`);
 
         // Comparar todos los campos del cliente
         const allClientFields = ['nombres', 'apellidos', 'correo', 'telefonoCelular', 'direccionCompleta', 'barrio', 'ciudadResidencia', 'estadoCivil', 'pagaduria', 'banco', 'tipoCuenta', 'numeroCuenta', 'lineaCredito', 'tipoPension', 'mesadaPensional', 'gastosMensuales', 'activos', 'pasivos', 'numeroDocumento'];
