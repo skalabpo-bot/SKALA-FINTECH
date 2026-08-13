@@ -2727,12 +2727,13 @@ export const ProductionService = {
         // Sincronizar el correo de LOGIN (auth.users) si cambió. Sin esto, el usuario seguiría
         // entrando con el correo viejo aunque el perfil muestre el nuevo.
         if (d.email && String(d.email).trim().toLowerCase() !== String(currentProfile?.email || '').toLowerCase()) {
-            if (!supabaseAdmin) throw new Error('Perfil guardado, pero para cambiar el correo de login se requiere VITE_SUPABASE_SERVICE_KEY.');
-            const { error: emailErr } = await supabaseAdmin.auth.admin.updateUserById(id, { email: String(d.email).trim(), email_confirm: true });
-            if (emailErr) {
+            try {
+                await ProductionService._adminUsers({ action: 'update-email', userId: id, email: String(d.email).trim() });
+            } catch (emailErr: any) {
                 // Revertir el email del perfil para no dejarlo desincronizado con el login.
                 await supabase.from('profiles').update({ email: currentProfile?.email || null }).eq('id', id).then(undefined, () => {});
-                throw new Error(`No se pudo cambiar el correo: ${/already|registered|exists/i.test(emailErr.message) ? 'ese correo ya está en uso por otra cuenta.' : emailErr.message}`);
+                const m = emailErr?.message || '';
+                throw new Error(`No se pudo cambiar el correo: ${/already|registered|exists/i.test(m) ? 'ese correo ya está en uso por otra cuenta.' : m}`);
             }
         }
 
@@ -2790,11 +2791,10 @@ export const ProductionService = {
 
         // Cambiar contraseña via Admin API si se proporcionó una nueva
         if (d.password && d.password.trim()) {
-            if (supabaseAdmin) {
-                const { error: pwError } = await supabaseAdmin.auth.admin.updateUserById(id, { password: d.password.trim() });
-                if (pwError) throw new Error(`Perfil actualizado, pero error al cambiar contraseña: ${pwError.message}`);
-            } else {
-                throw new Error('Para cambiar contraseñas configure VITE_SUPABASE_SERVICE_KEY en las variables de entorno.');
+            try {
+                await ProductionService._adminUsers({ action: 'update-password', userId: id, password: d.password.trim() });
+            } catch (pwError: any) {
+                throw new Error(`Perfil actualizado, pero error al cambiar contraseña: ${pwError?.message || pwError}`);
             }
         }
 
@@ -3903,7 +3903,6 @@ export const ProductionService = {
     // ─── IMPORTACIÓN / EXPORTACIÓN MASIVA DE USUARIOS ──────────────────────────
 
     batchCreateUsers: async (rows: { nombre: string; email: string; cedula: string; rol: string; password: string; telefono?: string; ciudad?: string; supervisor?: string }[]) => {
-        if (!supabaseAdmin) throw new Error('Configura VITE_SUPABASE_SERVICE_KEY en las variables de entorno para importar usuarios.');
 
         // Traer cédulas ya existentes en profiles (única validación de duplicado)
         const { data: existing } = await supabase.from('profiles').select('cedula');
@@ -3944,21 +3943,20 @@ export const ProductionService = {
             try {
                 let uid: string;
 
-                // Intentar crear en Auth
-                const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-                    email: emailNorm,
-                    password: row.password.trim(),
-                    email_confirm: true,
-                });
-
-                if (authError) {
-                    // Si ya existe en Auth (por intento previo), buscar su ID
-                    const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ filter: emailNorm });
-                    const existingAuth = users?.find((u: any) => u.email === emailNorm);
-                    if (!existingAuth) throw authError;
-                    uid = existingAuth.id;
-                } else {
-                    uid = authData.user.id;
+                // Crear en Auth por la Edge Function (la service_role no puede vivir en el navegador)
+                try {
+                    const creado = await ProductionService._adminUsers({
+                        action: 'create-auth-user', email: emailNorm, password: row.password.trim(),
+                    });
+                    if (!creado?.userId) throw new Error('La creación no devolvió el id del usuario.');
+                    uid = creado.userId;
+                } catch (authError: any) {
+                    // Ya existía en Auth (reintento de una importación previa). La Edge Function no
+                    // expone listUsers, así que se recupera el id por el perfil, que el trigger de
+                    // Auth crea junto con el usuario.
+                    const { data: prev } = await supabase.from('profiles').select('id').ilike('email', emailNorm).maybeSingle();
+                    if (!prev?.id) throw authError;
+                    uid = prev.id;
                 }
 
                 // Esperar un momento para que el trigger de Auth termine
@@ -3972,7 +3970,7 @@ export const ProductionService = {
                 }
 
                 // Upsert del perfil (sobrescribe lo que haya creado el trigger)
-                const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
+                const { error: profileError } = await supabase.from('profiles').upsert({
                     id: uid,
                     full_name: row.nombre.trim(),
                     email: emailNorm,
@@ -4484,6 +4482,31 @@ export const ProductionService = {
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(json?.error || `Error ${resp.status} en LegasovApp`);
+        return json;
+    },
+
+    // ─── ADMIN: operaciones de Auth que exigen service_role (solo rol ADMIN) ───
+    // Cambiar el correo de login, la contraseña o dar de alta usuarios necesita la Admin API.
+    // Esa llave NO puede vivir en el navegador (quedaba horneada en el bundle público), así que
+    // va por la Edge Function `admin-users`, que valida el rol ADMIN del lado servidor.
+    _adminUsers: async (body: any) => {
+        const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || '';
+        const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        let session = (await supabase.auth.getSession()).data.session;
+        if (!session?.access_token) {
+            session = (await supabase.auth.refreshSession()).data.session;
+        }
+        if (!session?.access_token) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
+        const resp = await fetch(`${SUPA_URL}/functions/v1/admin-users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPA_ANON },
+            body: JSON.stringify(body),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            if (json?.error === 'Sesión inválida' || resp.status === 401) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
+            throw new Error(json?.error || `Error ${resp.status}`);
+        }
         return json;
     },
 
