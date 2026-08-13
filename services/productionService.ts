@@ -887,11 +887,23 @@ export const ProductionService = {
             previousData = prev || {};
         } catch { /* continuar sin datos previos */ }
 
+        // Las CONDICIONES del crédito (monto, plazo, tasa, entidad, desembolso) no las puede
+        // cambiar un asesor: en subsanación solo corrige datos del cliente. Hasta ahora eso se
+        // hacía únicamente ocultando los campos en la pantalla — el servicio escribía lo que le
+        // llegara. Un formulario manipulado, o un campo que se escapara del candado visual (le
+        // pasó al desembolso), entraba sin control. Aquí se ignoran esos campos y se conserva
+        // lo que ya tenía el crédito.
+        let condicionesBloqueadas = false;
+        try {
+            const { data: quien } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
+            condicionesBloqueadas = ['GESTOR', 'ASESOR_TMK', 'SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(quien?.role || '');
+        } catch { /* sin perfil: no se relaja el control, se aplica igual */ condicionesBloqueadas = true; }
+
         // Resolver valores con fallback a datos anteriores
-        const finalMonto = monto != null && String(monto).trim() !== '' ? Number(monto) : (previousData.amount ?? 0);
-        const finalPlazo = plazo != null && String(plazo).trim() !== '' ? Number(plazo) : (previousData.term ?? 0);
-        const finalTasa = tasa != null && String(tasa).trim() !== '' ? Number(tasa) : (previousData.interest_rate ?? 0);
-        const desembolsoPedidoUpd = montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
+        const finalMonto = !condicionesBloqueadas && monto != null && String(monto).trim() !== '' ? Number(monto) : (previousData.amount ?? 0);
+        const finalPlazo = !condicionesBloqueadas && plazo != null && String(plazo).trim() !== '' ? Number(plazo) : (previousData.term ?? 0);
+        const finalTasa = !condicionesBloqueadas && tasa != null && String(tasa).trim() !== '' ? Number(tasa) : (previousData.interest_rate ?? 0);
+        const desembolsoPedidoUpd = !condicionesBloqueadas && montoDesembolso != null && String(montoDesembolso).trim() !== '' ? Number(montoDesembolso) : (previousData.disbursement_amount ?? 0);
         // El desembolso no puede superar el monto. Al editar solo el monto (la entidad aprueba
         // menos, p.ej.), el desembolso anterior se conservaba tal cual y quedaba por encima:
         // así nacieron créditos con $517M de desembolso sobre $23M de crédito. La comisión ya
@@ -901,7 +913,7 @@ export const ProductionService = {
 
         // Recalcular comisión. Prioridad: (1) config excel por tasa, (2) factores (legacy),
         // (3) preservar la comisión guardada (NUNCA pisarla con 0). commEst sigue al monto.
-        const entityName = entidadAliada || previousData.entity_name || '';
+        const entityName = (condicionesBloqueadas ? previousData.entity_name : entidadAliada) || previousData.entity_name || '';
         let commPercent = 0;
         try {
             const cfg = await ProductionService.getEntityCalcConfig(entityName);
@@ -933,7 +945,7 @@ export const ProductionService = {
         const updatePayload: any = {
             amount: finalMonto,
             term: finalPlazo,
-            entity_name: entidadAliada || previousData.entity_name || '',
+            entity_name: entityName,
             interest_rate: finalTasa,
             disbursement_amount: finalDesembolso,
             commission_percent: commPercent,
@@ -963,7 +975,7 @@ export const ProductionService = {
         // Comparar condiciones financieras
         if (String(previousData.amount) !== String(finalMonto)) changes.push(`Monto: $${previousData.amount?.toLocaleString() || 0} → $${finalMonto.toLocaleString()}`);
         if (String(previousData.term) !== String(finalPlazo)) changes.push(`Plazo: ${previousData.term || 0} → ${finalPlazo} meses`);
-        if ((previousData.entity_name || '') !== (entidadAliada || previousData.entity_name || '')) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entidadAliada}`);
+        if ((previousData.entity_name || '') !== entityName) changes.push(`Entidad: ${previousData.entity_name || '-'} → ${entityName}`);
         if (String(previousData.interest_rate) !== String(finalTasa)) changes.push(`Tasa: ${previousData.interest_rate || 0}% → ${finalTasa}%`);
         if (String(previousData.disbursement_amount) !== String(finalDesembolso)) changes.push(`Monto Desembolso: $${previousData.disbursement_amount?.toLocaleString() || 0} → $${finalDesembolso.toLocaleString()}`);
         if (desembolsoAnomaloUpd) changes.push(`⚠ El desembolso quedaba en $${desembolsoPedidoUpd.toLocaleString()}, por encima del monto del crédito ($${finalMonto.toLocaleString()}). Se topó al monto — verificar cuánto recibe realmente el cliente.`);
