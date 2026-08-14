@@ -452,7 +452,7 @@ export const ProductionService = {
                 // aliado haría invisible el crédito y se crearía un duplicado.
                 const { data: existentes } = await supabase
                     .from('credits')
-                    .select('id, status_id, assigned_gestor_id, amount, client_data, created_at')
+                    .select('id, solicitud_number, status_id, assigned_gestor_id, amount, client_data, created_at')
                     .ilike('entity_name', entidadAliada)
                     .filter('client_data->>numeroDocumento', 'eq', cedulaAd);
                 const finalIdsAd = states.filter(s => s.isFinal).map(s => s.id);
@@ -562,7 +562,10 @@ export const ProductionService = {
                     ProductionService.crearCodigoLegasov(adoptable.id).catch(e =>
                         console.warn('Legasov (adopción) falló:', e?.message || e));
 
-                    return { id: adoptable.id, adopted: true } as any;
+                    // `adopted` + el radicado viajan para que la UI lo DIGA: el asesor radica y no
+                    // aparece una solicitud nueva (se completó una que ya existía). Sin avisar,
+                    // parece que la radicación se perdió.
+                    return { id: adoptable.id, adopted: true, solicitudNumber: adoptable.solicitud_number } as any;
                 }
             }
         }

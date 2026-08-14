@@ -451,6 +451,12 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     try {
       const creditData = await buildCreditData();
       const result = await MockService.createCredit(creditData, currentUser);
+      // Si se completó un expediente que ya existía en vez de crear uno nuevo, hay que
+      // decirlo: si no, el asesor no ve solicitud nueva y cree que no quedó radicado.
+      if ((result as any)?.adopted) {
+        const nro = (result as any).solicitudNumber;
+        alert(`Este cliente ya tenía una solicitud abierta${nro ? ` (N° ${nro})` : ''} en La Hipotecaria.\n\nNo se creó una solicitud nueva: se completó esa con los datos que acabas de radicar (monto, cuota, documentos y contacto). Es el mismo trámite.`);
+      }
       if (result?.id) onCreditCreated(result.id);
     } catch (err: any) {
       console.error('Error creando crédito (preaprobación):', err);
