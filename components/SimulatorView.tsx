@@ -323,7 +323,12 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         // La comisión de La Hipotecaria es FIJA (3%): la aplica createCredit. No viene del corretaje.
         ...(documents.length > 0 ? { documents } : {}),
         ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
-        assignedGestorId: currentUser?.id, // El asesor que radica se asigna a sí mismo
+        // Respeta el selector de asesor, igual que la radicación normal (línea de abajo).
+        // Estaba fijo en currentUser.id, así que en La Hipotecaria el crédito SIEMPRE quedaba
+        // a nombre de quien radicaba: un admin radicando para otro asesor se lo quedaba él.
+        // Quién puede radicar a nombre de otro ya lo valida createCredit (solo ADMIN, y
+        // SUPERVISOR dentro de su zona); aquí solo se transmite la elección.
+        assignedGestorId: assignedGestorId || currentUser?.id,
       };
     }
 
