@@ -301,7 +301,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         correo: preData.correo,
         telefonoCelular: preData.telefonoCelular,
         ...(selectedPagaduria || preData.pagaduria ? { pagaduria: selectedPagaduria || preData.pagaduria } : {}),
-        ...(preData.cuota ? { cuotaUtilizar: preData.cuota } : {}),
+        // En La Hipotecaria la cuota disponible ES la que se utiliza (no hay remanente que
+        // repartir), pero solo se guardaba `cuotaUtilizar`: el detalle mostraba la cuota
+        // disponible "Sin definir" aunque el dato existiera.
+        ...(preData.cuota ? { cuotaUtilizar: preData.cuota, cuotaDisponible: preData.cuota } : {}),
         tipoDesembolso: 'EFECTIVO',
         // Campos de preaprobación (viajan verbatim a client_data)
         preaprobacionEstado: preData.preaprobado ? 'SI' : 'NO',

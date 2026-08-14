@@ -80,6 +80,11 @@ async function getStates() {
 
 const norm = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
 
+// Aliados que NO pueden crear créditos por la API (sí consultar y actualizar). Su expediente
+// nace en la radicación de Skala, que es la que tiene monto, desembolso, cuota, comisión y
+// documentos. Para volver a permitirlo, basta con sacar la entidad de esta lista.
+const ENTIDADES_SIN_CREACION = ['La Hipotecaria'];
+
 // AISLAMIENTO POR LLAVE: una API key solo puede encontrar créditos dentro de su alcance
 // (su entidad, o los que ella misma creó). Nunca ve la cartera de otros aliados ni la de Skala.
 async function findCredit(solicitud: string | null | undefined, cedula: string | null | undefined, identity: Identity) {
@@ -182,6 +187,19 @@ Deno.serve(async (req) => {
     if (req.method === 'POST' && sub.length === 1) {
       if (!has('credits:create')) return fail(403, 'Falta el scope credits:create.');
       const body = await req.json().catch(() => ({}));
+
+      // ── La Hipotecaria NO crea créditos por API ────────────────────────────────
+      // Solo mandaba cédula, nombres, apellidos y pagaduría: el crédito nacía esqueleto,
+      // sin cuota, sin desembolso real, sin comisión, sin documentos y sin supervisor, y
+      // avanzaba por el flujo como si estuviera completo. El crédito lo crea la radicación
+      // en Skala, que sí tiene la simulación entera. Consultar y actualizar estados sigue
+      // habilitado: la API localiza el crédito por cédula o número de solicitud, no por el
+      // external_ref que se asignaba al crear.
+      const entidadPost = String(body.entidad || body.entity_name || '');
+      if (ENTIDADES_SIN_CREACION.some((e) => norm(e) === norm(entidadPost))) {
+        return fail(403, `Los créditos de ${entidadPost.trim()} se radican en Skala, no por la API. Esta llave sí puede consultar y actualizar estados (por cédula o número de solicitud).`);
+      }
+
       const cliente = (body.cliente && typeof body.cliente === 'object') ? body.cliente : {};
 
       // Alias de campos PRIMERO: el aliado puede mandar la cédula/contacto con otro nombre
