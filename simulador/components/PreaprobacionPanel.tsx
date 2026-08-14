@@ -50,7 +50,10 @@ interface Props {
   // Archivos ya cargados en el flujo de Skala (cédula, desprendible, resolución…).
   documentosSkala?: { tipo: string; file: File }[];
   // Oferta que YA calculó el simulador de Skala. Si viene, manda sobre la calculadora de la entidad.
-  oferta?: { monto: number; tasa: number; plazo: number; cuota?: number };
+  // `montoDesembolso` es lo que realmente recibe el cliente según el Excel de la entidad
+  // (capital menos costos). Antes no viajaba y el panel lo igualaba al monto, así que el
+  // crédito nacía desembolsando el 100% del capital.
+  oferta?: { monto: number; tasa: number; plazo: number; cuota?: number; montoDesembolso?: number };
   onChange: (d: PreData | null) => void;
 }
 
@@ -84,7 +87,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   const [verificando, setVerificando] = useState(false);
   const [error, setError] = useState('');
   const [viab, setViab] = useState<{ viable: boolean; mensaje: string; yaRegistrado?: boolean } | null>(null);
-  const [oferta, setOferta] = useState<{ monto: number; cuota: number; tasa: number; plazo: number } | null>(null);
+  const [oferta, setOferta] = useState<{ monto: number; cuota: number; tasa: number; plazo: number; montoDesembolso?: number } | null>(null);
   // Cuota mensual que se radica. Viene de la oferta cuando existe; si no, se sugiere por
   // amortización sobre monto/tasa/plazo confirmados. `cuotaTocada` frena el auto-relleno
   // en cuanto el asesor escribe la suya (la de la entidad manda sobre la sugerencia).
@@ -149,7 +152,14 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
     onChange({
       nombres: nombres.trim(), apellidos: apellidos.trim(), numeroDocumento: onlyDigits(documento), tipoDocumento: 'CEDULA',
       correo: correo.trim(), telefonoCelular: onlyDigits(celular), pagaduria,
-      monto: m, montoDesembolso: m, tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo,
+      monto: m,
+      // El desembolso sale de la simulación (Excel de la entidad). Solo se iguala al monto
+      // si la simulación no lo entregó, o si el asesor ajustó el monto a mano y el desembolso
+      // heredado quedaría por encima — nunca puede superar el capital del crédito.
+      montoDesembolso: oferta?.montoDesembolso && oferta.montoDesembolso > 0 && oferta.montoDesembolso <= m
+        ? oferta.montoDesembolso
+        : m,
+      tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo,
       cuota: Number(onlyDigits(cuotaStr)) || oferta?.cuota || 0,
       preaprobado: true, preaprobacionNumero: '', otpConfirmado: otpOk,
       ...(sinOtp ? { yaRegistrado: true } : {}),
@@ -304,7 +314,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   const cargarOfertaYPreData = async (p: ReturnType<typeof buildParams>): Promise<number> => {
     // Si el simulador de Skala ya calculó la oferta, esa manda: no se vuelve a pedir a la entidad.
     if (ofertaSkala && ofertaSkala.monto > 0) {
-      setOferta({ monto: ofertaSkala.monto, cuota: ofertaSkala.cuota || 0, tasa: ofertaSkala.tasa, plazo: ofertaSkala.plazo });
+      setOferta({ monto: ofertaSkala.monto, cuota: ofertaSkala.cuota || 0, tasa: ofertaSkala.tasa, plazo: ofertaSkala.plazo, montoDesembolso: ofertaSkala.montoDesembolso });
       setMontoStr(String(ofertaSkala.monto));
       setTasaStr(String(ofertaSkala.tasa || ''));
       setPlazoStr(String(ofertaSkala.plazo || plazo));

@@ -539,6 +539,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
               tasa: simulations[selectedSimIdx].rate,
               plazo: simulations[selectedSimIdx].term,
               cuota: simulations[selectedSimIdx].finalQuotaUsed,
+              // El desembolso que calculó la simulación (columna del Excel de la entidad).
+              // Sin esto el panel no lo recibía y lo igualaba al monto: el crédito nacía
+              // desembolsando el 100% del capital, ignorando descuentos y costos.
+              montoDesembolso: simulations[selectedSimIdx].disbursementOverride ?? undefined,
             } : undefined}
             onChange={setPreData}
           />
