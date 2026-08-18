@@ -193,6 +193,36 @@ const resolveSupervisorId = async (gestorId: string | null | undefined): Promise
     }
 };
 
+const ROLES_SUPERVISOR = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'];
+
+// Un supervisor SIN zona no ve absolutamente nada: la bandeja filtra por zona, y los asesores
+// se cuelgan de la zona de su supervisor. La zona se creaba solo al CAMBIAR el rol a
+// supervisor, así que quien nacía ya con el rol (o a quien se le reeditaba el perfil) se
+// quedaba sin ella para siempre y parecía que "no quedaba creado".
+const asegurarZonaSupervisor = async (profileId: string, fullName: string, cedula: string): Promise<void> => {
+    const { data: perfil } = await supabase.from('profiles').select('role, zone_id').eq('id', profileId).maybeSingle();
+    if (!perfil || !ROLES_SUPERVISOR.includes(perfil.role) || perfil.zone_id) return;
+
+    const partes = String(fullName || '').trim().split(/\s+/);
+    const ini1 = (partes[0] || '').charAt(0).toUpperCase();
+    const ini2 = (partes[partes.length > 1 ? 1 : 0] || '').charAt(0).toUpperCase();
+    const base = `${ini1}${ini2}-${String(cedula || '').slice(-3)}`.replace(/-$/, '');
+    // El nombre puede chocar con una zona existente (dos supervisores con iniciales y cédula
+    // parecidas): se prueban sufijos en vez de fallar y dejar al supervisor sin zona.
+    for (const nombre of [base, `${base}-2`, `${base}-3`, `${base}-${Date.now().toString().slice(-4)}`]) {
+        const { data: zona, error } = await supabase.from('zones').insert({ name: nombre, cities: [] }).select('id').single();
+        if (zona?.id) {
+            const { error: asignErr } = await supabase.from('profiles').update({ zone_id: zona.id }).eq('id', profileId);
+            if (asignErr) throw new Error(`Se creó la zona ${nombre} pero no se pudo asignar al supervisor: ${asignErr.message}`);
+            return;
+        }
+        if (error && !/duplicate|unique/i.test(error.message || '')) {
+            throw new Error(`No se pudo crear la zona del supervisor: ${error.message}`);
+        }
+    }
+    throw new Error('No se pudo crear la zona del supervisor (nombre en conflicto). Créala manualmente en Equipos y asígnasela.');
+};
+
 export const ProductionService = {
     hasPermission: (user: User | null, permission: string): boolean => {
         if (!user) return false;
@@ -1943,6 +1973,10 @@ export const ProductionService = {
         bank_details: { banco: userData.banco, tipoCuenta: userData.tipoCuenta, numeroCuenta: userData.numeroCuenta }
       }).select().single();
       if (error) throw error;
+      // Si nace como supervisor y no le eligieron zona, se le crea aquí: sin zona no ve nada.
+      if (ROLES_SUPERVISOR.includes(String(userData.role || '')) && !userData.zoneId) {
+          await asegurarZonaSupervisor(authData.user.id, userData.name || '', userData.cedula || '');
+      }
       return mapUserFromDB(data);
     },
 
@@ -2759,46 +2793,27 @@ export const ProductionService = {
             }
         }
 
-        // Si cambió a un rol de supervisor, crear zona automáticamente
+        // Asegurar la zona del supervisor. Antes se exigía que el rol CAMBIARA a supervisor,
+        // así que a quien ya tenía el rol sin zona (creado directamente como supervisor) no se
+        // le creaba nunca, por más veces que se guardara el perfil. Ahora basta con que sea
+        // supervisor y no tenga zona. Y si falla, se avisa: antes moría en la consola y el
+        // admin creía que había quedado bien.
         const newRole = d.role || previousRole;
-        const ROLES_SUPERVISOR = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'];
-        if (ROLES_SUPERVISOR.includes(newRole) && !ROLES_SUPERVISOR.includes(previousRole)) {
-            try {
-                const fullName = d.name || currentProfile?.full_name || '';
-                const cedula = d.cedula || currentProfile?.cedula || '';
-                const nameParts = fullName.trim().split(/\s+/);
-                const initial1 = (nameParts[0] || '').charAt(0).toUpperCase();
-                const initial2 = (nameParts[nameParts.length > 1 ? 1 : 0] || '').charAt(0).toUpperCase();
-                const last3 = cedula.slice(-3);
-                const zoneName = `${initial1}${initial2}-${last3}`;
+        if (ROLES_SUPERVISOR.includes(newRole)) {
+            await asegurarZonaSupervisor(id, d.name || currentProfile?.full_name || '', d.cedula || currentProfile?.cedula || '');
 
-                // Usar supabaseAdmin para evitar problemas de RLS
-                const db = supabaseAdmin || supabase;
-                const { data: zoneData, error: zoneError } = await db
-                    .from('zones')
-                    .insert({ name: zoneName, cities: [] })
-                    .select()
-                    .single();
-
-                if (zoneError) {
-                    console.error('Error creando zona:', zoneError);
-                } else if (zoneData?.id) {
-                    const { error: assignError } = await db.from('profiles').update({ zone_id: zoneData.id }).eq('id', id);
-                    if (assignError) console.error('Error asignando zona al supervisor:', assignError);
-                }
-            } catch (err) {
-                console.error('Error creando zona para nuevo supervisor:', err);
+            // Solo se avisa cuando el rol REALMENTE cambió; la zona se asegura siempre, pero
+            // guardar el perfil de un supervisor que ya lo era no es un "cambio de rol".
+            if (!ROLES_SUPERVISOR.includes(previousRole)) {
+                await supabase.from('notifications').insert({
+                    user_id: id,
+                    title: 'Cambio de rol',
+                    message: `Tu rol ha sido actualizado a SUPERVISOR ASIGNADO. Se te ha creado una zona automáticamente. Tus créditos en proceso siguen asignados a ti.`,
+                    type: 'info',
+                    is_read: false,
+                    credit_id: null,
+                }).then(undefined, () => {});
             }
-
-            // Notificar al usuario del cambio de rol
-            await supabase.from('notifications').insert({
-                user_id: id,
-                title: 'Cambio de rol',
-                message: `Tu rol ha sido actualizado a SUPERVISOR ASIGNADO. Se te ha creado una zona automáticamente. Tus créditos en proceso siguen asignados a ti.`,
-                type: 'info',
-                is_read: false,
-                credit_id: null,
-            }).then(undefined, () => {});
         } else if (d.role && d.role !== previousRole) {
             // Notificar cambio de rol para cualquier otro cambio
             await supabase.from('notifications').insert({
