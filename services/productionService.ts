@@ -1943,20 +1943,19 @@ export const ProductionService = {
     },
     
     createUser: async (userData: Partial<User>) => {
-      // 1. Crear usuario en auth de Supabase
+      // 1. Crear el usuario en Auth POR LA EDGE FUNCTION, nunca con supabase.auth.signUp():
+      //    signUp inicia sesión con la cuenta recién creada y REEMPLAZA la sesión del navegador
+      //    — el admin terminaba logueado como el usuario que acababa de crear. La Edge Function
+      //    usa la service_role del lado servidor y no toca la sesión de quien la llama.
       const password = (userData as any).password || 'Skala2026!';
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email!,
-        password: password,
-        options: {
-          data: {
-            full_name: userData.name,
-            role: userData.role || 'GESTOR'
-          }
-        }
+      const creado = await ProductionService._adminUsers({
+        action: 'create-auth-user',
+        email: userData.email,
+        password,
+        meta: { full_name: userData.name, role: userData.role || 'GESTOR' },
       });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('No se pudo crear el usuario de autenticación');
+      if (!creado?.userId) throw new Error('No se pudo crear el usuario de autenticación');
+      const authData = { user: { id: creado.userId } };
 
       // 2. Actualizar el perfil con los datos completos
       const { data, error } = await supabase.from('profiles').upsert({
