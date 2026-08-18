@@ -3547,10 +3547,30 @@ export const ProductionService = {
     },
     addEntity: async (e: any) => { await supabase.from('allied_entities').insert({ name: e.name, rates: e.rates }); },
     deleteEntity: async (id: string) => { await supabase.from('allied_entities').delete().eq('id', id); },
-    addZone: async (n: string) => { await supabase.from('zones').insert({ name: n, cities: [] }); },
-    deleteZone: async (id: string) => { await supabase.from('zones').delete().eq('id', id); },
-    updateZoneCities: async (id: string, c: string[]) => { await supabase.from('zones').update({ cities: c }).eq('id', id); },
-    renameZone: async (id: string, name: string) => { await supabase.from('zones').update({ name: name.trim() }).eq('id', id); },
+    // Estas cuatro descartaban el error del insert/update: si RLS o un nombre repetido lo
+    // rechazaban, la pantalla refrescaba como si nada y la zona simplemente no aparecía.
+    // El admin la creaba una y otra vez sin entender por qué "no quedaba".
+    addZone: async (n: string) => {
+        const nombre = String(n || '').trim();
+        if (!nombre) throw new Error('El nombre de la zona no puede estar vacío.');
+        const { error } = await supabase.from('zones').insert({ name: nombre, cities: [] });
+        if (error) {
+            if (/duplicate|unique/i.test(error.message || '')) throw new Error(`Ya existe una zona llamada "${nombre}".`);
+            throw new Error(`No se pudo crear la zona: ${error.message}`);
+        }
+    },
+    deleteZone: async (id: string) => {
+        const { error } = await supabase.from('zones').delete().eq('id', id);
+        if (error) throw new Error(`No se pudo eliminar la zona: ${error.message}`);
+    },
+    updateZoneCities: async (id: string, c: string[]) => {
+        const { error } = await supabase.from('zones').update({ cities: c }).eq('id', id);
+        if (error) throw new Error(`No se pudieron guardar las ciudades: ${error.message}`);
+    },
+    renameZone: async (id: string, name: string) => {
+        const { error } = await supabase.from('zones').update({ name: name.trim() }).eq('id', id);
+        if (error) throw new Error(`No se pudo renombrar la zona: ${error.message}`);
+    },
     bulkReassignZone: async (fromZoneId: string, toZoneId: string | null) => {
         const { error } = await supabase.from('profiles').update({ zone_id: toZoneId || null }).eq('zone_id', fromZoneId);
         if (error) throw error;

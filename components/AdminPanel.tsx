@@ -395,7 +395,7 @@ export const AdminPanel: React.FC<{ currentUser: User }> = ({ currentUser }) => 
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Map size={20} className="text-indigo-500"/> Supervisores</h3>
                         </div>
-                        <form onSubmit={async (e) => { e.preventDefault(); if(newZoneName) { await MockService.addZone(newZoneName); await refreshData(); setNewZoneName(''); } }} className="flex gap-2 mb-4">
+                        <form onSubmit={async (e) => { e.preventDefault(); if(newZoneName) { try { await MockService.addZone(newZoneName); await refreshData(); setNewZoneName(''); } catch (err: any) { alert(err?.message || 'No se pudo crear la zona.'); } } }} className="flex gap-2 mb-4">
                             <input type="text" placeholder="Nuevo Supervisor..." value={newZoneName} onChange={e => setNewZoneName(e.target.value)} className="flex-1 text-xs px-3 py-2 bg-slate-50 rounded-lg border-none focus:ring-1 focus:ring-indigo-500 text-slate-900"/>
                             <button type="submit" className="bg-indigo-500 text-white p-2 rounded-lg hover:bg-indigo-600"><Plus size={16}/></button>
                         </form>
