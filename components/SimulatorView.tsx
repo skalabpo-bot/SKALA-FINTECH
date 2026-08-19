@@ -297,7 +297,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         plazo: preData.plazo,
         tasa: preData.tasa,
         entidadAliada: loanConfig.entityName,
-        lineaCredito: lineaCredito || 'LIBRE INVERSION',
+        // NO se asume 'LIBRE INVERSION' por defecto: ese default silencioso hacía que toda
+        // compra de cartera en la que el asesor no tocara el selector quedara registrada como
+        // libre inversión (15 vs 1 en La Hipotecaria). Se exige elegirla antes de radicar.
+        lineaCredito,
         correo: preData.correo,
         telefonoCelular: preData.telefonoCelular,
         ...(selectedPagaduria || preData.pagaduria ? { pagaduria: selectedPagaduria || preData.pagaduria } : {}),
@@ -452,6 +455,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
       return;
     }
     if (!radicacionAbierta) { alert('La radicación está cerrada temporalmente.'); return; }
+    if (!lineaCredito?.trim()) {
+      alert('Selecciona la línea de crédito (Libre Inversión, Compra de Cartera…) antes de radicar.');
+      return;
+    }
     setIsCreating(true);
     try {
       const creditData = await buildCreditData();
