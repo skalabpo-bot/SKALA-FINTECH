@@ -3559,6 +3559,11 @@ export const ProductionService = {
         }
     },
     deleteZone: async (id: string) => {
+        // Primero soltar a la gente: al borrar la zona sin limpiar los perfiles quedaban
+        // apuntando a una zona inexistente. Un asesor así no resuelve supervisor (la búsqueda
+        // por zona no encuentra a nadie) y sus créditos nacen sin snapshot de supervisor.
+        const { error: limpiaErr } = await supabase.from('profiles').update({ zone_id: null }).eq('zone_id', id);
+        if (limpiaErr) throw new Error(`No se pudo liberar a los usuarios de la zona: ${limpiaErr.message}`);
         const { error } = await supabase.from('zones').delete().eq('id', id);
         if (error) throw new Error(`No se pudo eliminar la zona: ${error.message}`);
     },
