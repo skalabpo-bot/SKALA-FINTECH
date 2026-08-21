@@ -82,6 +82,50 @@ const matchCity = (raw: string): string => {
 
 const inputCls = 'w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-primary focus:bg-white transition-all placeholder:text-slate-300';
 
+
+// Vuelca las respuestas del formulario de La Hipotecaria a los campos del expediente de Skala.
+// Ese formulario pide dirección, barrio, ciudad, estado civil, género, fecha de nacimiento,
+// mesada y una referencia familiar completa, pero todo eso quedaba SOLO dentro de
+// `preaprobacionFormulario` (un bloque de solo lectura): el expediente mostraba esos campos
+// vacíos y parecía que los datos no se habían guardado.
+// Reglas: se busca por palabras clave del label (los textos de la entidad varían en mayúsculas
+// y redacción) y NUNCA se pisa un valor que Skala ya tenga — el del asesor manda.
+const camposDesdeFormularioLH = (respuestas: any[] | undefined, yaCapturado: Record<string, any>): Record<string, any> => {
+  if (!Array.isArray(respuestas) || respuestas.length === 0) return {};
+  const norm = (t: any) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  const esReferencia = (r: any) => norm(r?.seccion).includes('REFERENCIA');
+
+  // [campo del expediente, palabras que deben aparecer en el label, solo de la sección referencia]
+  const reglas: [string, string[], boolean][] = [
+    ['direccionCompleta', ['DIRECCION'], false],
+    ['barrio',            ['BARRIO'], false],
+    ['ciudadResidencia',  ['CIUDAD DE RESIDENCIA'], false],
+    ['estadoCivil',       ['ESTADO CIVIL'], false],
+    ['sexo',              ['GENERO'], false],
+    ['fechaNacimiento',   ['FECHA DE NACIMIENTO'], false],
+    ['ciudadNacimiento',  ['DEPARTAMENTO DE NACIMIENTO'], false],
+    ['fechaExpedicion',   ['FECHA EXPEDICION'], false],
+    ['mesadaPensional',   ['MESADA'], false],
+    ['ref1Nombre',        ['NOMBRE'], true],
+    ['ref1Parentesco',    ['RELACION'], true],
+    ['ref1Telefono',      ['TELEFONO'], true],
+    ['ref1Ciudad',        ['CIUDAD'], true],
+  ];
+
+  const out: Record<string, any> = {};
+  for (const [campo, claves, soloRef] of reglas) {
+    if (String(yaCapturado?.[campo] ?? '').trim()) continue; // lo del asesor manda
+    const hit = respuestas.find((r: any) => {
+      if (soloRef !== esReferencia(r)) return false;
+      const l = norm(r?.label);
+      return claves.every(k => l.includes(k));
+    });
+    const val = String(hit?.valor ?? '').trim();
+    if (val) out[campo] = val;
+  }
+  return out;
+};
+
 export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCreditCreated, onFillForm, onCancel, creditTypeId, assignedGestorId }) => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.PAYSTUB_UPLOAD);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -323,6 +367,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         // Respuestas del formulario de la entidad (referencias, dirección, ingresos…): quedan en
         // Skala con su sección y etiqueta legible, igual que se llenaron allá.
         ...(preData.respuestasLH?.length ? { preaprobacionFormulario: preData.respuestasLH } : {}),
+        // Los datos que pidió la entidad tras el OTP se vuelcan a los campos del expediente.
+        ...camposDesdeFormularioLH(preData.respuestasLH, { ...(preData as any), pagaduria: selectedPagaduria || preData.pagaduria }),
         // La comisión de La Hipotecaria es FIJA (3%): la aplica createCredit. No viene del corretaje.
         ...(documents.length > 0 ? { documents } : {}),
         ...(observaciones.trim() ? { observaciones: observaciones.trim() } : {}),
