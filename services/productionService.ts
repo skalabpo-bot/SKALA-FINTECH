@@ -4121,14 +4121,22 @@ export const ProductionService = {
         ]);
         const zoneMap: Record<string, string> = {};
         (zones || []).forEach((z: any) => { if (z?.id) zoneMap[z.id] = z.name || ''; });
-        const headers = ['Nombre', 'Email', 'Cédula', 'Rol', 'Teléfono', 'Ciudad', 'Supervisor', 'Estado', 'Fecha Creación'];
-        const rows = users.map((u: any) => [
-            u.name || '', u.email || '', u.cedula || '', u.role || '',
-            u.phone || '', u.city || '',
-            zoneMap[u.zoneId || ''] || '',
-            u.status || '',
-            u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CO') : '',
-        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+        // Los datos bancarios van en el CSV: es el archivo con el que se pagan las comisiones,
+        // y sin banco/tipo/número había que buscarlos uno por uno en cada perfil.
+        // El número de cuenta se fuerza a texto (prefijo ') para que Excel no lo convierta a
+        // notación científica ni le coma los ceros de la izquierda.
+        const headers = ['Nombre', 'Email', 'Cédula', 'Rol', 'Teléfono', 'Ciudad', 'Supervisor', 'Estado', 'Banco', 'Tipo de Cuenta', 'Número de Cuenta', 'Fecha Creación'];
+        const rows = users.map((u: any) => {
+            const cuenta = String(u.numeroCuenta || '').trim();
+            return [
+                u.name || '', u.email || '', u.cedula || '', u.role || '',
+                u.phone || '', u.city || '',
+                zoneMap[u.zoneId || ''] || '',
+                u.status || '',
+                u.banco || '', u.tipoCuenta || '', cuenta ? `'${cuenta}` : '',
+                u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CO') : '',
+            ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+        });
         return '\uFEFF' + [headers.join(','), ...rows].join('\n');
     },
 
