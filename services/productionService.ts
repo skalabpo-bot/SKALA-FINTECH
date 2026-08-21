@@ -2777,18 +2777,35 @@ export const ProductionService = {
         // cuenta— no había forma de corregirlo desde el admin. Solo se escribe si vienen,
         // para no borrar los existentes en una edición que no los toca.
         if (Array.isArray(d.documents)) updateData.registration_docs = d.documents;
-        if (d.role) updateData.role = d.role;
-        if (d.email) updateData.email = d.email;
-        if (d.status) updateData.status = d.status;
-        if (d.zoneId !== undefined) updateData.zone_id = d.zoneId || null;
-        if (d.permissions !== undefined) updateData.permissions = d.permissions || [];
-        if (d.assignedEntities !== undefined) updateData.assigned_entities = d.assignedEntities || [];
+
+        // Rol, estado, permisos, correo de login, zona y entidades SOLO los cambia un admin.
+        // La pantalla de "Mi Perfil" reenvía el usuario completo (incluido su rol), y la tabla
+        // `profiles` no tiene RLS activo: sin este control, cualquiera podía ascenderse a ADMIN
+        // manipulando la petición. El usuario sigue editando lo suyo: nombre, teléfono, ciudad,
+        // datos bancarios y documentos.
+        let editorEsAdmin = false;
+        try {
+            const { data: sesion } = await supabase.auth.getUser();
+            if (sesion?.user?.id) {
+                const { data: quien } = await supabase.from('profiles').select('role').eq('id', sesion.user.id).maybeSingle();
+                editorEsAdmin = quien?.role === 'ADMIN';
+            }
+        } catch { editorEsAdmin = false; } // ante la duda, no se permite elevar nada
+
+        if (editorEsAdmin) {
+            if (d.role) updateData.role = d.role;
+            if (d.email) updateData.email = d.email;
+            if (d.status) updateData.status = d.status;
+            if (d.zoneId !== undefined) updateData.zone_id = d.zoneId || null;
+            if (d.permissions !== undefined) updateData.permissions = d.permissions || [];
+            if (d.assignedEntities !== undefined) updateData.assigned_entities = d.assignedEntities || [];
+        }
         const { error } = await supabase.from('profiles').update(updateData).eq('id', id);
         if (error) throw error;
 
         // Sincronizar el correo de LOGIN (auth.users) si cambió. Sin esto, el usuario seguiría
         // entrando con el correo viejo aunque el perfil muestre el nuevo.
-        if (d.email && String(d.email).trim().toLowerCase() !== String(currentProfile?.email || '').toLowerCase()) {
+        if (editorEsAdmin && d.email && String(d.email).trim().toLowerCase() !== String(currentProfile?.email || '').toLowerCase()) {
             try {
                 await ProductionService._adminUsers({ action: 'update-email', userId: id, email: String(d.email).trim() });
             } catch (emailErr: any) {

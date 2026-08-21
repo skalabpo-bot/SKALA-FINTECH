@@ -31,6 +31,30 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // Los documentos solo se podían subir al registrarse. Si el asesor cambiaba de cuenta o su
+  // certificación bancaria quedó mal, dependía de que un admin se los cambiara. Aquí puede
+  // resubirlos él mismo; se reemplaza únicamente el tipo que suba.
+  const [subiendoDoc, setSubiendoDoc] = useState<string | null>(null);
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, tipo: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendoDoc(tipo);
+    try {
+      const url = await MockService.uploadImage(file);
+      setFormData(prev => ({
+        ...prev,
+        documents: [...((prev.documents || []) as any[]).filter((d: any) => d.type !== tipo), { name: file.name, url, type: tipo }],
+      }) as any);
+      setMsg('Documento cargado. Recuerda guardar los cambios.');
+      setTimeout(() => setMsg(''), 4000);
+    } catch {
+      alert('No se pudo subir el documento. Intenta de nuevo.');
+    } finally {
+      setSubiendoDoc(null);
+      e.target.value = '';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsBusy(true);
@@ -74,6 +98,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
                 <div><label className="text-xs font-bold text-slate-500 uppercase">Banco</label><select name="banco" value={formData.banco} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"><option value="">Seleccione</option>{banks.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">Tipo Cuenta</label><select name="tipoCuenta" value={formData.tipoCuenta} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"><option value="AHORROS">AHORROS</option><option value="CORRIENTE">CORRIENTE</option></select></div>
                 <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase">Número Cuenta</label><input name="numeroCuenta" value={formData.numeroCuenta} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"/></div>
+
+                <div className="md:col-span-2"><h4 className="font-bold text-slate-800 border-b pb-2 mt-4 mb-2 flex items-center gap-2"><CreditCard size={16}/> Mis Documentos</h4></div>
+                <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {['CEDULA_FRONTAL', 'CEDULA_POSTERIOR', 'RUT', 'CERTIFICACION_BANCARIA'].map(tipo => {
+                    const doc = ((formData.documents || []) as any[]).find((d: any) => d.type === tipo);
+                    return (
+                      <div key={tipo} className={`p-3 border-2 border-dashed rounded-2xl flex flex-col items-center gap-1 text-center ${doc ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
+                        <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{tipo.replace(/_/g, ' ')}</span>
+                        {doc
+                          ? <a href={doc.url} target="_blank" rel="noreferrer" className="text-[10px] text-primary underline truncate max-w-full">ver actual</a>
+                          : <span className="text-[10px] text-amber-600 font-bold">falta</span>}
+                        <label className="cursor-pointer text-[10px] font-black px-3 py-1 rounded-lg bg-white border border-slate-200 hover:bg-primary hover:text-white transition-colors">
+                          {subiendoDoc === tipo ? 'SUBIENDO…' : (doc ? 'CAMBIAR' : 'SUBIR')}
+                          <input type="file" className="hidden" accept="image/*,application/pdf" onChange={e => handleDocUpload(e, tipo)} disabled={subiendoDoc !== null} />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
 
                 <div className="md:col-span-2 pt-4">
                     {msg && <p className="text-green-600 font-bold text-center mb-2">{msg}</p>}
