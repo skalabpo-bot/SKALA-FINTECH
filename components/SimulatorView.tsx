@@ -112,6 +112,15 @@ const camposDesdeFormularioLH = (respuestas: any[] | undefined, yaCapturado: Rec
     ['ref1Ciudad',        ['CIUDAD'], true],
   ];
 
+  // Forma de desembolso: la entidad la responde como texto libre ("Desembolso en cheque",
+  // "Desembolso en cuenta bancaria"...). Skala solo maneja CUENTA_BANCARIA o EFECTIVO, así que
+  // se traduce lo reconocible y, si no se entiende, NO se inventa: se deja lo que ya hubiera.
+  const presentacion = respuestas.find((r: any) => norm(r?.label).includes('PRESENTACION'));
+  const pv = norm(presentacion?.valor);
+  const formaDesembolso = pv.includes('CUENTA') || pv.includes('BANCARIA') || pv.includes('TRANSFERENCIA')
+    ? 'CUENTA_BANCARIA'
+    : (pv.includes('CHEQUE') || pv.includes('EFECTIVO') ? 'EFECTIVO' : '');
+
   const out: Record<string, any> = {};
   for (const [campo, claves, soloRef] of reglas) {
     if (String(yaCapturado?.[campo] ?? '').trim()) continue; // lo del asesor manda
@@ -123,6 +132,7 @@ const camposDesdeFormularioLH = (respuestas: any[] | undefined, yaCapturado: Rec
     const val = String(hit?.valor ?? '').trim();
     if (val) out[campo] = val;
   }
+  if (formaDesembolso) out.tipoDesembolso = formaDesembolso;
   return out;
 };
 
@@ -352,6 +362,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         // repartir), pero solo se guardaba `cuotaUtilizar`: el detalle mostraba la cuota
         // disponible "Sin definir" aunque el dato existiera.
         ...(preData.cuota ? { cuotaUtilizar: preData.cuota, cuotaDisponible: preData.cuota } : {}),
+        // Se fijaba 'EFECTIVO' siempre, aunque el cliente hubiera pedido cheque o cuenta
+        // bancaria en el formulario de la entidad. El mapeo de abajo lo corrige cuando la
+        // respuesta es reconocible; este valor queda solo como respaldo.
         tipoDesembolso: 'EFECTIVO',
         // Campos de preaprobación (viajan verbatim a client_data)
         preaprobacionEstado: preData.preaprobado ? 'SI' : 'NO',
