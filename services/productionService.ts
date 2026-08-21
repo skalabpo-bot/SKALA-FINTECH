@@ -1969,7 +1969,9 @@ export const ProductionService = {
         city: userData.city,
         zone_id: userData.zoneId || null,
         permissions: userData.permissions || [],
-        bank_details: { banco: userData.banco, tipoCuenta: userData.tipoCuenta, numeroCuenta: userData.numeroCuenta }
+        bank_details: { banco: userData.banco, tipoCuenta: userData.tipoCuenta, numeroCuenta: userData.numeroCuenta },
+        // Mismo caso que al editar: si el admin adjunta documentos al crear, se guardan.
+        registration_docs: Array.isArray((userData as any).documents) ? (userData as any).documents : [],
       }).select().single();
       if (error) throw error;
       // Si nace como supervisor y no le eligieron zona, se le crea aquí: sin zona no ve nada.
@@ -2770,6 +2772,11 @@ export const ProductionService = {
             city: d.city,
             bank_details: { banco: d.banco, tipoCuenta: d.tipoCuenta, numeroCuenta: d.numeroCuenta }
         };
+        // Documentos del usuario (cédula, RUT, certificación bancaria). Al editar no se
+        // guardaban: si alguien se registraba sin subir la certificación —o cambiaba de
+        // cuenta— no había forma de corregirlo desde el admin. Solo se escribe si vienen,
+        // para no borrar los existentes en una edición que no los toca.
+        if (Array.isArray(d.documents)) updateData.registration_docs = d.documents;
         if (d.role) updateData.role = d.role;
         if (d.email) updateData.email = d.email;
         if (d.status) updateData.status = d.status;

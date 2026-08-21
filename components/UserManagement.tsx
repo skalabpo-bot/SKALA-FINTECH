@@ -143,6 +143,27 @@ export const UserManagement = () => {
 
   // Form State
   const [formData, setFormData] = useState<Partial<User>>({});
+  // Documentos del usuario (cédula, RUT, certificación bancaria). Se podían subir al
+  // registrarse pero no cambiar después: quien quedó sin certificación bancaria, o cambió de
+  // cuenta, no tenía forma de corregirlo. Se reemplaza por tipo, conservando los demás.
+  const [subiendoDoc, setSubiendoDoc] = useState<string | null>(null);
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, tipo: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendoDoc(tipo);
+    try {
+      const url = await MockService.uploadImage(file);
+      setFormData(prev => ({
+        ...prev,
+        documents: [...((prev.documents || []) as any[]).filter((d: any) => d.type !== tipo), { name: file.name, url, type: tipo }],
+      }) as any);
+    } catch {
+      window.dispatchEvent(new CustomEvent('app-alert', { detail: { message: 'No se pudo subir el documento.', type: 'error' } }));
+    } finally {
+      setSubiendoDoc(null);
+      e.target.value = '';
+    }
+  };
   // Permission Editor State
   const [customPermissions, setCustomPermissions] = useState<Permission[]>([]);
   const [useRoleDefaults, setUseRoleDefaults] = useState(true);
@@ -669,6 +690,23 @@ export const UserManagement = () => {
                         <InputGroup label="Banco" name="banco" value={formData.banco} onChange={handleInputChange} options={banks} />
                         <InputGroup label="Tipo Cuenta" name="tipoCuenta" value={formData.tipoCuenta} onChange={handleInputChange} options={['AHORROS', 'CORRIENTE']} />
                         <InputGroup label="No. Cuenta" name="numeroCuenta" value={formData.numeroCuenta} onChange={handleInputChange} />
+
+                        <div className="col-span-1 md:col-span-2 border-t border-slate-100 pt-4 mt-2 font-bold text-slate-700 flex items-center gap-2"><CreditCard size={16}/> Documentos</div>
+                        <div className="col-span-1 md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {['CEDULA_FRONTAL', 'CEDULA_POSTERIOR', 'RUT', 'CERTIFICACION_BANCARIA'].map(tipo => {
+                            const doc = ((formData.documents || []) as any[]).find((d: any) => d.type === tipo);
+                            return (
+                              <div key={tipo} className={`p-3 border-2 border-dashed rounded-2xl flex flex-col items-center gap-1 text-center ${doc ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
+                                <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{tipo.replace(/_/g, ' ')}</span>
+                                {doc && <a href={doc.url} target="_blank" rel="noreferrer" className="text-[10px] text-primary underline truncate max-w-full">ver actual</a>}
+                                <label className="cursor-pointer text-[10px] font-black px-3 py-1 rounded-lg bg-white border border-slate-200 hover:bg-primary hover:text-white transition-colors">
+                                  {subiendoDoc === tipo ? 'SUBIENDO…' : (doc ? 'CAMBIAR' : 'SUBIR')}
+                                  <input type="file" className="hidden" accept="image/*,application/pdf" onChange={e => handleDocUpload(e, tipo)} disabled={subiendoDoc !== null} />
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
 
                         <div className="col-span-1 md:col-span-2 flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
                             <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors">Cancelar</button>
