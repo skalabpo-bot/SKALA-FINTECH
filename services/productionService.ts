@@ -743,15 +743,26 @@ export const ProductionService = {
             error = retry.error;
         }
 
-        // Retry silencioso con supabaseAdmin si RLS bloqueó (token expirado / auth.uid() null intermitente)
-        if (error && supabaseAdmin && (error.code === '42501' || /row-level security|policy/i.test(error.message || ''))) {
-            console.warn('createCredit RLS bloqueó, retry silencioso con admin:', error.message);
-            const retry = await supabaseAdmin.from('credits').insert(insertPayload).select().single();
-            if (!retry.error) {
-                data = retry.data;
-                error = null;
-            } else {
-                console.error('createCredit retry con admin también falló:', retry.error);
+        // RLS rechaza el insert cuando el token de la sesión venció y auth.uid() llega nulo.
+        // Antes se tapaba reinsertando con la service_role DESDE EL NAVEGADOR; esa llave se
+        // retiró (quedaba expuesta en el bundle público), así que al desaparecer el parche el
+        // asesor empezó a ver el error crudo "new row violates row-level security policy".
+        // Lo correcto no es saltarse RLS: es RENOVAR la sesión y reintentar, así el crédito
+        // entra a nombre del usuario real. Si ni así, se le dice qué hacer en su idioma.
+        if (error && (error.code === '42501' || /row-level security|policy/i.test(error.message || ''))) {
+            console.warn('createCredit: RLS bloqueó, renovando sesión y reintentando:', error.message);
+            try {
+                const { data: renovada } = await supabase.auth.refreshSession();
+                if (renovada?.session?.access_token) {
+                    const retry = await supabase.from('credits').insert(insertPayload).select().single();
+                    data = retry.data;
+                    error = retry.error;
+                }
+            } catch (e: any) {
+                console.error('createCredit: no se pudo renovar la sesión:', e?.message || e);
+            }
+            if (error) {
+                throw new Error('Tu sesión expiró y no se pudo renovar. Cierra sesión, vuelve a entrar e intenta radicar de nuevo. No se creó ningún crédito, así que no habrá duplicado.');
             }
         }
 
