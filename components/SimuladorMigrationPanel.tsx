@@ -7,7 +7,21 @@ import { Database, CheckCircle, AlertCircle, Loader2, ArrowRight } from 'lucide-
 // Cliente del DB VIEJO del simulador (solo para leer)
 const OLD_URL = 'https://qyjrqbodkxwcxoxvqdqz.supabase.co';
 const OLD_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5anJxYm9ka3h3Y3hveHZxZHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3MjUyODMsImV4cCI6MjA4NjMwMTI4M30.-1_j-6vEMM8iJAtJVarVIGP9-ATdoGYITM5VoHSVXuI';
-const oldSupabase = createClient(OLD_URL, OLD_KEY);
+// OJO: NO crear el cliente al importar el módulo. AdminPanel importa este panel y App importa
+// AdminPanel, así que se instanciaba en CADA carga y para TODOS los usuarios un segundo cliente
+// de autenticación —con su propio auto-refresh y sus listeners— apuntando a un proyecto que ya
+// ni siquiera resuelve por DNS. supabase-js advierte de "Multiple GoTrueClient instances in the
+// same browser context" justamente por el comportamiento impredecible de sesión que provoca.
+// Se crea solo cuando alguien ejecuta la migración, y sin tocar el almacenamiento de sesión.
+let _oldSupabase: ReturnType<typeof createClient> | null = null;
+const getOldSupabase = () => {
+  if (!_oldSupabase) {
+    _oldSupabase = createClient(OLD_URL, OLD_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+  }
+  return _oldSupabase;
+};
 
 interface MigrationLog {
   type: 'info' | 'success' | 'error' | 'warning';
@@ -31,7 +45,7 @@ export const SimuladorMigrationPanel: React.FC = () => {
     try {
       // ── 1. Leer entidades del DB viejo ──────────────────────────────
       addLog('info', 'Leyendo entidades del DB del simulador...');
-      const { data: oldEntities, error: eErr } = await oldSupabase
+      const { data: oldEntities, error: eErr } = await getOldSupabase()
         .from('financial_entities')
         .select('*')
         .order('name');
@@ -73,7 +87,7 @@ export const SimuladorMigrationPanel: React.FC = () => {
 
       // ── 2. Leer factores FPM del DB viejo ───────────────────────────
       addLog('info', 'Leyendo factores FPM del DB del simulador...');
-      const { data: oldFpms, error: fErr } = await oldSupabase
+      const { data: oldFpms, error: fErr } = await getOldSupabase()
         .from('fpm_factors')
         .select('*');
 
