@@ -28,7 +28,7 @@ import { cleanupAllSubscriptions } from './services/realtimeService';
 import { SupervisorRegistration } from './components/SupervisorRegistration';
 import { PoliticaDatos } from './components/PoliticaDatos';
 import { AutorizacionCentrales } from './components/AutorizacionCentrales';
-import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound, Star, Upload } from 'lucide-react';
+import { Search, UserPlus, Loader2, X, Camera, Paperclip, FileText, AlertCircle, CheckCircle2, Clock, KeyRound, Star, Upload, MessageSquare } from 'lucide-react';
 import { BulkStatusUpdate } from './components/BulkStatusUpdate';
 
 const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -343,22 +343,26 @@ const App = () => {
     const [assigning, setAssigning] = useState(false);
     const canAssign = MockService.hasPermission(currentUser, 'VIEW_ALL_CREDITS');
     const [creditReadMap, setCreditReadMap] = useState<Record<string, Date>>({});
+    // Último comentario de OTRA persona por crédito → pill "Comentario nuevo" en la bandeja.
+    const [comentariosMap, setComentariosMap] = useState<Record<string, Date>>({});
     const [showBulkModal, setShowBulkModal] = useState(false);
     const canBulkStatus = MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS');
 
     const fetchData = async () => {
-        const [cr, st, ent, ct, readMap] = await Promise.all([
+        const [cr, st, ent, ct, readMap, comentMap] = await Promise.all([
             MockService.getCredits(currentUser!),
             MockService.getStates(),
             MockService.getEntities(),
             MockService.getCreditTypes ? MockService.getCreditTypes() : Promise.resolve([]),
-            MockService.getCreditReadMap(currentUser!.id)
+            MockService.getCreditReadMap(currentUser!.id),
+            MockService.getNuevosComentariosMap(currentUser!.id)
         ]);
         setCredits(cr);
         setStates(st);
         setEntities(ent);
         setCreditTypes(ct || []);
         setCreditReadMap(readMap);
+        setComentariosMap(comentMap);
     };
 
     useEffect(() => {
@@ -541,6 +545,10 @@ const App = () => {
               {visible.map(c => {
                 const lastRead = creditReadMap[c.id];
                 const hasUnread = !!lastRead && new Date(c.updatedAt) > lastRead;
+                // Comentario nuevo = alguien más escribió después de mi última lectura. Si nunca
+                // he abierto el crédito, cualquier comentario ajeno cuenta como nuevo.
+                const ultimoComentarioAjeno = comentariosMap[c.id];
+                const comentarioNuevo = !!ultimoComentarioAjeno && (!lastRead || ultimoComentarioAjeno > lastRead);
                 const ctype = creditTypes.find((t: any) => t.id === c.creditTypeId);
                 const pillClass = ctype ? (TYPE_PILL_COLOR[ctype.color] || TYPE_PILL_COLOR.orange) : TYPE_PILL_COLOR.orange;
                 const isDirect = ctype && ctype.requires_entity === false;
@@ -550,6 +558,14 @@ const App = () => {
                         <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-2xl font-black text-primary">{c.solicitudNumber || 'N/A'}</p>
                             {hasUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-300 flex-shrink-0" title="Actividad no leída"/>}
+                            {comentarioNuevo && (
+                                <span
+                                    className="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 animate-pulse"
+                                    title={`Comentario nuevo en el chat operativo (${ultimoComentarioAjeno.toLocaleString('es-CO')})`}
+                                >
+                                    <MessageSquare size={9} /> Comentario nuevo
+                                </span>
+                            )}
                             {ctype && (
                                 <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${pillClass}`} title={ctype.name}>
                                     {ctype.name.replace('Crédito ', '').replace('crédito ', '')}

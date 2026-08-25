@@ -4174,6 +4174,30 @@ export const ProductionService = {
         } catch { /* tabla puede no existir aún */ }
     },
 
+    // Último comentario escrito por OTRA persona en cada crédito. Cruzado con la marca de
+    // lectura del usuario, permite avisar en la bandeja "Comentario nuevo" sin abrir el crédito.
+    // Es bidireccional por naturaleza: al asesor le avisa de lo que escribe el equipo de Skala,
+    // y al equipo de lo que escribe el asesor — cada uno ve lo que NO escribió él.
+    // Se acota a 90 días y a los más recientes: la tabla tiene >15.000 comentarios y la bandeja
+    // no puede cargarlos todos en cada navegación.
+    getNuevosComentariosMap: async (userId: string): Promise<Record<string, Date>> => {
+        try {
+            const desde = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+            const { data } = await supabase
+                .from('comments')
+                .select('credit_id, created_at')
+                .neq('user_id', userId)
+                .eq('is_system', false)
+                .gt('created_at', desde)
+                .order('created_at', { ascending: false })
+                .limit(3000);
+            const map: Record<string, Date> = {};
+            // Vienen ordenados de más nuevo a más viejo: el primero de cada crédito es el último.
+            (data || []).forEach((c: any) => { if (c.credit_id && !map[c.credit_id]) map[c.credit_id] = new Date(c.created_at); });
+            return map;
+        } catch { return {}; }
+    },
+
     getCreditReadMap: async (userId: string): Promise<Record<string, Date>> => {
         try {
             const { data } = await supabase.from('credit_reads').select('credit_id, last_read_at').eq('user_id', userId);
