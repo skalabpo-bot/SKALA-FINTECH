@@ -589,6 +589,30 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
   // debajo de las cards (si ya simula), alimentado con la oferta que calculó Skala.
   const panelPreaprobacion = !analysisResult || !loanConfig ? null : (
         <div className="space-y-6">
+          {/* Línea de crédito. El selector de abajo vive en un bloque `&& !loanConfig.preaprobacion`,
+              así que en La Hipotecaria NUNCA se renderizaba. Al exigirla para radicar, el asesor
+              quedaba bloqueado: recibía el aviso de elegirla sin tener dónde. Aquí se muestra. */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Línea de crédito</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {creditLines.map(line => (
+                <button
+                  key={line}
+                  type="button"
+                  onClick={() => setLineaCredito(lineaCredito === line ? '' : line)}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition-all text-left ${
+                    lineaCredito === line
+                      ? 'bg-primary border-primary text-white shadow-md'
+                      : 'bg-slate-50 border-slate-100 text-slate-600 hover:border-primary/40 hover:text-primary'
+                  }`}
+                >
+                  {line}
+                </button>
+              ))}
+            </div>
+            {!lineaCredito && <p className="text-[10px] text-amber-600 font-bold mt-2">Elige una línea para poder radicar.</p>}
+          </div>
+
           <PreaprobacionPanel
             entityName={loanConfig.entityName}
             prefill={{
