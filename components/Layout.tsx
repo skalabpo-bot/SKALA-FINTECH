@@ -54,7 +54,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
     // Solo mostrar banner en móvil (no en desktop)
     const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)
       || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
-    const dismissed = sessionStorage.getItem('install-banner-dismissed');
+    // localStorage, no sessionStorage: con sessionStorage la decisión se perdía al cerrar la
+    // pestaña y el banner volvía en cada visita, dando la sensación de que no se podía quitar.
+    const dismissed = localStorage.getItem('install-banner-dismissed') || sessionStorage.getItem('install-banner-dismissed');
     if (!dismissed && isMobile) {
       setShowInstallBanner(true);
     }
@@ -62,7 +64,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
-      setShowInstallBanner(true);
+      // El navegador puede volver a ofrecer la instalación en cualquier momento. Si el usuario
+      // ya cerró el banner, NO se vuelve a abrir: antes esto lo reabría e ignoraba el descarte.
+      if (!localStorage.getItem('install-banner-dismissed')) setShowInstallBanner(true);
     };
 
     const handleAppInstalled = () => {
@@ -94,7 +98,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
 
   const dismissInstallBanner = () => {
     setShowInstallBanner(false);
-    sessionStorage.setItem('install-banner-dismissed', 'true');
+    localStorage.setItem('install-banner-dismissed', 'true');
   };
 
   useEffect(() => {
@@ -257,7 +261,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
             ) : null}
             <button
               onClick={dismissInstallBanner}
-              className="shrink-0 text-white/60 hover:text-white transition-colors p-1"
+              aria-label="Cerrar"
+              title="Cerrar"
+              className="shrink-0 text-white bg-white/20 hover:bg-white/35 active:bg-white/45 transition-colors rounded-full p-2 ml-1"
             >
               <X size={18} />
             </button>
