@@ -4175,6 +4175,25 @@ export const ProductionService = {
         return '\uFEFF' + [headers.join(','), ...rows].join('\n');
     },
 
+    // --- HISTORIAL DE PERFIL (quién cambió qué) ---
+    // Lo escribe un disparador en la BD, no la app: así queda constancia venga el cambio de
+    // donde venga. RLS limita la lectura al ADMIN y al dueño del perfil.
+    getProfileHistory: async (profileId: string): Promise<{ cuando: Date; autor: string; detalle: string }[]> => {
+        try {
+            const { data } = await supabase
+                .from('profile_history')
+                .select('created_at, changed_by_name, description')
+                .eq('profile_id', profileId)
+                .order('created_at', { ascending: false })
+                .limit(50);
+            return (data || []).map((h: any) => ({
+                cuando: new Date(h.created_at),
+                autor: h.changed_by_name || 'Desconocido',
+                detalle: h.description || '',
+            }));
+        } catch { return []; }
+    },
+
     // --- LECTURAS DE CRÉDITO (read receipts) ---
     markCreditAsRead: async (creditId: string, userId: string, userName: string) => {
         try {

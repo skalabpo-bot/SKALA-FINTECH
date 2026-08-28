@@ -16,6 +16,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
   const [zones, setZones] = useState<Zone[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [banks, setBanks] = useState<string[]>([]);
+  // Quién ha tocado MI perfil. RLS solo deja ver el propio (y al admin, el de todos), así que
+  // el asesor puede detectar por su cuenta si alguien le cambió la cuenta de cobro.
+  const [historial, setHistorial] = useState<{ cuando: Date; autor: string; detalle: string }[]>([]);
+  useEffect(() => {
+    MockService.getProfileHistory(currentUser.id).then(setHistorial).catch(() => setHistorial([]));
+  }, [currentUser.id]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -116,6 +122,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
                       </div>
                     );
                   })}
+                </div>
+
+                <div className="md:col-span-2"><h4 className="font-bold text-slate-800 border-b pb-2 mt-4 mb-2 flex items-center gap-2"><CreditCard size={16}/> Historial de cambios</h4></div>
+                <div className="md:col-span-2">
+                  {historial.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">Sin cambios registrados en tus datos sensibles (bancarios, documentos, rol o correo).</p>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {historial.map((h, i) => (
+                        <div key={i} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                          <div className="flex justify-between items-baseline gap-2">
+                            <span className="text-xs font-black text-slate-700">{h.autor}</span>
+                            <span className="text-[10px] text-slate-400 font-bold shrink-0">{h.cuando.toLocaleString('es-CO')}</span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{h.detalle}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="md:col-span-2 pt-4">

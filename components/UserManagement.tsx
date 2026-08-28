@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, UserDocument, Zone, Permission, ALL_PERMISSIONS, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
-import { Users, Plus, Pencil, Trash, X, Eye, CreditCard, MapPin, Shield, CheckCircle, XCircle, FileText, Download, Upload, CheckSquare, Square, Paperclip, Loader2, Search, KeyRound } from 'lucide-react';
+import { Users, Plus, Pencil, Trash, X, Eye, CreditCard, MapPin, Shield, CheckCircle, XCircle, FileText, Download, Upload, CheckSquare, Square, Paperclip, Loader2, Search, KeyRound, Clock } from 'lucide-react';
 
 const InputGroup = ({ label, name, value, onChange, type = "text", options }: any) => (
     <div>
@@ -43,6 +43,13 @@ export const UserManagement = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [viewDetailUser, setViewDetailUser] = useState<User | null>(null);
+  // Historial de cambios del perfil: lo escribe un disparador en la BD y RLS solo lo deja ver
+  // al ADMIN y al dueño, así que basta con pedirlo — no hay que filtrar por rol aquí.
+  const [historialPerfil, setHistorialPerfil] = useState<{ cuando: Date; autor: string; detalle: string }[]>([]);
+  useEffect(() => {
+    if (!viewDetailUser?.id) { setHistorialPerfil([]); return; }
+    MockService.getProfileHistory(viewDetailUser.id).then(setHistorialPerfil).catch(() => setHistorialPerfil([]));
+  }, [viewDetailUser?.id]);
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'PENDING' | 'IMPORT_EXPORT'>('ACTIVE');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -765,6 +772,26 @@ export const UserManagement = () => {
                                     <div className="col-span-2"><span className="font-bold text-slate-500">Número:</span> {viewDetailUser.numeroCuenta || '-'}</div>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* HISTORIAL DE CAMBIOS DEL PERFIL */}
+                        <div className="col-span-2 pt-4 border-t border-slate-100">
+                            <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><Clock size={16}/> Historial de cambios</h4>
+                            {historialPerfil.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic">Sin cambios registrados. Solo se anotan datos sensibles: bancarios, rol, estado, correo, cédula, zona, permisos y documentos.</p>
+                            ) : (
+                                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                    {historialPerfil.map((h, i) => (
+                                        <div key={i} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                                            <div className="flex justify-between items-baseline gap-2">
+                                                <span className="text-xs font-black text-slate-700">{h.autor}</span>
+                                                <span className="text-[10px] text-slate-400 font-bold shrink-0">{h.cuando.toLocaleString('es-CO')}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{h.detalle}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* DOCUMENTOS CARGADOS */}
