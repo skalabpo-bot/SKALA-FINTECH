@@ -5,6 +5,7 @@ import {
   PaymentMethod, ClientData, FinancialEntity, FPMEntry
 } from '../types';
 import { getAllEntities } from '../services/entityService';
+import { supabase } from '../services/supabaseClient';
 import { loadFPMData, getTermsForEntity } from '../services/fpmService';
 import { getSmmlv, getRadicacionAbierta } from '../services/settingsService';
 import { simulateLoan } from '../services/calculatorService';
@@ -125,7 +126,22 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // EXCEPCIÓN: en localhost mostramos también las de preaprobación externa aunque estén apagadas,
           // para probarlas en local sin exponerlas en producción (la BD de entidades es compartida).
           const isLocalhost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
-          const activeEntities = entities.filter(e => e.isActive !== false || (isLocalhost && e.preaprobacionExterna));
+          // Entidades restringidas por rol (las de capacitación): solo las ven los roles listados
+          // en `rolesPermitidos`. Sin esa lista —el caso de todas las entidades reales— no cambia
+          // nada. El rol se resuelve contra la sesión, no se recibe por props, para no tener que
+          // tocar la firma del proveedor ni sus usos.
+          let rolActual = '';
+          try {
+            const { data: sesion } = await supabase.auth.getUser();
+            if (sesion?.user?.id) {
+              const { data: perfil } = await supabase.from('profiles').select('role').eq('id', sesion.user.id).maybeSingle();
+              rolActual = perfil?.role || '';
+            }
+          } catch { /* sin sesión: se aplica el filtro igual, así no se filtran las de capacitación */ }
+          const visiblePorRol = (e: any) => !Array.isArray(e.rolesPermitidos) || e.rolesPermitidos.length === 0 || e.rolesPermitidos.includes(rolActual);
+          const activeEntities = entities
+            .filter(e => e.isActive !== false || (isLocalhost && e.preaprobacionExterna))
+            .filter(visiblePorRol);
           dispatch({ type: 'SET_CACHED_DATA', entities: activeEntities, fpmTable, smmlv, radicacionAbierta });
         }
       } catch (e) {

@@ -11,7 +11,10 @@ export enum UserRole {
   SUPERVISOR_ASIGNADO = 'SUPERVISOR_ASIGNADO',
   // Supervisor interno (telemercadeo): opera igual que SUPERVISOR_ASIGNADO pero NO ve comisiones.
   SUPERVISOR_TMK = 'SUPERVISOR_TMK',
-  ANALISTA_ENTIDAD = 'ANALISTA_ENTIDAD'
+  ANALISTA_ENTIDAD = 'ANALISTA_ENTIDAD',
+  // Capacitador: opera como un asesor para poder recorrer el flujo completo en una
+  // capacitación, y es uno de los dos roles (con ADMIN) que ve las entidades de práctica.
+  CAPACITADOR = 'CAPACITADOR'
 }
 
 // Roles de asesor comercial (crean créditos a su nombre). GESTOR se muestra como "Asesor".

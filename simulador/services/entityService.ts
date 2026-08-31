@@ -26,6 +26,8 @@ const mapFromDb = (row: any): FinancialEntity => ({
   isActive: row.is_active ?? true,
   preaprobacionExterna: row.preaprobacion_externa ?? false,
   preaprobacionUrl: row.preaprobacion_url ?? undefined,
+  // Roles que pueden usar la entidad. Vacío/ausente = todos (las entidades normales).
+  rolesPermitidos: Array.isArray(row.roles_permitidos) ? row.roles_permitidos : undefined,
 });
 
 export const getAllEntities = async (): Promise<FinancialEntity[]> => {

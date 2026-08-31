@@ -29,6 +29,7 @@ export interface FinancialEntity {
   isActive?: boolean; // Si false, la entidad está APAGADA: no aparece al asesor ni permite radicar (default true)
   preaprobacionExterna?: boolean; // Si true, usa el flujo de preaprobación externa (La Hipotecaria) en vez del motor de cálculo
   preaprobacionUrl?: string; // URL del portal de preaprobación (referencia + conector backend)
+  rolesPermitidos?: string[]; // Si viene, SOLO estos roles ven y usan la entidad (capacitación)
 }
 
 export interface FPMEntry {

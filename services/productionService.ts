@@ -41,6 +41,9 @@ export const INITIAL_STATES: CreditState[] = [
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     [UserRole.ADMIN]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'EDIT_CREDIT_INFO', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'MANAGE_USERS', 'MANAGE_NEWS', 'CONFIGURE_SYSTEM', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_AUTOMATIONS', 'ASSIGN_ANALYST_MANUAL', 'MARK_COMMISSION_PAID', 'MANAGE_WITHDRAWALS', 'VIEW_ACADEMIA', 'MANAGE_ACADEMIA'],
     [UserRole.GESTOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'REQUEST_WITHDRAWAL', 'VIEW_ACADEMIA'],
+    // Capacitador: mismos permisos operativos que un asesor para poder recorrer el flujo
+    // completo delante de los alumnos, pero SIN billetera ni retiros (no cobra comisiones).
+    [UserRole.CAPACITADOR]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_ACADEMIA'],
     // Asesor interno (TMK): opera como GESTOR pero sin billetera/retiros — no ve comisiones.
     [UserRole.ASESOR_TMK]: ['VIEW_DASHBOARD', 'CREATE_CREDIT', 'VIEW_OWN_CREDITS', 'ADD_COMMENT', 'VIEW_REPORTS', 'EXPORT_DATA', 'VIEW_ACADEMIA'],
     [UserRole.ASISTENTE_OPERATIVO]: ['VIEW_DASHBOARD', 'VIEW_ALL_CREDITS', 'VIEW_ASSIGNED_CREDITS', 'CHANGE_CREDIT_STATUS', 'ADD_COMMENT', 'EDIT_CREDIT_INFO', 'VIEW_ACADEMIA'],
@@ -194,6 +197,14 @@ const resolveSupervisorId = async (gestorId: string | null | undefined): Promise
 };
 
 const ROLES_SUPERVISOR = ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'];
+
+// ¿Este rol puede usar esta entidad? `roles_permitidos` en NULL (lo normal) = todos, así que
+// las entidades existentes no cambian de comportamiento. Solo las de capacitación lo llevan.
+export const entidadVisibleParaRol = (entidad: any, role?: string | null): boolean => {
+    const permitidos = entidad?.roles_permitidos;
+    if (!Array.isArray(permitidos) || permitidos.length === 0) return true;
+    return permitidos.includes(String(role || ''));
+};
 
 // Un supervisor SIN zona no ve absolutamente nada: la bandeja filtra por zona, y los asesores
 // se cuelgan de la zona de su supervisor. La zona se creaba solo al CAMBIAR el rol a
@@ -678,13 +689,19 @@ export const ProductionService = {
         if (entidadAliada) {
             const { data: entRow } = await supabase
                 .from('financial_entities')
-                .select('is_active, preaprobacion_externa')
+                .select('is_active, preaprobacion_externa, roles_permitidos')
                 .eq('name', entidadAliada)
                 .maybeSingle();
             const isLocalhost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
             const permitidoEnLocal = isLocalhost && entRow?.preaprobacion_externa === true;
             if (entRow && entRow.is_active === false && !permitidoEnLocal) {
                 throw new Error(`La entidad ${entidadAliada} está apagada actualmente y no permite radicar. Selecciona otra entidad o pide a un administrador que la reactive.`);
+            }
+            // Entidades restringidas por rol (las de capacitación): se valida también aquí y no
+            // solo ocultándolas en la pantalla, para que no se pueda radicar con ellas desde
+            // fuera de la app. Sin `roles_permitidos` no cambia nada para el resto.
+            if (entRow && !entidadVisibleParaRol(entRow, currentUser.role)) {
+                throw new Error(`La entidad ${entidadAliada} es de uso restringido y tu rol no puede radicar con ella.`);
             }
         }
 
