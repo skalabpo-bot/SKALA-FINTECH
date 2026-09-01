@@ -157,7 +157,9 @@ export interface User {
   avatar: string;
   phone?: string;
   cedula?: string;
-  status: 'ACTIVE' | 'PENDING' | 'REJECTED';
+  // INACTIVO = ya no trabaja aquí. Se usa en vez de BORRAR: conserva su historial,
+  // comentarios y la autoría de los créditos que trabajó, pero no puede ingresar.
+  status: 'ACTIVE' | 'PENDING' | 'REJECTED' | 'INACTIVO';
   documents?: UserDocument[];
   permissions?: Permission[];
   zoneId?: string;

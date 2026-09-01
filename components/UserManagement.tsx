@@ -615,6 +615,21 @@ export const UserManagement = () => {
                         
                         <div className="col-span-1 md:col-span-2">
                             <InputGroup label="Rol" name="role" value={formData.role} onChange={handleInputChange} options={roleNames.map(n => ({ value: n, label: etiquetaRol(n) }))} />
+                            {/* Estado. No existia forma de dar de baja a alguien: la unica salida
+                                era ELIMINAR, que con usuarios que tienen historial rompe cosas.
+                                INACTIVO conserva todo su rastro y solo le quita el acceso. */}
+                            {editingUser && (
+                              <InputGroup
+                                label="Estado"
+                                name="status"
+                                value={formData.status}
+                                onChange={handleInputChange}
+                                options={[
+                                  { value: 'ACTIVE', label: 'Activo' },
+                                  { value: 'INACTIVO', label: 'Inactivo — ya no ingresa (conserva su historial)' },
+                                ]}
+                              />
+                            )}
                             
                             <div className="mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <div className="flex justify-between items-center mb-3">

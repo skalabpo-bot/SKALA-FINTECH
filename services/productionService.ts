@@ -247,7 +247,7 @@ export const ProductionService = {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: password || '' });
         if (error || !data.user) throw new Error("Credenciales inválidas.");
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-        if (!profile || profile.status === 'REJECTED') throw new Error("Acceso denegado.");
+        if (!profile || profile.status === 'REJECTED' || profile.status === 'INACTIVO') throw new Error("Acceso denegado.");
         if (profile.status === 'PENDING') return null;
         const user = mapUserFromDB(profile);
         // Cargar permisos y displayName del rol desde la tabla roles
