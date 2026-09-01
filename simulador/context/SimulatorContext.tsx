@@ -132,9 +132,14 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // tocar la firma del proveedor ni sus usos.
           let rolActual = '';
           try {
-            const { data: sesion } = await supabase.auth.getUser();
-            if (sesion?.user?.id) {
-              const { data: perfil } = await supabase.from('profiles').select('role').eq('id', sesion.user.id).maybeSingle();
+            // getSession() lee del almacenamiento local y responde al instante; getUser() hace
+            // viaje al servidor. Se intenta primero el rápido para no perder la carrera contra
+            // la restauración de sesión de la app: si llegábamos antes, el rol salía vacío y las
+            // entidades restringidas se ocultaban incluso al admin.
+            let uid = (await supabase.auth.getSession()).data.session?.user?.id;
+            if (!uid) uid = (await supabase.auth.getUser()).data?.user?.id;
+            if (uid) {
+              const { data: perfil } = await supabase.from('profiles').select('role').eq('id', uid).maybeSingle();
               rolActual = perfil?.role || '';
             }
           } catch { /* sin sesión: se aplica el filtro igual, así no se filtran las de capacitación */ }
