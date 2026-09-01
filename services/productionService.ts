@@ -1325,7 +1325,11 @@ export const ProductionService = {
                 }
                 q = q.or(filtro);
             } else if (user.role === 'ANALISTA') {
-                q = q.or(`assigned_gestor_id.eq.${user.id},assigned_analyst_id.eq.${user.id}`);
+                // Los analistas atienden TODAS las operaciones, no una cartera propia: antes cada
+                // uno solo veía lo que tenía asignado, así que si un analista se iba (o se le
+                // vaciaba la asignación) sus expedientes desaparecían de la vista de los demás.
+                // La asignación queda como marca de quién lo trabaja, no como filtro de acceso.
+                return q;
             } else if (user.role === 'ANALISTA_ENTIDAD') {
                 q = q.eq('assigned_entity_analyst_id', user.id);
             } else {
