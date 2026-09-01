@@ -80,7 +80,7 @@ export const OnboardingForm: React.FC<OnboardingProps> = ({ currentUser, onSucce
 
   useEffect(() => {
     const load = async () => {
-      const [ent, pag, pt, cit, bnk, lines] = await Promise.all([MockService.getEntities(), MockService.getPagadurias(), MockService.getPensionTypes(), MockService.getCities(), MockService.getBanks(), MockService.getCreditLines()]);
+      const [ent, pag, pt, cit, bnk, lines] = await Promise.all([MockService.getEntities(currentUser), MockService.getPagadurias(), MockService.getPensionTypes(), MockService.getCities(), MockService.getBanks(), MockService.getCreditLines()]);
       setEntities(ent); setPagadurias(pag); setPensionTypes(pt); setCities(cit); setBanks(bnk);
       setCreditLines(lines);
     };

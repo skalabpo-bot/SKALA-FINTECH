@@ -84,7 +84,7 @@ export const CreditDetail: React.FC<{ creditId: string, currentUser: User, onBac
     MockService.getCreditReadsByCredit(creditId).then((reads: { userId: string; userName: string; lastReadAt: Date }[]) => setCreditReads(reads));
 
     const loadExtras = async () => {
-      const [ent, pag, cit, bnk, st, analystList, entityAnalystList, lines] = await Promise.all([MockService.getEntities(), MockService.getPagadurias(), MockService.getCities(), MockService.getBanks(), MockService.getStates(), MockService.getAnalysts ? MockService.getAnalysts() : Promise.resolve([]), ProductionService.getEntityAnalysts ? ProductionService.getEntityAnalysts() : Promise.resolve([]), MockService.getCreditLines()]);
+      const [ent, pag, cit, bnk, st, analystList, entityAnalystList, lines] = await Promise.all([MockService.getEntities(currentUser), MockService.getPagadurias(), MockService.getCities(), MockService.getBanks(), MockService.getStates(), MockService.getAnalysts ? MockService.getAnalysts() : Promise.resolve([]), ProductionService.getEntityAnalysts ? ProductionService.getEntityAnalysts() : Promise.resolve([]), MockService.getCreditLines()]);
       setEntities(ent);
       setPagadurias(pag);
       setCities(cit);

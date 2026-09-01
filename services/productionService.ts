@@ -2009,12 +2009,19 @@ export const ProductionService = {
       return mapUserFromDB(data);
     },
 
-    getEntities: async () => {
-        if (_entitiesCache && Date.now() - _entitiesCache.ts < CACHE_TTL_MS) return _entitiesCache.data;
-        const { data } = await supabase.from('allied_entities').select('*');
-        const result = data || [];
-        _entitiesCache = { data: result, ts: Date.now() };
-        return result;
+    // `user` opcional para filtrar las entidades restringidas por rol (las de capacitación).
+    // Sin usuario devuelve todas: hay pantallas de administración que las necesitan completas.
+    getEntities: async (user?: User | null) => {
+        let result: any[];
+        if (_entitiesCache && Date.now() - _entitiesCache.ts < CACHE_TTL_MS) {
+            result = _entitiesCache.data;
+        } else {
+            const { data } = await supabase.from('allied_entities').select('*');
+            result = data || [];
+            _entitiesCache = { data: result, ts: Date.now() };
+        }
+        if (!user) return result;
+        return result.filter((e: any) => entidadVisibleParaRol(e, user.role));
     },
 
     getCreditTypes: async () => {
