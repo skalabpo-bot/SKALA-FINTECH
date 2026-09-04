@@ -7,6 +7,9 @@ import { Download, Filter, CheckSquare, Square, Loader2, Calendar, FileText, Sma
 const ALL_AVAILABLE_COLUMNS = [
     'fecha_creacion', 'solicitud_numero',
     'gestor_nombre', 'gestor_id', 'gestor_telefono', 'gestor_cedula', 'gestor_email', 'gestor_ciudad',
+    // Cuenta de cobro DEL ASESOR: para el reporte de pago de comisiones. Ojo, no confundir con
+    // banco_cliente/tipo_cuenta/numero_cuenta de más abajo, que son los del CLIENTE.
+    'gestor_banco', 'gestor_tipo_cuenta', 'gestor_numero_cuenta',
     'supervisor_nombre', 'supervisor_telefono', 'supervisor_email', 'zona',
     'cliente_nombre', 'cliente_documento', 'tipo_documento', 'cliente_celular', 'correo_cliente',
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',

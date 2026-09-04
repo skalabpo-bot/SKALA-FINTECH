@@ -3723,12 +3723,15 @@ export const ProductionService = {
         let gestorSupervisorMap: Record<string, string> = {};
         let gestorSupervisorPhoneMap: Record<string, string> = {};
         let gestorSupervisorEmailMap: Record<string, string> = {};
+        // Datos bancarios DEL ASESOR (no del cliente): son los de la cuenta donde se le paga la
+        // comisión. Permiten sacar el reporte de pagos sin cruzar a mano con la ficha de cada uno.
+        let gestorBancoMap: Record<string, { banco: string; tipoCuenta: string; numeroCuenta: string }> = {};
 
-        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono','supervisor_email'].includes(c));
+        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono','supervisor_email','gestor_banco','gestor_tipo_cuenta','gestor_numero_cuenta'].includes(c));
         if (needsGestorData) {
             const gestorIds = [...new Set(credits.map(c => c.assignedGestorId).filter(Boolean))];
             if (gestorIds.length > 0) {
-                const { data: gestorProfiles } = await supabase.from('profiles').select('id, zone_id, cedula, email, city').in('id', gestorIds);
+                const { data: gestorProfiles } = await supabase.from('profiles').select('id, zone_id, cedula, email, city, bank_details').in('id', gestorIds);
                 if (gestorProfiles) {
                     // Obtener todos los supervisores de una vez
                     const zoneIds = [...new Set(gestorProfiles.map((gp: any) => gp.zone_id).filter(Boolean))];
@@ -3745,6 +3748,11 @@ export const ProductionService = {
                         gestorCedulaMap[gp.id] = gp.cedula || '';
                         gestorEmailMap[gp.id] = gp.email || '';
                         gestorCityMap[gp.id] = gp.city || '';
+                        gestorBancoMap[gp.id] = {
+                            banco: gp.bank_details?.banco || '',
+                            tipoCuenta: gp.bank_details?.tipoCuenta || '',
+                            numeroCuenta: gp.bank_details?.numeroCuenta || '',
+                        };
                         if (gp.zone_id) {
                             const zone = zones.find((z: any) => z.id === gp.zone_id);
                             gestorZoneMap[gp.id] = zone?.name || '';
@@ -3836,6 +3844,11 @@ export const ProductionService = {
             'zona': c => gestorZoneMap[c.assignedGestorId] || 'Sin zona',
             'gestor_cedula': c => gestorCedulaMap[c.assignedGestorId] || '',
             'gestor_email': c => gestorEmailMap[c.assignedGestorId] || '',
+            'gestor_banco': c => gestorBancoMap[c.assignedGestorId]?.banco || '',
+            'gestor_tipo_cuenta': c => gestorBancoMap[c.assignedGestorId]?.tipoCuenta || '',
+            // Prefijo ' para que Excel lo trate como texto: sin eso convierte las cuentas largas
+            // a notación científica y se come los ceros de la izquierda.
+            'gestor_numero_cuenta': c => { const n = String(gestorBancoMap[c.assignedGestorId]?.numeroCuenta || '').trim(); return n ? `'${n}` : ''; },
             'gestor_ciudad': c => gestorCityMap[c.assignedGestorId] || '',
             'supervisor_nombre': c => gestorSupervisorMap[c.assignedGestorId] || '',
             'supervisor_telefono': c => gestorSupervisorPhoneMap[c.assignedGestorId] || '',
