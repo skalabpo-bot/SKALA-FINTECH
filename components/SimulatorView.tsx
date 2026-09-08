@@ -373,6 +373,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
         preaprobacionTasaAprobada: preData.tasa,
         preaprobacionPlazoAprobado: preData.plazo,
         otpVerified: preData.otpConfirmado === true, // OTP del correo validado antes de radicar
+        // De dónde salió el monto (oferta de Skala, calculadora de la entidad, o a mano).
+        // Sin esto era imposible auditar por qué un crédito quedó con el monto que quedó.
+        ...(preData.origenMonto ? { origenMonto: preData.origenMonto } : {}),
         preaprobacionOtpConfirmado: preData.otpConfirmado ? 'SI' : 'NO',
         // Traza del modo recuperación: expediente completado sobre un crédito que la API del
         // aliado ya había creado, con el OTP vencido (no reenviable).
@@ -517,6 +520,39 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({ currentUser, onCre
     if (!lineaCredito?.trim()) {
       alert('Selecciona la línea de crédito (Libre Inversión, Compra de Cartera…) antes de radicar.');
       return;
+    }
+    // El monto y la cuota son campos independientes: cambiar uno NO recalcula el otro, y nada
+    // comprobaba que fueran coherentes. Así se radicó el #2294 por $34,4M con una cuota de
+    // $442.000 — el doble de lo que esa cuota soporta. Se compara el monto contra la cuota que
+    // realmente implica (sistema francés) y se exige confirmación explícita si no cuadran.
+    const mChk = Number(preData.monto) || 0;
+    const qChk = Number(preData.cuota) || 0;
+    const nChk = Number(preData.plazo) || 0;
+    const iChk = (Number(preData.tasa) || 0) / 100;
+    if (mChk > 0 && qChk > 0 && nChk > 0 && iChk > 0) {
+      const cuotaQueImplica = Math.round(mChk * iChk / (1 - Math.pow(1 + iChk, -nChk)));
+      const desvio = Math.abs(cuotaQueImplica - qChk) / qChk;
+      if (desvio > 0.15) {
+        const fmtCop = (v: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
+        const ok = window.confirm(
+          `El monto y la cuota no coinciden.
+
+` +
+          `Monto: ${fmtCop(mChk)} a ${nChk} meses al ${preData.tasa}%
+` +
+          `Eso exige una cuota de ${fmtCop(cuotaQueImplica)} al mes.
+` +
+          `Pero vas a radicar con una cuota de ${fmtCop(qChk)}.
+
+` +
+          `Si el desprendible solo soporta ${fmtCop(qChk)}, el monto debería ser cercano a ` +
+          `${fmtCop(Math.round(qChk * (1 - Math.pow(1 + iChk, -nChk)) / iChk))}.
+
+` +
+          `¿Radicar así de todos modos?`
+        );
+        if (!ok) return;
+      }
     }
     setIsCreating(true);
     try {

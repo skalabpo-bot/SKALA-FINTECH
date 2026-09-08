@@ -13,6 +13,7 @@ export interface PreData {
   nombres: string; apellidos: string; numeroDocumento: string; tipoDocumento: string;
   correo: string; telefonoCelular: string; pagaduria: string;
   monto: number; montoDesembolso: number; tasa: number; plazo: number; cuota: number;
+  origenMonto?: string; // de donde salio el monto (auditoria)
   preaprobado: boolean; preaprobacionNumero: string;
   otpConfirmado: boolean; // el OTP del correo fue validado contra La Hipotecaria
   // Modo RECUPERACIÓN: el cliente ya está registrado allá, la sesión del OTP venció (no lo
@@ -108,6 +109,10 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
   // Monto/tasa/plazo EDITABLES para radicar (prellenados con la oferta; el gestor puede ajustar
   // al valor que La Hipotecaria aprobó). Si la oferta no calcula (ej. sin ingresos), se ingresan a mano.
   const [montoStr, setMontoStr] = useState('');
+  // De donde salio el monto que se va a radicar. Hasta ahora no quedaba registro: el mismo
+  // campo lo llena la oferta de Skala, la calculadora de la entidad o el asesor a mano, y
+  // despues era imposible saber cual fue. Viaja al credito para poder auditarlo.
+  const [origenMonto, setOrigenMonto] = useState<'simulador-skala' | 'calculadora-entidad' | 'formulario-entidad' | 'credito-previo' | 'manual' | ''>('');
   const [tasaStr, setTasaStr] = useState('');
   const [plazoStr, setPlazoStr] = useState('');
 
@@ -161,7 +166,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
         : m,
       tasa: Number(tasaStr) || 0, plazo: Number(plazoStr) || plazo,
       cuota: Number(onlyDigits(cuotaStr)) || oferta?.cuota || 0,
-      preaprobado: true, preaprobacionNumero: '', otpConfirmado: otpOk,
+      preaprobado: true, preaprobacionNumero: '', otpConfirmado: otpOk, origenMonto,
       ...(sinOtp ? { yaRegistrado: true } : {}),
       respuestasLH: formEnviado ? [...(respuestasPrevias || []), ...entradasSeccion()] : undefined,
       // La comisión NO sale del corretaje (son cosas distintas): La Hipotecaria paga 3% fijo,
@@ -282,7 +287,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       if (!r.ok) { setFormMsg(r.mensaje || 'La Hipotecaria rechazó el formulario.'); return; }
       // El monto solicitado del formulario manda para la radicación.
       const solicitado = Object.entries(valores).find(([k]) => /valor_solicitud|monto/i.test(k))?.[1];
-      if (solicitado && onlyDigits(solicitado)) setMontoStr(onlyDigits(solicitado));
+      if (solicitado && onlyDigits(solicitado)) { setMontoStr(onlyDigits(solicitado)); setOrigenMonto('formulario-entidad'); }
       const plazoForm = Object.entries(valores).find(([k]) => /plazo/i.test(k))?.[1];
       if (plazoForm && onlyDigits(plazoForm)) setPlazoStr(onlyDigits(plazoForm));
 
@@ -315,7 +320,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
     // Si el simulador de Skala ya calculó la oferta, esa manda: no se vuelve a pedir a la entidad.
     if (ofertaSkala && ofertaSkala.monto > 0) {
       setOferta({ monto: ofertaSkala.monto, cuota: ofertaSkala.cuota || 0, tasa: ofertaSkala.tasa, plazo: ofertaSkala.plazo, montoDesembolso: ofertaSkala.montoDesembolso });
-      setMontoStr(String(ofertaSkala.monto));
+      setMontoStr(String(ofertaSkala.monto)); setOrigenMonto('simulador-skala');
       setTasaStr(String(ofertaSkala.tasa || ''));
       setPlazoStr(String(ofertaSkala.plazo || plazo));
       return ofertaSkala.monto;
@@ -324,7 +329,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
       const c = await MockService.lahipotecariaCalcular({ ingresos: p.ingresos, gastos: p.gastos, pagaduria, plazo });
       if (c.aprobado && c.monto > 0) {
         setOferta({ monto: c.monto, cuota: c.cuota, tasa: c.tasa, plazo: c.plazo });
-        setMontoStr(String(c.monto)); setTasaStr(String(c.tasa || '')); setPlazoStr(String(c.plazo || plazo));
+        setMontoStr(String(c.monto)); setOrigenMonto('calculadora-entidad'); setTasaStr(String(c.tasa || '')); setPlazoStr(String(c.plazo || plazo));
         return c.monto;
       }
     } catch { /* la oferta es opcional; el OTP ya se confirmó */ }
@@ -362,7 +367,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
             const cred = await MockService.buscarCreditoLHPropio(onlyDigits(documento));
             if (cred) {
               setSinOtp(true);
-              if (Number(cred.amount) > 0) setMontoStr(String(Math.round(Number(cred.amount))));
+              if (Number(cred.amount) > 0) { setMontoStr(String(Math.round(Number(cred.amount)))); setOrigenMonto('credito-previo'); }
               if (Number(cred.interest_rate) > 0) setTasaStr(String(cred.interest_rate));
               if (Number(cred.term) > 0) setPlazoStr(String(cred.term));
               const cuotaPrev = Number(cred.client_data?.cuotaUtilizar || cred.client_data?.cuota || 0);
@@ -596,7 +601,7 @@ export const PreaprobacionPanel: React.FC<Props> = ({ entityName, prefill, docum
             </div>
             <div>
               <label className={labelCls}>Monto {Number(montoStr) > 0 && <span className="text-teal-600 normal-case font-bold">{fmt(Number(montoStr))}</span>}</label>
-              <input value={montoStr} onChange={e => setMontoStr(onlyDigits(e.target.value))} placeholder="5000000" className={`${inputCls} ${Number(montoStr) > 0 ? '' : 'border-amber-300'}`} inputMode="numeric" />
+              <input value={montoStr} onChange={e => { setMontoStr(onlyDigits(e.target.value)); setOrigenMonto('manual'); }} placeholder="5000000" className={`${inputCls} ${Number(montoStr) > 0 ? '' : 'border-amber-300'}`} inputMode="numeric" />
             </div>
             <div><label className={labelCls}>Tasa (%)</label><input value={tasaStr} onChange={e => setTasaStr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.85" className={inputCls} inputMode="decimal" /></div>
             <div><label className={labelCls}>Plazo (meses)</label><input value={plazoStr} onChange={e => setPlazoStr(onlyDigits(e.target.value))} placeholder="72" className={inputCls} inputMode="numeric" /></div>
