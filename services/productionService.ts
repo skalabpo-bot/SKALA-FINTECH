@@ -2124,10 +2124,18 @@ export const ProductionService = {
 
     // Config de cálculo de una entidad (null si no tiene → usa factores).
     getEntityCalcConfig: async (entityName: string): Promise<EntityCalcConfig | null> => {
-        const { data, error } = await supabase.from('entity_calc_config')
-            .select('*').eq('entity_name', entityName).eq('is_active', true).maybeSingle();
-        if (error || !data) return null;
-        return ProductionService._mapCalcConfig(data);
+        // La búsqueda era por coincidencia EXACTA y eso rompía el motor de cálculo por un
+        // espacio: los créditos usan "COLTEFINANCIERA " (con espacio final) y la configuración
+        // quedó como "COLTEFINANCIERA" al guardarla desde el admin, que la recorta. Resultado:
+        // no encontraba la config, no había motor, y la academia no mostraba nada.
+        // Ahora se comparan los nombres normalizados (sin espacios sobrantes, sin tildes y sin
+        // distinguir mayúsculas). Son 4 o 5 configuraciones: traerlas todas no cuesta nada.
+        const norm = (t: string) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+        const objetivo = norm(entityName);
+        const { data, error } = await supabase.from('entity_calc_config').select('*').eq('is_active', true);
+        if (error || !data?.length) return null;
+        const fila = data.find((c: any) => norm(c.entity_name) === objetivo);
+        return fila ? ProductionService._mapCalcConfig(fila) : null;
     },
 
     getAllEntityCalcConfigs: async (): Promise<EntityCalcConfig[]> => {
