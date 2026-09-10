@@ -10,7 +10,9 @@ const ALL_AVAILABLE_COLUMNS = [
     // Cuenta de cobro DEL ASESOR: para el reporte de pago de comisiones. Ojo, no confundir con
     // banco_cliente/tipo_cuenta/numero_cuenta de más abajo, que son los del CLIENTE.
     'gestor_banco', 'gestor_tipo_cuenta', 'gestor_numero_cuenta',
-    'supervisor_nombre', 'supervisor_telefono', 'supervisor_email', 'zona',
+    'supervisor_nombre', 'supervisor_cedula', 'supervisor_telefono', 'supervisor_email',
+    // Cuenta de pago DEL SUPERVISOR (misma persona que supervisor_nombre en cada fila).
+    'supervisor_banco', 'supervisor_tipo_cuenta', 'supervisor_numero_cuenta', 'zona',
     'cliente_nombre', 'cliente_documento', 'tipo_documento', 'cliente_celular', 'correo_cliente',
     'direccion_cliente', 'ciudad_residencia', 'barrio', 'estado_civil', 'sexo', 'fecha_nacimiento',
     'pagaduria', 'clave_pagaduria',
@@ -31,7 +33,11 @@ export const ReportsPanel: React.FC<{ currentUser: User }> = ({ currentUser }) =
     // El asesor TMK (interno) no ve comisiones: ni columnas ni filtro de comisión.
     const verComisiones = puedeVerComisiones(currentUser);
     const esColComision = (c: string) => /^comision_|^fecha_pago_comision$/.test(c);
-    const availableColumns = verComisiones ? ALL_AVAILABLE_COLUMNS : ALL_AVAILABLE_COLUMNS.filter(c => !esColComision(c));
+    // Las cuentas bancarias de asesores y supervisores solo las ve quien liquida comisiones
+    // (admin y analista). El servicio también las quita al exportar; esto evita ofrecerlas.
+    const verCuentas = MockService.hasPermission(currentUser, 'MARK_COMMISSION_PAID');
+    const esColCuenta = (c: string) => /^(gestor|supervisor)_(banco|tipo_cuenta|numero_cuenta)$/.test(c);
+    const availableColumns = ALL_AVAILABLE_COLUMNS.filter(c => (verComisiones || !esColComision(c)) && (verCuentas || !esColCuenta(c)));
     const [filters, setFilters] = useState<ReportFilters>({ startDate: '', endDate: '', statusId: '', entity: '', comisionPagada: '' });
     const [selectedColumns, setSelectedColumns] = useState<string[]>(verComisiones ? DEFAULT_COLUMNS : DEFAULT_COLUMNS.filter(c => !esColComision(c)));
     const [showColumnSelector, setShowColumnSelector] = useState(false);

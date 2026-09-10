@@ -3713,6 +3713,13 @@ export const ProductionService = {
         if (!puedeVerComisiones(currentUser)) {
             selectedColumns = selectedColumns.filter(c => !/^comision_|^fecha_pago_comision$/.test(c));
         }
+        // Cuentas bancarias de asesores y supervisores: solo para quien liquida comisiones
+        // (MARK_COMMISSION_PAID: admin y analista). Los reportes también los exportan asesores y
+        // supervisores, y un supervisor podía bajar los números de cuenta de todo su equipo.
+        // Se quitan aquí aunque vengan seleccionadas: ocultar la casilla en pantalla no basta.
+        if (!ProductionService.hasPermission(currentUser, 'MARK_COMMISSION_PAID')) {
+            selectedColumns = selectedColumns.filter(c => !/^(gestor|supervisor)_(banco|tipo_cuenta|numero_cuenta)$/.test(c));
+        }
         const [credits, states, zones] = await Promise.all([
             ProductionService.getCredits(currentUser, 'full'),
             ProductionService.getStates(),
@@ -3742,8 +3749,14 @@ export const ProductionService = {
         // Datos bancarios DEL ASESOR (no del cliente): son los de la cuenta donde se le paga la
         // comisión. Permiten sacar el reporte de pagos sin cruzar a mano con la ficha de cada uno.
         let gestorBancoMap: Record<string, { banco: string; tipoCuenta: string; numeroCuenta: string }> = {};
+        // Cédula y cuenta de pago DEL SUPERVISOR. Salen del mismo registro que supervisor_nombre
+        // (supervisor de la zona del asesor): en cada fila el nombre y la cuenta son siempre de la
+        // misma persona. Muestra de 1.000 créditos (10 sep 2026): ese supervisor coincide con el de
+        // la radicación en 794 casos y difiere en 8, ninguno desde julio.
+        let gestorSupervisorCedulaMap: Record<string, string> = {};
+        let gestorSupervisorBancoMap: Record<string, { banco: string; tipoCuenta: string; numeroCuenta: string }> = {};
 
-        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono','supervisor_email','gestor_banco','gestor_tipo_cuenta','gestor_numero_cuenta'].includes(c));
+        const needsGestorData = selectedColumns.some(c => ['zona','gestor_cedula','gestor_email','gestor_ciudad','supervisor_nombre','supervisor_telefono','supervisor_email','gestor_banco','gestor_tipo_cuenta','gestor_numero_cuenta','supervisor_cedula','supervisor_banco','supervisor_tipo_cuenta','supervisor_numero_cuenta'].includes(c));
         if (needsGestorData) {
             const gestorIds = [...new Set(credits.map(c => c.assignedGestorId).filter(Boolean))];
             if (gestorIds.length > 0) {
@@ -3751,12 +3764,18 @@ export const ProductionService = {
                 if (gestorProfiles) {
                     // Obtener todos los supervisores de una vez
                     const zoneIds = [...new Set(gestorProfiles.map((gp: any) => gp.zone_id).filter(Boolean))];
-                    let supervisorMap: Record<string, { name: string; phone: string; email: string }> = {};
+                    let supervisorMap: Record<string, { name: string; phone: string; email: string; cedula: string; banco: string; tipoCuenta: string; numeroCuenta: string }> = {};
                     if (zoneIds.length > 0) {
-                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, email, zone_id').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).in('zone_id', zoneIds);
+                        const { data: supervisors } = await supabase.from('profiles').select('id, full_name, phone, email, zone_id, cedula, bank_details').in('role', ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK']).in('zone_id', zoneIds);
                         if (supervisors) {
                             for (const s of supervisors) {
-                                if (s.zone_id) supervisorMap[s.zone_id] = { name: s.full_name || '', phone: s.phone || '', email: s.email || '' };
+                                if (s.zone_id) supervisorMap[s.zone_id] = {
+                                    name: s.full_name || '', phone: s.phone || '', email: s.email || '',
+                                    cedula: s.cedula || '',
+                                    banco: s.bank_details?.banco || '',
+                                    tipoCuenta: s.bank_details?.tipoCuenta || '',
+                                    numeroCuenta: s.bank_details?.numeroCuenta || '',
+                                };
                             }
                         }
                     }
@@ -3775,6 +3794,9 @@ export const ProductionService = {
                             gestorSupervisorMap[gp.id] = supervisorMap[gp.zone_id]?.name || '';
                             gestorSupervisorPhoneMap[gp.id] = supervisorMap[gp.zone_id]?.phone || '';
                             gestorSupervisorEmailMap[gp.id] = supervisorMap[gp.zone_id]?.email || '';
+                            const supDeZona = supervisorMap[gp.zone_id];
+                            gestorSupervisorCedulaMap[gp.id] = supDeZona?.cedula || '';
+                            gestorSupervisorBancoMap[gp.id] = { banco: supDeZona?.banco || '', tipoCuenta: supDeZona?.tipoCuenta || '', numeroCuenta: supDeZona?.numeroCuenta || '' };
                         }
                     }
                 }
@@ -3869,6 +3891,11 @@ export const ProductionService = {
             'supervisor_nombre': c => gestorSupervisorMap[c.assignedGestorId] || '',
             'supervisor_telefono': c => gestorSupervisorPhoneMap[c.assignedGestorId] || '',
             'supervisor_email': c => gestorSupervisorEmailMap[c.assignedGestorId] || '',
+            'supervisor_cedula': c => gestorSupervisorCedulaMap[c.assignedGestorId] || '',
+            'supervisor_banco': c => gestorSupervisorBancoMap[c.assignedGestorId]?.banco || '',
+            'supervisor_tipo_cuenta': c => gestorSupervisorBancoMap[c.assignedGestorId]?.tipoCuenta || '',
+            // Prefijo ' para que Excel lo trate como texto y no le coma ceros ni lo pase a notación científica.
+            'supervisor_numero_cuenta': c => { const n = String(gestorSupervisorBancoMap[c.assignedGestorId]?.numeroCuenta || '').trim(); return n ? `'${n}` : ''; },
         };
 
         // Cara visible: las claves internas gestor_* se muestran como "ASESOR ..." en el CSV.
