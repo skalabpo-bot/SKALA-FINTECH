@@ -77,6 +77,27 @@ const faltantesDelExpediente = (cd: any): string[] => {
     return faltan;
 };
 
+// Llaves de client_data que usan mapCreditForList y faltantesDelExpediente. La bandeja pide
+// solo estas (con -> para conservar el tipo: número, booleano o texto) en vez del JSON completo,
+// que era ~80% del peso (≈11 MB por visita con 2.300 créditos). Si la lista empieza a usar
+// otra llave de client_data, hay que agregarla aquí o llegará vacía.
+const LLAVES_CLIENT_DATA_BANDEJA = ['nombreCompleto', 'numeroDocumento', 'pagaduria', 'recomendado', 'fechaDesembolso', 'origen_api', 'correo', 'telefonoCelular', 'cuotaUtilizar'];
+const COLUMNAS_BANDEJA = [
+    'id', 'solicitud_number', 'created_at', 'updated_at', 'assigned_gestor_id', 'assigned_supervisor_id',
+    'assigned_analyst_id', 'assigned_entity_analyst_id', 'status_id', 'amount', 'disbursement_amount', 'term',
+    'entity_name', 'interest_rate', 'commission_percent', 'commission_est', 'comision_pagada',
+    'fecha_pago_comision', 'credit_type_id',
+    ...LLAVES_CLIENT_DATA_BANDEJA.map(k => `cd_${k}:client_data->${k}`),
+].join(', ');
+const rearmarClientDataBandeja = (r: any) => {
+    const cd: any = {};
+    for (const k of LLAVES_CLIENT_DATA_BANDEJA) {
+        const v = r[`cd_${k}`];
+        if (v !== null && v !== undefined) cd[k] = v;
+    }
+    return { ...r, client_data: cd };
+};
+
 // Mapper liviano para la bandeja: estripa client_data pesado (carteraItems,
 // detailedDeductions, legalAnalysis, snapshots, contactos, banco, etc.) y solo
 // conserva los 3 campos que la lista/búsqueda realmente usan.
@@ -1309,12 +1330,16 @@ export const ProductionService = {
             }
         }
 
-        // Construye la query con joins de analista (preferida) o sin ella (fallback)
-        const buildQuery = (withAnalyst: boolean) => {
+        // Construye la query con joins de analista (preferida) o sin ella (fallback).
+        // En modo 'list' no viaja client_data completo, solo las llaves que usa la lista.
+        const columnas = mode === 'full' ? '*' : COLUMNAS_BANDEJA;
+        const buildQuery = (withAnalyst: boolean, conConteo = false) => {
             const selectStr = withAnalyst
-                ? '*, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)'
-                : '*, profiles:assigned_gestor_id(full_name, phone)';
-            let q = supabase.from('credits').select(selectStr).order('created_at', { ascending: false });
+                ? `${columnas}, gestor_profile:assigned_gestor_id(full_name, phone, zone_id), analyst_profile:assigned_analyst_id(full_name, phone), entity_analyst_profile:assigned_entity_analyst_id(full_name)`
+                : `${columnas}, profiles:assigned_gestor_id(full_name, phone)`;
+            // Orden estable (id desempata fechas iguales) para que las páginas no se pisen.
+            let q = supabase.from('credits').select(selectStr, conConteo ? { count: 'exact' } : undefined)
+                .order('created_at', { ascending: false }).order('id', { ascending: false });
             if (canViewAll) return q;
             if (canViewZone && user.zoneId) {
                 // SUPERVISOR_ASIGNADO: snapshot del supervisor (no traslada operaciones en curso)
@@ -1340,13 +1365,31 @@ export const ProductionService = {
 
         // Paginar en lotes de 1000 para superar el cap por defecto de Supabase.
         // Sin esto, admins con más de 1000 créditos no veían los más antiguos.
+        // La primera página trae el conteo y el resto se pide en paralelo: antes iban una tras
+        // otra y la bandeja de admin/analista tardaba el triple.
         const PAGE = 1000;
+        const pedirPagina = async (withAnalyst: boolean, from: number): Promise<any[]> => {
+            const { data, error } = await buildQuery(withAnalyst).range(from, from + PAGE - 1);
+            if (error) throw error;
+            return data || [];
+        };
         const fetchAllPages = async (withAnalyst: boolean): Promise<any[]> => {
-            const all: any[] = [];
-            for (let from = 0; from < 100_000; from += PAGE) {
-                const { data, error } = await buildQuery(withAnalyst).range(from, from + PAGE - 1);
-                if (error) throw error;
-                if (!data || data.length === 0) break;
+            const { data: primera, error, count } = await buildQuery(withAnalyst, true).range(0, PAGE - 1);
+            if (error) throw error;
+            const all: any[] = [...(primera || [])];
+            if (all.length < PAGE) return all;
+            let from = PAGE;
+            if (typeof count === 'number' && count > PAGE) {
+                const desdes: number[] = [];
+                for (; from < Math.min(count, 100_000); from += PAGE) desdes.push(from);
+                const paginas = await Promise.all(desdes.map(d => pedirPagina(withAnalyst, d)));
+                paginas.forEach(p => all.push(...p));
+                // Si entraron créditos mientras cargaba, la última página puede venir llena:
+                // se sigue de a una hasta el final para no perder los más antiguos.
+                if (paginas[paginas.length - 1].length < PAGE) return all;
+            }
+            for (; from < 100_000; from += PAGE) {
+                const data = await pedirPagina(withAnalyst, from);
                 all.push(...data);
                 if (data.length < PAGE) break;
             }
@@ -1360,9 +1403,12 @@ export const ProductionService = {
             console.warn('getCredits fallback (sin analyst join):', e.message);
             allRows = await fetchAllPages(false);
         }
+        // Un crédito creado durante la carga corre las páginas y puede llegar repetido.
+        const vistos = new Set<string>();
+        allRows = allRows.filter(r => !vistos.has(r.id) && !!vistos.add(r.id));
 
-        const mapper = mode === 'full' ? mapCreditFromDB : mapCreditForList;
-        return allRows.map(mapper);
+        if (mode === 'full') return allRows.map(mapCreditFromDB);
+        return allRows.map(r => mapCreditForList(rearmarClientDataBandeja(r)));
     },
 
     getCreditById: async (id: string) => {
@@ -1372,6 +1418,8 @@ export const ProductionService = {
           // Fallback sin analyst join
           const fallback = await supabase.from('credits').select('*, profiles:assigned_gestor_id(full_name, phone)').eq('id', id).single();
           c = fallback.data;
+          // Un fallo de sesión o de red se veía igual que "Crédito no encontrado": dejar rastro.
+          if (!c && fallback.error && fallback.error.code !== 'PGRST116') console.error('getCreditById falló:', fallback.error.message);
       }
       if (!c) return undefined;
       const credit = mapCreditFromDB(c);

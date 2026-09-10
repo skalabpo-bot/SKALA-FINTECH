@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { OnboardingForm } from './components/OnboardingForm';
@@ -62,6 +62,12 @@ const App = () => {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  // Supabase puede cerrar la sesión por dentro (se venció y no pudo renovarse, o se salió de la
+  // cuenta desde otro lado) sin que la pantalla se entere: seguía mostrando al usuario conectado
+  // pero cada consulta volvía vacía (bandeja en 0, "Crédito no encontrado"). Ahora vuelve al login.
+  const currentUserRef = useRef<User | null>(null);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  const [sesionCerrada, setSesionCerrada] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [selectedCreditType, setSelectedCreditType] = useState<any | null>(null);
@@ -155,6 +161,14 @@ const App = () => {
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordReset(true);
       }
+      if (event === 'SIGNED_OUT' && currentUserRef.current) {
+        currentUserRef.current = null;
+        cleanupAllSubscriptions();
+        setRadicarGestorId('');
+        setCurrentUser(null);
+        setCurrentView('dashboard');
+        setSesionCerrada(true);
+      }
     });
 
     // 2. Detectar manualmente si el hash de URL tiene el token de recuperación
@@ -223,6 +237,7 @@ const App = () => {
     try {
         const user = await MockService.login(email, password);
         if (user) {
+          setSesionCerrada(false);
           setCurrentUser(user);
           setCurrentView('dashboard');
           // Suscribir a push notifications después del login
@@ -348,8 +363,15 @@ const App = () => {
     const [showBulkModal, setShowBulkModal] = useState(false);
     const canBulkStatus = MockService.hasPermission(currentUser, 'CHANGE_CREDIT_STATUS');
 
+    const [cargando, setCargando] = useState(true);
+    const [errorCarga, setErrorCarga] = useState('');
+
+    // Antes cualquier fallo (sesión caída, red) dejaba la bandeja en "0 expedientes" sin aviso y
+    // parecía que no había créditos. Cada parte carga por su lado y el problema se muestra.
     const fetchData = async () => {
-        const [cr, st, ent, ct, readMap, comentMap] = await Promise.all([
+        setCargando(true);
+        setErrorCarga('');
+        const [cr, st, ent, ct, readMap, comentMap] = await Promise.allSettled([
             MockService.getCredits(currentUser!),
             MockService.getStates(),
             MockService.getEntities(),
@@ -357,12 +379,23 @@ const App = () => {
             MockService.getCreditReadMap(currentUser!.id),
             MockService.getNuevosComentariosMap(currentUser!.id)
         ]);
-        setCredits(cr);
-        setStates(st);
-        setEntities(ent);
-        setCreditTypes(ct || []);
-        setCreditReadMap(readMap);
-        setComentariosMap(comentMap);
+        if (st.status === 'fulfilled') setStates(st.value);
+        if (ent.status === 'fulfilled') setEntities(ent.value);
+        if (ct.status === 'fulfilled') setCreditTypes(ct.value || []);
+        if (readMap.status === 'fulfilled') setCreditReadMap(readMap.value);
+        if (comentMap.status === 'fulfilled') setComentariosMap(comentMap.value);
+        if (cr.status === 'fulfilled') {
+            setCredits(cr.value);
+            // Sin sesión la base no da error: simplemente no devuelve nada.
+            if (cr.value.length === 0) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) setErrorCarga('Tu sesión se cerró en este equipo. Dale "Salir" y vuelve a ingresar.');
+            }
+        } else {
+            console.error('No se pudo cargar la bandeja:', cr.reason);
+            setErrorCarga(`No se pudo cargar la bandeja: ${cr.reason?.message || 'error de conexión'}.`);
+        }
+        setCargando(false);
     };
 
     useEffect(() => {
@@ -442,7 +475,7 @@ const App = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-2xl md:text-3xl font-display font-black text-slate-800 leading-tight">Bandeja Operativa</h2>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{filtered.length} de {credits.length} expedientes</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{cargando ? 'Cargando expedientes…' : `${filtered.length} de ${credits.length} expedientes`}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                     <div className="relative flex-1 md:w-72">
@@ -664,7 +697,18 @@ const App = () => {
               })}
               {filtered.length === 0 && (
                   <tr>
-                      <td colSpan={8} className="px-8 py-20 text-center text-slate-300 font-bold italic">No se encontraron expedientes.</td>
+                      <td colSpan={8} className="px-8 py-20 text-center">
+                          {cargando ? (
+                              <span className="inline-flex items-center gap-2 text-slate-400 font-bold"><Loader2 size={18} className="animate-spin" /> Cargando expedientes…</span>
+                          ) : errorCarga ? (
+                              <div className="inline-flex flex-col items-center gap-3">
+                                  <span className="inline-flex items-center gap-2 text-red-600 font-bold"><AlertCircle size={18} /> {errorCarga}</span>
+                                  <button onClick={fetchData} className="px-5 py-2.5 bg-slate-900 text-white text-[10px] font-black uppercase rounded-xl tracking-widest hover:bg-slate-800">Reintentar</button>
+                              </div>
+                          ) : (
+                              <span className="text-slate-300 font-bold italic">No se encontraron expedientes.</span>
+                          )}
+                      </td>
                   </tr>
               )}
               {filtered.length > visible.length && (
@@ -808,6 +852,12 @@ const App = () => {
                <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px]">Un paso adelante</p>
            </div>
            
+           {sesionCerrada && authView === 'LOGIN' && (
+               <div className="mb-6 flex items-start gap-3 px-5 py-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
+                   <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                   <p className="text-sm font-bold">Tu sesión se cerró en este equipo. Vuelve a ingresar con tu correo y contraseña.</p>
+               </div>
+           )}
            {authView === 'LOGIN' ? (
                <form onSubmit={handleLogin} className="space-y-6">
                   <div className="space-y-2">
@@ -934,8 +984,10 @@ const App = () => {
   // Solo admin y supervisor pueden radicar a nombre de otro asesor.
   const canRadicarOnBehalf = currentUser?.role === 'ADMIN' || ['SUPERVISOR_ASIGNADO', 'SUPERVISOR_TMK'].includes(currentUser?.role || '');
 
+  // "Salir" cierra la sesión SOLO en este equipo: signOut() sin scope es 'global' y tumbaba la
+  // sesión del usuario en todos sus otros PCs y celulares (quedaban con la bandeja vacía).
   return (
-    <Layout currentUser={currentUser} onLogout={() => { cleanupAllSubscriptions(); setRadicarGestorId(''); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut(); }} currentView={currentView} onChangeView={setCurrentView}>
+    <Layout currentUser={currentUser} onLogout={() => { currentUserRef.current = null; cleanupAllSubscriptions(); setRadicarGestorId(''); setCurrentUser(null); setCurrentView('dashboard'); setEmail(''); setPassword(''); supabase.auth.signOut({ scope: 'local' }); }} currentView={currentView} onChangeView={setCurrentView}>
       {currentView === 'dashboard' && <Dashboard currentUser={currentUser} onNavigate={setCurrentView} />}
       {currentView === 'wallet' && puedeVerComisiones(currentUser) && <WalletView currentUser={currentUser} onBack={() => setCurrentView('dashboard')} />}
       {currentView === 'withdrawals' && <WithdrawalPanel currentUser={currentUser} />}
