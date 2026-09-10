@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { User, Notification, puedeVerComisiones, etiquetaRol } from '../types';
 import { MockService } from '../services/mockService';
 import { subscribeToNotifications } from '../services/realtimeService';
-import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone, GraduationCap } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, LogOut, PlusCircle, Bell, Menu, X, Filter, Megaphone, Workflow, Settings, AlertCircle, CheckCircle2, Wallet, ArrowDownToLine, Download, Smartphone, GraduationCap, CreditCard } from 'lucide-react';
 
 interface Toast {
     id: string;
@@ -20,6 +20,27 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout, currentView, onChangeView }) => {
+  // ── Aviso de datos bancarios incompletos ─────────────────────────────────────────────
+  // Sin banco, tipo y número de cuenta (y la certificación) no se le puede pagar la comisión a
+  // nadie, y al 10 sep 2026 había 121 asesores y 37 supervisores activos con la cuenta
+  // incompleta. Se les avisa en cada sesión, con lo que les falta y los pasos exactos, hasta
+  // que la completen. Solo a los roles comerciales que cobran comisión: el personal interno y
+  // los TMK no la necesitan. "Recordarme después" lo oculta solo por esta sesión.
+  const ROLES_QUE_COBRAN = ['GESTOR', 'SUPERVISOR_ASIGNADO'];
+  const faltantesBancarios: string[] = (() => {
+    if (!currentUser || !ROLES_QUE_COBRAN.includes(String(currentUser.role))) return [];
+    const f: string[] = [];
+    if (!String(currentUser.banco || '').trim()) f.push('banco');
+    if (!String(currentUser.tipoCuenta || '').trim()) f.push('tipo de cuenta');
+    if (!String(currentUser.numeroCuenta || '').trim()) f.push('número de cuenta');
+    if (!((currentUser.documents || []) as any[]).some((d: any) => d?.type === 'CERTIFICACION_BANCARIA')) f.push('certificación bancaria');
+    return f;
+  })();
+  const claveAvisoBanco = `aviso-banco-oculto-${currentUser?.id}`;
+  const [avisoBancoOculto, setAvisoBancoOculto] = useState<boolean>(() => {
+    try { return sessionStorage.getItem(claveAvisoBanco) === '1'; } catch { return false; }
+  });
+
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingGestorsCount, setPendingGestorsCount] = useState(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -225,6 +246,29 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
            <button onClick={() => setIsMobileMenuOpen(true)}><Menu size={28} /></button>
            <img src="https://skalafintech.co/wp-content/uploads/2023/10/Recurso-1@3x-1.png" alt="Skala" className="h-8 object-contain"/>
         </div>
+        {faltantesBancarios.length > 0 && !avisoBancoOculto && (
+          <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 bg-amber-100 text-amber-700 rounded-xl p-2"><CreditCard size={22} /></div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-amber-900">Completa tus datos bancarios para poder recibir tus comisiones</p>
+                <p className="text-sm text-amber-800 mt-1">Te falta: <strong>{faltantesBancarios.join(', ')}</strong>.</p>
+                <ol className="text-sm text-amber-900 mt-3 space-y-1 list-decimal list-inside">
+                  <li>Entra a <strong>Mi Perfil</strong>{currentView === 'profile' ? ' (estás aquí)' : ' (tu nombre, abajo en el menú)'}.</li>
+                  <li>En <strong>Datos Bancarios</strong> elige tu banco y tu <strong>tipo de cuenta</strong>, y escribe el número de cuenta.</li>
+                  <li>En <strong>Mis Documentos</strong> sube tu <strong>certificación bancaria</strong> (PDF o foto legible).</li>
+                  <li>Pulsa <strong>Guardar Cambios</strong>.</li>
+                </ol>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {currentView !== 'profile' && (
+                    <button onClick={() => onChangeView('profile')} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm px-4 py-2 rounded-xl">Actualizar mis datos</button>
+                  )}
+                  <button onClick={() => { setAvisoBancoOculto(true); try { sessionStorage.setItem(claveAvisoBanco, '1'); } catch { /* sin almacenamiento */ } }} className="text-amber-800 hover:text-amber-950 font-bold text-sm px-3 py-2">Recordarme después</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {children}
       </main>
 

@@ -63,6 +63,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // El selector de tipo de cuenta no tenía opción vacía: a quien no lo tenía guardado le
+    // MOSTRABA "AHORROS" aunque el valor real estuviera vacío. La persona lo veía puesto, no lo
+    // tocaba, y se guardaba vacío. Evidencia (10 sep 2026): 0 cambios de tipo de cuenta en todo
+    // el historial de perfiles, 11 perfiles con banco y número pero sin tipo, y 1 solo CORRIENTE
+    // entre 553 usuarios. Si llenó algún dato bancario, se exigen los tres.
+    const bancoLleno = String(formData.banco || '').trim();
+    const tipoLleno = String(formData.tipoCuenta || '').trim();
+    const numeroLleno = String(formData.numeroCuenta || '').trim();
+    if ((bancoLleno || tipoLleno || numeroLleno) && !(bancoLleno && tipoLleno && numeroLleno)) {
+      const falta = [!bancoLleno && 'banco', !tipoLleno && 'tipo de cuenta', !numeroLleno && 'número de cuenta'].filter(Boolean).join(', ');
+      alert(`Para guardar tus datos bancarios completa también: ${falta}.`);
+      return;
+    }
     setIsBusy(true);
     try {
         const updated = await MockService.updateUserProfile(currentUser.id, formData);
@@ -71,8 +84,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
             setMsg('Perfil actualizado con éxito.'); 
             setTimeout(() => setMsg(''), 3000); 
         }
-    } catch (err) {
-        alert("Error al actualizar perfil.");
+    } catch (err: any) {
+        alert(err?.message ? `No se pudo guardar: ${err.message}` : "Error al actualizar perfil.");
     } finally {
         setIsBusy(false);
     }
@@ -102,7 +115,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdate 
 
                 <div className="md:col-span-2"><h4 className="font-bold text-slate-800 border-b pb-2 mt-4 mb-2 flex items-center gap-2"><CreditCard size={16}/> Datos Bancarios</h4></div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">Banco</label><select name="banco" value={formData.banco} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"><option value="">Seleccione</option>{banks.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase">Tipo Cuenta</label><select name="tipoCuenta" value={formData.tipoCuenta} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"><option value="AHORROS">AHORROS</option><option value="CORRIENTE">CORRIENTE</option></select></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">Tipo Cuenta</label><select name="tipoCuenta" value={formData.tipoCuenta || ''} onChange={handleChange} className={`w-full p-2 border rounded bg-white text-slate-900 ${formData.tipoCuenta ? '' : 'border-amber-400'}`}><option value="">Seleccione</option><option value="AHORROS">AHORROS</option><option value="CORRIENTE">CORRIENTE</option></select></div>
                 <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase">Número Cuenta</label><input name="numeroCuenta" value={formData.numeroCuenta} onChange={handleChange} className="w-full p-2 border rounded bg-white text-slate-900"/></div>
 
                 <div className="md:col-span-2"><h4 className="font-bold text-slate-800 border-b pb-2 mt-4 mb-2 flex items-center gap-2"><CreditCard size={16}/> Mis Documentos</h4></div>

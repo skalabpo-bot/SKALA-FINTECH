@@ -2809,7 +2809,7 @@ export const ProductionService = {
     getZones: async () => { const { data } = await supabase.from('zones').select('*'); return data || []; },
     updateUserProfile: async (id: string, d: any) => {
         // Obtener rol/email actual antes de actualizar (para detectar cambios)
-        const { data: currentProfile } = await supabase.from('profiles').select('role, full_name, cedula, email').eq('id', id).single();
+        const { data: currentProfile } = await supabase.from('profiles').select('role, full_name, cedula, email, bank_details').eq('id', id).single();
         const previousRole = currentProfile?.role;
 
         const updateData: any = {
@@ -2817,7 +2817,15 @@ export const ProductionService = {
             phone: d.phone,
             cedula: d.cedula,
             city: d.city,
-            bank_details: { banco: d.banco, tipoCuenta: d.tipoCuenta, numeroCuenta: d.numeroCuenta }
+            // Se MEZCLA con lo que ya estaba guardado: un campo que no viene en la petición
+            // (undefined) conserva su valor en vez de borrarse. Antes se reescribía el objeto
+            // entero, así que cualquier pantalla que no mandara el tipo de cuenta lo dejaba vacío.
+            bank_details: {
+                ...((currentProfile as any)?.bank_details || {}),
+                ...(d.banco !== undefined ? { banco: d.banco } : {}),
+                ...(d.tipoCuenta !== undefined ? { tipoCuenta: d.tipoCuenta } : {}),
+                ...(d.numeroCuenta !== undefined ? { numeroCuenta: d.numeroCuenta } : {}),
+            }
         };
         // Documentos del usuario (cédula, RUT, certificación bancaria). Al editar no se
         // guardaban: si alguien se registraba sin subir la certificación —o cambiaba de
