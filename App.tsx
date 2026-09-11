@@ -35,6 +35,19 @@ const dispatchAlert = (message: string, type: 'success' | 'error' | 'info' = 'in
     window.dispatchEvent(new CustomEvent('app-alert', { detail: { message, type } }));
 };
 
+// Minutos que el reloj de este equipo va adelantado (+) o atrasado (−) frente al servidor, medido
+// con el `iat` de un token RECIÉN emitido (login o renovación). Un PC con la hora o la zona horaria
+// mal cree que cada token ya venció y lo renueva antes de cada consulta: el 10 sep 2026 un solo PC
+// hizo ~1.500 renovaciones en 2 horas, Supabase bloqueó la IP de la oficina (429) y a los usuarios
+// se les cerró la sesión. Con ese desfase la app no funciona bien, así que se detiene y se explica.
+const DESFASE_RELOJ_MAX_MIN = 15;
+const desfaseRelojMin = (accessToken?: string | null): number | null => {
+    try {
+        const payload = JSON.parse(atob(accessToken!.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return typeof payload.iat === 'number' ? (Date.now() / 1000 - payload.iat) / 60 : null;
+    } catch { return null; }
+};
+
 interface Toast {
   id: string;
   message: string;
@@ -68,6 +81,8 @@ const App = () => {
   const currentUserRef = useRef<User | null>(null);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
   const [sesionCerrada, setSesionCerrada] = useState(false);
+  const [relojDesfasado, setRelojDesfasado] = useState<number | null>(null);
+  const bloqueoRelojRef = useRef(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [selectedCreditType, setSelectedCreditType] = useState<any | null>(null);
@@ -139,6 +154,8 @@ const App = () => {
               permissions: profile.permissions || [],
               documents: profile.registration_docs || [],
             };
+            // Si mientras se restauraba la sesión se detectó el reloj desfasado, no entrar.
+            if (bloqueoRelojRef.current) return;
             setCurrentUser(user);
             // Suscribir a push notifications silenciosamente
             subscribeToPush(user.id).catch(() => {});
@@ -157,9 +174,23 @@ const App = () => {
   // Detectar token de recuperación de contraseña enviado por Supabase
   useEffect(() => {
     // 1. Detectar vía evento onAuthStateChange
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordReset(true);
+      }
+      if (event === 'TOKEN_REFRESHED') {
+        const desfase = desfaseRelojMin(session?.access_token);
+        if (desfase !== null && Math.abs(desfase) >= DESFASE_RELOJ_MAX_MIN) {
+          bloqueoRelojRef.current = true;
+          currentUserRef.current = null;
+          cleanupAllSubscriptions();
+          setRadicarGestorId('');
+          setCurrentUser(null);
+          setCurrentView('dashboard');
+          setRelojDesfasado(Math.round(desfase));
+          // Fuera del callback: llamar a auth dentro de onAuthStateChange puede trabar su lock.
+          setTimeout(() => { supabase.auth.signOut({ scope: 'local' }); }, 0);
+        }
       }
       if (event === 'SIGNED_OUT' && currentUserRef.current) {
         currentUserRef.current = null;
@@ -237,6 +268,15 @@ const App = () => {
     try {
         const user = await MockService.login(email, password);
         if (user) {
+          const { data: { session: nueva } } = await supabase.auth.getSession();
+          const desfase = desfaseRelojMin(nueva?.access_token);
+          if (desfase !== null && Math.abs(desfase) >= DESFASE_RELOJ_MAX_MIN) {
+            setRelojDesfasado(Math.round(desfase));
+            await supabase.auth.signOut({ scope: 'local' });
+            return;
+          }
+          bloqueoRelojRef.current = false;
+          setRelojDesfasado(null);
           setSesionCerrada(false);
           setCurrentUser(user);
           setCurrentView('dashboard');
@@ -852,7 +892,18 @@ const App = () => {
                <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px]">Un paso adelante</p>
            </div>
            
-           {sesionCerrada && authView === 'LOGIN' && (
+           {relojDesfasado !== null && authView === 'LOGIN' && (
+               <div className="mb-6 px-5 py-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 space-y-2">
+                   <p className="text-sm font-black flex items-center gap-2"><Clock size={18} className="flex-shrink-0" /> La hora de este computador está mal</p>
+                   <p className="text-xs font-bold">
+                       Va {Math.abs(relojDesfasado) >= 60 ? `${Math.round(Math.abs(relojDesfasado) / 6) / 10} hora(s)` : `${Math.abs(relojDesfasado)} minutos`} {relojDesfasado > 0 ? 'adelantada' : 'atrasada'} (o la zona horaria no es la de Colombia). Así la sesión se cierra sola y además bloquea a los demás equipos de la oficina.
+                   </p>
+                   <p className="text-xs font-bold">
+                       Para arreglarlo en Windows: Configuración → Hora e idioma → Fecha y hora → activa "Establecer la hora automáticamente", zona horaria "(UTC-05:00) Bogotá, Lima, Quito" y clic en "Sincronizar ahora". Luego vuelve a ingresar.
+                   </p>
+               </div>
+           )}
+           {sesionCerrada && relojDesfasado === null && authView === 'LOGIN' && (
                <div className="mb-6 flex items-start gap-3 px-5 py-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
                    <p className="text-sm font-bold">Tu sesión se cerró en este equipo. Vuelve a ingresar con tu correo y contraseña.</p>
