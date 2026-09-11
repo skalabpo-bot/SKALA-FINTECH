@@ -106,6 +106,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
     };
   }, []);
 
+  // El banner decía "teléfono" también en computadores (Chrome de escritorio ofrece instalar).
+  const dispositivo: 'computador' | 'celular' | 'tablet' = (() => {
+    const ua = navigator.userAgent;
+    const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || iPadOS || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'tablet';
+    if (/Mobile|iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return 'celular';
+    return 'computador';
+  })();
+
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -272,15 +281,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
         {children}
       </main>
 
-      {/* Banner flotante: Instalar App */}
+      {/* Banner flotante: Instalar App. Va por encima del botón del bot (esquina inferior
+          derecha, z-998): pegado abajo, el bot tapaba la X de cerrar. */}
       {showInstallBanner && !isAppInstalled && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 md:left-64 animate-fade-in">
+        <div className="fixed bottom-28 left-0 right-0 z-50 md:left-64 animate-fade-in">
           <div className="mx-4 mb-4 bg-gradient-to-r from-primary to-orange-500 rounded-2xl shadow-2xl shadow-primary/30 p-4 flex items-center gap-3">
             <div className="bg-white rounded-xl p-1.5 shrink-0 shadow-md">
               <img src="/skala.png" alt="Skala" className="w-10 h-10 rounded-lg" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-white">Instala Skala en tu telefono</p>
+              <p className="text-sm font-black text-white">Instala Skala en tu {dispositivo}</p>
               {isIOS ? (
                 <p className="text-[10px] text-white/80 mt-0.5">
                   Toca <span className="inline-block align-middle mx-0.5">
@@ -288,7 +298,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
                   </span> Compartir y luego <strong>"Agregar a inicio"</strong>
                 </p>
               ) : (
-                <p className="text-[10px] text-white/80 mt-0.5">Acceso rapido y notificaciones push</p>
+                <p className="text-[10px] text-white/80 mt-0.5">
+                  {dispositivo === 'computador'
+                    ? 'Ábrela como programa, con acceso directo y notificaciones'
+                    : 'Acceso rápido y notificaciones push'}
+                </p>
               )}
             </div>
             {!isIOS && installPrompt ? (
@@ -300,14 +314,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentUser, onLogout,
               </button>
             ) : !isIOS ? (
               <p className="shrink-0 text-[9px] text-white/70 font-bold max-w-[80px] text-center leading-tight">
-                Menu del navegador &gt; Instalar app
+                Menú del navegador &gt; Instalar app
               </p>
             ) : null}
             <button
               onClick={dismissInstallBanner}
               aria-label="Cerrar"
               title="Cerrar"
-              className="shrink-0 text-white bg-white/20 hover:bg-white/35 active:bg-white/45 transition-colors rounded-full p-2 ml-1"
+              className="shrink-0 text-primary bg-white hover:bg-orange-50 active:bg-orange-100 transition-colors rounded-full p-2 ml-1 shadow-lg"
             >
               <X size={18} />
             </button>
